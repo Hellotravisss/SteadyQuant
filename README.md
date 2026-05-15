@@ -1,4 +1,4 @@
-# QuantPro 量化交易系统 (Vercel 版)
+# 省心量化 (SteadyQuant) 量化交易系统 (Vercel 版)
 
 这是一个部署在 Vercel 上的量化交易仪表盘。它通过 FastAPI (Python) 调用 Tushare 2100 积分接口，为用户提供深度价值选股分析。
 

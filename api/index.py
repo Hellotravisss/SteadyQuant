@@ -63,4 +63,4 @@ def scan(principal: float = 2000.0):
 
 @app.get("/api/hello")
 def hello():
-    return {"message": "QuantPro API is running!"}
+    return {"message": "SteadyQuant API is running!"}
