@@ -3,242 +3,233 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>省心量化 (SteadyQuant) 交易仪表盘</title>
+    <title>省心量化 (SteadyQuant) - 小白理财神器</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
     <style>
-        :root { --accent: #00f2ff; --glass: rgba(255, 255, 255, 0.03); --border: rgba(255, 255, 255, 0.1); }
-        body { background: radial-gradient(circle at top left, #0f172a, #020617); font-family: 'Inter', 'PingFang SC', sans-serif; color: #f8fafc; overflow-x: hidden; }
-        .glass { background: var(--glass); backdrop-filter: blur(12px); border: 1px solid var(--border); }
-        .glass-hover:hover { background: rgba(255, 255, 255, 0.05); border-color: rgba(255, 255, 255, 0.2); transition: all 0.3s ease; }
-        .glow { box-shadow: 0 0 20px rgba(0, 242, 255, 0.2); }
-        input, select { background: rgba(255, 255, 255, 0.05) !important; border: 1px solid var(--border) !important; color: white !important; }
-        input:focus, select:focus { border-color: var(--accent) !important; outline: none; }
-        ::-webkit-scrollbar { width: 4px; }
-        ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 10px; }
-        .animate-in { animation: fadeIn 0.8s ease-out; }
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        :root { --accent: #00f2ff; --glass: rgba(255, 255, 255, 0.03); }
+        body { background: #020617; color: #f8fafc; font-family: 'Inter', sans-serif; }
+        .glass { background: var(--glass); backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,0.1); }
+        .tab-active { border-bottom: 3px solid var(--accent); color: var(--accent); }
+        .step-badge { background: var(--accent); color: black; padding: 2px 8px; border-radius: 99px; font-weight: 800; font-size: 10px; margin-right: 8px; }
+        input, select { background: rgba(255,255,255,0.05) !important; border: 1px solid rgba(255,255,255,0.1) !important; color: white !important; }
+        .stock-card:hover { border-color: var(--accent); cursor: pointer; transform: translateY(-2px); transition: all 0.2s; }
+        .suggestion-item:hover { background: rgba(255,255,255,0.1); }
     </style>
 </head>
-<body class="min-h-screen flex flex-col md:flex-row">
-    <!-- Sidebar -->
-    <aside class="w-full md:w-80 glass border-r p-6 space-y-8 animate-in z-10">
-        <div class="flex items-center space-x-3 mb-4">
-            <div class="w-8 h-8 bg-cyan-500 rounded-lg glow flex items-center justify-center font-bold text-black text-xl">S</div>
-            <h1 class="text-xl font-bold tracking-tight">Steady<span class="text-cyan-400">Quant</span></h1>
-        </div>
-        
-        <div class="space-y-5">
-            <div>
-                <label class="text-xs text-slate-400 uppercase tracking-widest font-semibold block mb-2">本金输入 (CNY)</label>
-                <input id="principalInput" type="number" value="2000" class="w-full rounded-xl px-4 py-3 text-lg font-medium">
+<body class="min-h-screen p-4 md:p-8">
+    <div class="max-w-6xl mx-auto">
+        <header class="flex justify-between items-center mb-8">
+            <div class="flex items-center space-x-3">
+                <div class="w-10 h-10 bg-cyan-500 rounded-xl flex items-center justify-center text-black font-black text-2xl">S</div>
+                <h1 class="text-2xl font-extrabold tracking-tighter">Steady<span class="text-cyan-400">Quant</span> <span class="text-slate-500 font-normal text-sm ml-2">省心量化</span></h1>
             </div>
-            <div>
-                <label class="text-xs text-slate-400 uppercase tracking-widest font-semibold block mb-2">目标年化 (%)</label>
-                <input id="targetYield" type="number" value="15" class="w-full rounded-xl px-4 py-3 font-medium">
-            </div>
-            <div>
-                <label class="text-xs text-slate-400 uppercase tracking-widest font-semibold block mb-2">目标代码/名称</label>
-                <input id="stockCodes" type="text" placeholder="601919, 002839..." class="w-full rounded-xl px-4 py-3 font-medium">
-            </div>
-            <div class="grid grid-cols-2 gap-3">
-                <div>
-                    <label class="text-xs text-slate-400 uppercase tracking-widest block mb-2">回测开始</label>
-                    <input id="startDate" type="date" value="2024-01-01" class="w-full rounded-xl px-2 py-3 text-xs">
-                </div>
-                <div>
-                    <label class="text-xs text-slate-400 uppercase tracking-widest block mb-2">回测结束</label>
-                    <input id="endDate" type="date" value="2026-05-15" class="w-full rounded-xl px-2 py-3 text-xs">
-                </div>
-            </div>
-            <div>
-                <label class="text-xs text-slate-400 uppercase tracking-widest font-semibold block mb-2">风险偏好</label>
-                <select id="riskLevel" class="w-full rounded-xl px-4 py-3 appearance-none cursor-pointer">
-                    <option>保守 (Conservative)</option>
-                    <option selected>稳健 (Balanced)</option>
-                    <option>激进 (Aggressive)</option>
-                </select>
-            </div>
-        </div>
-
-        <button id="saveConfig" class="w-full py-4 mt-4 bg-white text-black font-bold rounded-2xl hover:bg-cyan-400 transition-colors shadow-2xl active:scale-95 duration-200">
-            更新并回测
-        </button>
-    </aside>
-
-    <!-- Main Content -->
-    <main class="flex-1 flex flex-col p-6 space-y-6 overflow-y-auto">
-        <!-- Top Status Bar -->
-        <header class="grid grid-cols-1 sm:grid-cols-3 gap-6 animate-in">
-            <div class="glass p-5 rounded-3xl relative overflow-hidden group">
-                <div class="absolute -right-4 -top-4 w-24 h-24 bg-cyan-500/10 rounded-full blur-2xl group-hover:bg-cyan-500/20 transition-all"></div>
-                <div class="text-slate-400 text-xs font-semibold mb-1">总资产 (Estimated)</div>
-                <div id="totalAssets" class="text-3xl font-bold">¥2,000.<span class="text-lg opacity-50">00</span></div>
-            </div>
-            <div class="glass p-5 rounded-3xl relative overflow-hidden group">
-                <div class="text-slate-400 text-xs font-semibold mb-1">策略年化目标</div>
-                <div id="displayTarget" class="text-3xl font-bold text-emerald-400">15% <span class="text-sm font-medium ml-1">STABLE</span></div>
-            </div>
-            <div class="glass p-5 rounded-3xl flex items-center justify-between">
-                <div>
-                    <div class="text-slate-400 text-xs font-semibold mb-1">风险评级</div>
-                    <div id="displayRisk" class="text-xl font-bold text-amber-400">BALANCED</div>
-                </div>
-                <div class="flex space-x-1">
-                    <div class="w-1.5 h-6 bg-emerald-500 rounded-full"></div>
-                    <div class="w-1.5 h-8 bg-emerald-500 rounded-full"></div>
-                    <div class="w-1.5 h-10 bg-amber-500 rounded-full"></div>
-                    <div class="w-1.5 h-10 bg-slate-700 rounded-full"></div>
-                    <div class="w-1.5 h-10 bg-slate-700 rounded-full"></div>
-                </div>
+            <div id="topInfo" class="text-right">
+                <div class="text-[10px] text-slate-500 font-bold uppercase">账户本金</div>
+                <div id="displayBalance" class="text-xl font-bold text-cyan-400">¥2,000.00</div>
             </div>
         </header>
 
-        <!-- Core Area -->
-        <div class="flex-1 grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <div class="lg:col-span-2 glass rounded-[2.5rem] p-8 flex flex-col animate-in" style="animation-delay: 0.1s;">
-                <div class="flex justify-between items-center mb-6">
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-8">
+            <aside class="lg:col-span-4 space-y-6">
+                <div class="glass rounded-2xl p-1 flex">
+                    <button id="tab1" class="flex-1 py-3 text-xs font-bold tab-active">模式一：一键选股</button>
+                    <button id="tab2" class="flex-1 py-3 text-xs font-bold text-slate-500">模式二：精准回测</button>
+                </div>
+
+                <div id="panel1" class="glass rounded-3xl p-6 space-y-6">
                     <div>
-                        <h2 class="text-xl font-bold">收益曲线回测</h2>
-                        <p class="text-slate-400 text-sm">Strategy performance vs Benchmark</p>
+                        <div class="flex items-center mb-4"><span class="step-badge">1</span><span class="text-sm font-bold">设定目标</span></div>
+                        <div class="space-y-4">
+                            <div>
+                                <label class="text-[10px] text-slate-500 block mb-1">本金 (CNY)</label>
+                                <input id="p1" type="number" value="2000" class="w-full rounded-xl px-4 py-3 font-bold">
+                            </div>
+                            <div>
+                                <label class="text-[10px] text-slate-500 block mb-1">风险偏好</label>
+                                <select id="r1" class="w-full rounded-xl px-4 py-3 font-bold text-sm">
+                                    <option value="stable">稳健型 (追求高分红)</option>
+                                    <option value="growth">成长型 (追求高弹性)</option>
+                                </select>
+                            </div>
+                        </div>
                     </div>
+                    <button id="btnScan" class="w-full py-4 bg-cyan-400 text-black font-black rounded-2xl hover:scale-[1.02] active:scale-95 transition-all">
+                        ② 开启量化扫描
+                    </button>
+                    <div class="text-[10px] text-slate-500 text-center">③ 下方点击股票卡片看历史回测</div>
                 </div>
-                <div class="flex-1 min-h-[300px] relative">
-                    <canvas id="mainChart"></canvas>
-                </div>
-            </div>
 
-            <div class="space-y-6 animate-in" style="animation-delay: 0.2s;">
-                <div class="glass glass-hover p-6 rounded-3xl">
-                    <div class="flex justify-between items-start mb-4">
-                        <div class="w-10 h-10 bg-purple-500/20 rounded-xl flex items-center justify-center text-purple-400">Pro</div>
-                        <span class="text-xs bg-emerald-500/20 text-emerald-400 px-2 py-1 rounded-md font-bold">ACTIVE</span>
+                <div id="panel2" class="glass rounded-3xl p-6 space-y-6 hidden">
+                    <div>
+                        <div class="flex items-center mb-4"><span class="step-badge">1</span><span class="text-sm font-bold">查找个股</span></div>
+                        <div class="relative">
+                            <input id="s2" type="text" placeholder="输入代码或名称" class="w-full rounded-xl px-4 py-3 font-bold">
+                            <div id="suggestions" class="absolute w-full mt-2 glass rounded-xl overflow-hidden hidden z-30 border border-cyan-500/30"></div>
+                        </div>
                     </div>
-                    <h3 class="font-bold mb-1">Tushare 2100 引擎</h3>
-                    <p class="text-slate-400 text-xs mb-4">基于高股息、低PE、低PB深度量化筛选</p>
-                    <div class="flex justify-between text-sm">
-                        <span class="text-slate-400">策略胜率</span>
-                        <span class="font-bold">16.7% (年化)</span>
+                    <div>
+                        <div class="flex items-center mb-4"><span class="step-badge">2</span><span class="text-sm font-bold">选年份</span></div>
+                        <div class="grid grid-cols-2 gap-4">
+                            <select id="start" class="rounded-xl px-2 py-3 font-bold text-xs"><option value="2021">2021年</option><option value="2022">2022年</option></select>
+                            <select id="end" class="rounded-xl px-2 py-3 font-bold text-xs"><option value="2024" selected>2024年</option></select>
+                        </div>
+                    </div>
+                    <button id="btnBacktest" class="w-full py-4 bg-purple-500 text-white font-black rounded-2xl hover:scale-[1.02] active:scale-95 transition-all">
+                        ③ 立即查看曲线
+                    </button>
+                </div>
+            </aside>
+
+            <main class="lg:col-span-8 space-y-6">
+                <div class="glass rounded-[2.5rem] p-8 min-h-[420px] flex flex-col relative overflow-hidden">
+                    <div id="loadingOverlay" class="absolute inset-0 bg-slate-900/60 backdrop-blur-sm z-20 flex items-center justify-center hidden">
+                        <div class="flex flex-col items-center">
+                            <div class="w-12 h-12 border-4 border-cyan-500 border-t-transparent rounded-full animate-spin mb-4"></div>
+                            <p class="text-cyan-400 font-bold">正在调取 Tushare 2100 积分数据...</p>
+                        </div>
+                    </div>
+                    <div class="flex justify-between items-start mb-6">
+                        <div>
+                            <h2 id="cTitle" class="text-xl font-black">资产增长曲线</h2>
+                            <p id="cSub" class="text-slate-400 text-xs italic">数据来源：Tushare Pro 实测数据</p>
+                        </div>
+                        <div id="cBadge" class="hidden bg-emerald-500/20 text-emerald-400 px-3 py-1 rounded-lg font-bold text-sm animate-bounce">
+                            累计收益: --
+                        </div>
+                    </div>
+                    <div class="flex-1 min-h-[280px]">
+                        <canvas id="mainChart"></canvas>
                     </div>
                 </div>
-            </div>
-        </div>
 
-        <!-- Tool Area -->
-        <footer class="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-in" style="animation-delay: 0.3s;">
-            <div class="lg:col-span-2 glass rounded-3xl p-6 flex flex-col md:flex-row items-center justify-between">
-                <div class="mb-4 md:mb-0">
-                    <h3 class="text-lg font-bold mb-2 flex items-center">
-                        <span class="w-2 h-2 bg-red-500 rounded-full animate-ping mr-2"></span>
-                        选股雷达: 优质标的推荐
-                    </h3>
-                    <div id="radarList" class="flex space-x-3 overflow-x-auto pb-2">
-                        <div class="bg-slate-800/50 px-4 py-2 rounded-2xl border border-white/5 min-w-[120px]">
-                            <div class="text-[10px] text-slate-500">等待扫描...</div>
-                            <div class="font-bold text-sm">Score: --</div>
+                <div>
+                    <h3 class="text-[10px] text-slate-500 font-bold uppercase mb-4 tracking-widest">模式一扫描结果：优质标的推荐</h3>
+                    <div id="radarList" class="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                        <div class="glass p-4 rounded-2xl text-center opacity-30 border-dashed border-slate-700">
+                            <div class="text-[10px]">等待扫描...</div>
                         </div>
                     </div>
                 </div>
-                <button id="runBtn" class="w-full md:w-auto px-10 py-5 bg-cyan-400 text-black font-black text-xl rounded-[1.5rem] glow hover:scale-105 active:scale-95 transition-all">
-                    开启量化回测
-                </button>
-            </div>
-            <div class="glass rounded-3xl p-6 flex items-center justify-center text-center">
-                <p class="text-slate-500 text-sm italic">"Quant trading is not about predicting the future, it's about managing probabilities."</p>
-            </div>
-        </footer>
-    </main>
+            </main>
+        </div>
+    </div>
 
     <script>
         const ctx = document.getElementById('mainChart').getContext('2d');
-        const grad = ctx.createLinearGradient(0, 0, 0, 400);
-        grad.addColorStop(0, 'rgba(0, 242, 255, 0.2)');
-        grad.addColorStop(1, 'rgba(0, 242, 255, 0)');
-
         let mainChart = new Chart(ctx, {
             type: 'line',
-            data: {
-                labels: Array.from({length: 12}, (_, i) => `${i + 1}M`),
-                datasets: [{
-                    label: 'Portfolio Value',
-                    data: [100, 102, 101, 104, 108, 107, 112, 115, 114, 118, 122, 125],
-                    borderColor: '#00f2ff',
-                    borderWidth: 4,
-                    tension: 0.45,
-                    pointRadius: 0,
-                    fill: true,
-                    backgroundColor: grad,
-                }, {
-                    label: 'Benchmark',
-                    data: [100, 102, 101, 105, 108, 110, 108, 112, 115, 113, 118, 120],
-                    borderColor: 'rgba(255, 255, 255, 0.2)',
-                    borderDash: [5, 5],
-                    tension: 0.4,
-                    pointRadius: 0,
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
+            data: { labels: [], datasets: [] },
+            options: { 
+                responsive: true, maintainAspectRatio: false, 
                 plugins: { legend: { display: false } },
-                scales: {
-                    x: { grid: { display: false }, ticks: { color: '#475569' } },
-                    y: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#475569' } }
+                scales: { 
+                    x: { grid: { display: false }, ticks: { color: '#475569', font: { size: 10 } } },
+                    y: { grid: { color: 'rgba(255,255,255,0.03)' }, ticks: { color: '#475569' } }
                 }
             }
         });
 
-        const runBtn = document.getElementById('runBtn');
-        document.getElementById('saveConfig').addEventListener('click', () => runBtn.click());
-        runBtn.addEventListener('click', async () => {
-            const principal = document.getElementById('principalInput').value;
-            const target = document.getElementById('targetYield').value;
-            const risk = document.getElementById('riskLevel').value;
-            
-            runBtn.innerHTML = '正在调用云端引擎...';
-            
-            try {
-                // 调用 Vercel Serverless 后端 API
-                const response = await fetch(`/api/scan?principal=${principal}`);
-                const data = await response.json();
-                
-                if (data.error) {
-                    throw new Error(data.error);
-                }
+        const showLoading = (show) => document.getElementById('loadingOverlay').classList.toggle('hidden', !show);
 
-                // 更新 UI 状态
-                document.getElementById('totalAssets').innerHTML = `¥${Number(principal).toLocaleString()}.<span class="text-lg opacity-50">00</span>`;
-                document.getElementById('displayTarget').innerHTML = `${target}% <span class="text-sm font-medium ml-1">STABLE</span>`;
-                document.getElementById('displayRisk').innerHTML = risk.split(' ')[0].toUpperCase();
-                
-                // 更新雷达
-                const radarList = document.getElementById('radarList');
-                radarList.innerHTML = data.top_picks.map(p => `
-                    <div class="bg-slate-800/50 px-4 py-2 rounded-2xl border border-white/5 min-w-[140px] flex-shrink-0">
-                        <div class="text-[10px] text-slate-500">${p.name}</div>
-                        <div class="font-bold text-sm">${p.code}</div>
-                        <div class="text-[10px] text-emerald-400">分红: ${p.dv}% | Score: ${p.score.toFixed(1)}</div>
+        // Tab Switching
+        document.getElementById('tab1').onclick = () => {
+            document.getElementById('panel1').classList.remove('hidden');
+            document.getElementById('panel2').classList.add('hidden');
+            document.getElementById('tab1').className = "flex-1 py-3 text-xs font-bold tab-active";
+            document.getElementById('tab2').className = "flex-1 py-3 text-xs font-bold text-slate-500";
+        };
+        document.getElementById('tab2').onclick = () => {
+            document.getElementById('panel2').classList.remove('hidden');
+            document.getElementById('panel1').classList.add('hidden');
+            document.getElementById('tab2').className = "flex-1 py-3 text-xs font-bold tab-active";
+            document.getElementById('tab1').className = "flex-1 py-3 text-xs font-bold text-slate-500";
+        };
+
+        // Mode 1 Logic
+        document.getElementById('btnScan').onclick = async () => {
+            const p = document.getElementById('p1').value;
+            const r = document.getElementById('r1').value;
+            showLoading(true);
+            try {
+                const res = await fetch(`/api/scan?principal=${p}&risk=${r}`);
+                const data = await res.json();
+                document.getElementById('displayBalance').innerText = `¥${Number(p).toLocaleString()}.00`;
+                const list = document.getElementById('radarList');
+                list.innerHTML = data.top_picks.map(s => `
+                    <div class="glass p-4 rounded-2xl stock-card border border-white/5 hover:border-cyan-400" onclick="goBacktest('${s.code}', '${s.name}')">
+                        <div class="text-[10px] text-slate-500 truncate">${s.name}</div>
+                        <div class="font-bold text-sm text-cyan-400">${s.code}</div>
+                        <div class="text-[10px] text-emerald-400 mt-1">股息:${s.dv}%</div>
                     </div>
                 `).join('');
+            } catch (e) { alert("扫描失败"); }
+            showLoading(false);
+        };
 
-                // 更新图表
-                mainChart.data.datasets[0].data = data.history_performance;
-                mainChart.update();
-
-                runBtn.innerHTML = '回测成功 ✓';
-                runBtn.classList.add('bg-emerald-500');
-            } catch (e) {
-                console.error(e);
-                runBtn.innerHTML = '连接云端失败';
-                runBtn.classList.add('bg-amber-500');
+        // Mode 2 Search
+        const searchInput = document.getElementById('s2');
+        const suggestBox = document.getElementById('suggestions');
+        let selCode = "";
+        searchInput.oninput = async (e) => {
+            const kw = e.target.value;
+            if (kw.length < 2) { suggestBox.classList.add('hidden'); return; }
+            const res = await fetch(`/api/search?keyword=${kw}`);
+            const data = await res.json();
+            if (data.items.length) {
+                suggestBox.innerHTML = data.items.map(i => `
+                    <div class="px-4 py-3 suggestion-item cursor-pointer text-xs flex justify-between" onclick="select('${i.code}', '${i.name}')">
+                        <span>${i.name}</span> <span class="text-slate-500">${i.code}</span>
+                    </div>
+                `).join('');
+                suggestBox.classList.remove('hidden');
             }
-            
-            setTimeout(() => {
-                runBtn.innerHTML = '开启量化回测';
-                runBtn.classList.remove('bg-emerald-500', 'bg-amber-500');
-            }, 3000);
-        });
+        };
+        const select = (c, n) => {
+            selCode = c;
+            searchInput.value = `${n} (${c})`;
+            suggestBox.classList.add('hidden');
+        };
+
+        const goBacktest = (c, n) => {
+            document.getElementById('tab2').click();
+            select(c, n);
+            runBacktest(c, n);
+        };
+
+        document.getElementById('btnBacktest').onclick = () => {
+            if (!selCode) return alert("请先选择股票");
+            runBacktest(selCode, searchInput.value.split(' ')[0]);
+        };
+
+        async function runBacktest(c, n) {
+            showLoading(true);
+            const p = document.getElementById('p1').value;
+            const s = document.getElementById('start').value;
+            const e = document.getElementById('end').value;
+            try {
+                const res = await fetch(`/api/backtest?code=${c}&start_year=${s}&end_year=${e}&principal=${p}`);
+                const data = await res.json();
+                document.getElementById('cTitle').innerText = `${n} (${c}) 收益回测`;
+                document.getElementById('cSub').innerText = `${s}年-${e}年 累计资产变化`;
+                document.getElementById('cBadge').innerText = `累计收益: ${data.total_return}`;
+                document.getElementById('cBadge').classList.remove('hidden');
+                
+                mainChart.data.labels = data.labels;
+                mainChart.data.datasets = [{
+                    data: data.history_performance,
+                    borderColor: '#00f2ff',
+                    borderWidth: 4,
+                    tension: 0.4,
+                    pointRadius: 0,
+                    fill: true,
+                    backgroundColor: 'rgba(0, 242, 255, 0.05)'
+                }];
+                mainChart.update();
+            } catch (err) { alert("回测失败"); }
+            showLoading(false);
+        }
     </script>
 </body>
 </html>
