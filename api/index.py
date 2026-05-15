@@ -1,4 +1,5 @@
 from fastapi import FastAPI
+from fastapi.responses import HTMLResponse
 import requests
 import json
 import os
@@ -9,6 +10,16 @@ load_dotenv()
 TUSHARE_TOKEN = os.getenv('TUSHARE_TOKEN')
 
 app = FastAPI()
+
+@app.get("/", response_class=HTMLResponse)
+def root():
+    # 尝试读取并返回根目录下的 index.html
+    try:
+        # Vercel 运行环境下，index.html 就在当前工作目录的根部
+        with open("index.html", "r", encoding="utf-8") as f:
+            return f.read()
+    except Exception as e:
+        return f"<h1>SteadyQuant Backend is Running</h1><p>Frontend file (index.html) not found: {str(e)}</p>"
 
 def call_tushare(api_name, params=None, fields=""):
     url = 'http://api.tushare.pro'
