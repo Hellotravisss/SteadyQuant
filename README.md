@@ -14,7 +14,7 @@
 3. Vercel 会自动识别 `api/index.py` 并将其作为 Serverless Function 运行。
 4. 访问生成的 Vercel URL 即可。
 
-## 技术栈
-- **前端**: HTML5, Tailwind CSS, Chart.js (UX Pro Max 风格)
+- **项目名称**: 省心量化 (SteadyQuant)
+- **前端**: HTML5, Tailwind CSS, Chart.js
 - **后端**: Python FastAPI, Requests
 - **数据源**: Tushare Pro (2100 积分)
