@@ -8,399 +8,1258 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
     <style>
-        :root { --accent: #00f2ff; --glass: rgba(255,255,255,0.03); }
+        :root { --accent: #00f2ff; }
         body { background: #020617; color: #f8fafc; font-family: 'Inter', sans-serif; min-height: 100vh; }
-        .glass { background: var(--glass); backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,0.1); }
-        .tab-active { border-bottom: 3px solid var(--accent); color: var(--accent); }
-        .step-badge { display:inline-block; background: var(--accent); color: black; padding: 2px 8px; border-radius: 99px; font-weight: 800; font-size: 10px; margin-right: 8px; }
-        input, select { background: rgba(255,255,255,0.05) !important; border: 1px solid rgba(255,255,255,0.15) !important; color: white !important; border-radius: 0.75rem; padding: 0.75rem 1rem; width: 100%; }
-        input:focus, select:focus { outline: none; border-color: var(--accent) !important; }
-        .stock-card { transition: all 0.2s; cursor: pointer; }
-        .stock-card:hover { border-color: var(--accent) !important; transform: translateY(-2px); box-shadow: 0 0 16px rgba(0,242,255,0.2); }
-        #searchSuggestions div:hover { background: rgba(255,255,255,0.08); cursor: pointer; }
-        .loading-dots::after { content: ''; animation: dots 1.2s steps(4,end) infinite; }
+        .glass { background: rgba(255,255,255,0.03); backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,0.08); }
+        .tab-btn { padding: 10px 16px; font-size:13px; font-weight:700; color:#64748b; cursor:pointer; border-bottom:3px solid transparent; transition:all 0.2s; white-space:nowrap; }
+        .tab-btn.active { color:#00f2ff; border-bottom-color:#00f2ff; }
+        .step-badge { display:inline-flex; align-items:center; justify-content:center; background:#00f2ff; color:#000; width:22px; height:22px; border-radius:99px; font-weight:800; font-size:11px; margin-right:8px; flex-shrink:0; }
+        input, select { background:#0f1a2e!important; border:1px solid rgba(255,255,255,0.12)!important; color:#e2e8f0!important; border-radius:0.75rem; padding:0.8rem 1.1rem!important; width:100%; font-size:0.9rem; box-sizing:border-box; }
+        input::placeholder { color:#475569!important; font-size:0.82rem; }
+        input:focus, select:focus { outline:none; border-color:#00f2ff!important; box-shadow:0 0 0 2px rgba(0,242,255,0.12); }
+        select option { background:#0f1a2e; color:#e2e8f0; padding:0.5rem 1rem; }
+        .stock-card { transition:all 0.2s; cursor:pointer; position:relative; }
+        .stock-card:hover { border-color:#00f2ff!important; transform:translateY(-2px); box-shadow:0 0 16px rgba(0,242,255,0.2); }
+        /* 修复：下拉菜单强制不透明深色背景 */
+        .sugg-box { position:absolute; width:100%; margin-top:4px; border-radius:0.75rem; overflow:hidden; z-index:9999;
+                    background:#0d1525; border:1px solid rgba(0,242,255,0.3); box-shadow:0 20px 60px rgba(0,0,0,0.9); }
+        .sugg-item { padding:10px 16px; display:flex; justify-content:space-between; align-items:center; cursor:pointer;
+                     border-bottom:1px solid rgba(255,255,255,0.05); background:#0d1525; }
+        .sugg-item:last-child { border-bottom:none; }
+        .sugg-item:hover { background:#1a2d4a!important; }
+        .sugg-name { color:#f1f5f9; font-size:0.88rem; font-weight:600; }
+        .sugg-code { color:#00c8d4; font-size:0.72rem; font-family:monospace; }
+        .stat-card { background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.07); border-radius:1rem; padding:1rem; text-align:center; }
+        .loading-dots::after { content:''; animation:dots 1.2s steps(4,end) infinite; }
         @keyframes dots { 0%,100%{content:'';} 25%{content:'.';} 50%{content:'..';} 75%{content:'...';} }
+        .panel { display:none; }
+        .panel.active { display:block; }
+        /* 关注池引导横幅 */
+        .watch-guide { background:linear-gradient(135deg,rgba(0,242,255,0.08),rgba(99,102,241,0.08));
+                       border:1px solid rgba(0,242,255,0.2); border-radius:1.25rem; padding:1.25rem; }
     </style>
 </head>
-<body class="p-4 md:p-8">
-<div class="max-w-6xl mx-auto">
+<body class="p-4 md:p-6">
+<div class="max-w-7xl mx-auto">
 
     <!-- Header -->
-    <header class="flex justify-between items-center mb-8">
-        <div class="flex items-center space-x-3">
+    <header class="flex justify-between items-center mb-6">
+        <div class="flex items-center gap-3">
             <div class="w-10 h-10 bg-cyan-500 rounded-xl flex items-center justify-center text-black font-black text-2xl">S</div>
             <div>
-                <h1 class="text-2xl font-extrabold tracking-tighter leading-none">Steady<span class="text-cyan-400">Quant</span></h1>
+                <h1 class="text-xl font-extrabold tracking-tight leading-none">Steady<span class="text-cyan-400">Quant</span></h1>
                 <p class="text-slate-500 text-xs">省心量化 · 小白理财神器</p>
             </div>
         </div>
         <div class="text-right">
             <div class="text-[10px] text-slate-500 uppercase tracking-widest font-bold">当前本金</div>
-            <div id="displayBalance" class="text-xl font-bold text-cyan-400">¥2,000.00</div>
+            <div id="displayBalance" class="text-lg font-bold text-cyan-400">¥2,000.00</div>
         </div>
     </header>
 
-    <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+    <!-- 顶部 Tab 导航 -->
+    <div class="flex border-b border-white/10 mb-6 overflow-x-auto">
+        <button class="tab-btn active" onclick="switchTab('scan',this)">🔍 一键选股</button>
+        <button class="tab-btn" onclick="switchTab('backtest',this)">📈 深度回测</button>
+        <button class="tab-btn" onclick="switchTab('strategy',this)">⚙️ 策略回测</button>
+        <button class="tab-btn" onclick="switchTab('watchlist',this)">👁️ 关注池预警</button>
+        <button class="tab-btn" onclick="switchTab('portfolio',this)">📊 组合管理</button>
+    </div>
 
-        <!-- ===== 左侧控制面板 ===== -->
-        <aside class="lg:col-span-4 space-y-4">
-
-            <!-- 模式切换 -->
-            <div class="glass rounded-2xl p-1 flex">
-                <button id="mode1Tab" onclick="switchMode(1)"
-                    class="flex-1 py-3 text-sm font-bold rounded-xl tab-active transition-all">
-                    模式一：【一键选股】
-                </button>
-                <button id="mode2Tab" onclick="switchMode(2)"
-                    class="flex-1 py-3 text-sm font-bold text-slate-500 transition-all">
-                    模式二：【深度回测】
-                </button>
-            </div>
-
-            <!-- ---- 模式一面板 ---- -->
-            <div id="mode1Panel" class="glass rounded-3xl p-6 space-y-5">
-                <div>
-                    <div class="flex items-center mb-3"><span class="step-badge">1</span><span class="text-sm font-bold">设置理财条件</span></div>
-                    <label class="text-[10px] text-slate-500 font-bold uppercase block mb-1">本金 (CNY)</label>
-                    <input id="principalInput" type="number" value="2000" min="100">
-                    <p class="text-[10px] text-slate-600 mt-1">* 本金决定筛选股价上限，本金越小股价门槛越低</p>
-                </div>
-                <div>
-                    <label class="text-[10px] text-slate-500 font-bold uppercase block mb-1">风险偏好</label>
-                    <select id="riskSelect">
-                        <option value="stable">稳健型 · PE&lt;15，股息&gt;4%</option>
-                        <option value="growth">成长型 · PE&lt;25，股息&gt;2.5%</option>
-                    </select>
-                </div>
-                <div>
-                    <div class="flex items-center mb-3"><span class="step-badge">2</span><span class="text-sm font-bold">扫描优质股</span></div>
-                    <button id="scanBtn" onclick="doScan()"
-                        class="w-full py-4 bg-cyan-400 text-black font-black rounded-2xl hover:bg-cyan-300 transition-all text-sm">
-                        开启量化扫描
-                    </button>
-                </div>
-                <div>
-                    <div class="flex items-center"><span class="step-badge">3</span><span class="text-sm font-bold">点击下方卡片 → 自动回测</span></div>
-                </div>
-            </div>
-
-            <!-- ---- 模式二面板 ---- -->
-            <div id="mode2Panel" class="glass rounded-3xl p-6 space-y-5 hidden">
-                <div>
-                    <div class="flex items-center mb-3"><span class="step-badge">1</span><span class="text-sm font-bold">搜索个股</span></div>
-                    <div class="relative">
-                        <input id="stockSearch" type="text" placeholder="输入代码或名称，如：601919">
-                        <div id="searchSuggestions"
-                             class="absolute w-full mt-1 glass rounded-xl overflow-hidden hidden z-30 shadow-2xl">
+    <!-- ===================== 面板 1: 一键选股 ===================== -->
+    <div id="panel-scan" class="panel active">
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            <aside class="lg:col-span-4">
+                <div class="glass rounded-3xl p-6 space-y-5">
+                    <div>
+                        <div class="flex items-center mb-3"><span class="step-badge">1</span><span class="text-sm font-bold">设置理财条件</span></div>
+                        <label class="text-[10px] text-slate-500 font-bold uppercase block mb-1">本金 (元)</label>
+                        <input id="principalInput" type="number" value="2000" min="100" oninput="updatePriceHint()">
+                        <label class="text-[10px] text-slate-500 font-bold uppercase block mb-1 mt-3">风险偏好</label>
+                        <select id="riskSelect" onchange="updatePriceHint()">
+                            <option value="stable">稳健型 · 市盈率&lt;15，股息&gt;4%</option>
+                            <option value="growth">成长型 · 市盈率&lt;25，股息&gt;2.5%</option>
+                            <option value="aggressive">激进型 · 市盈率&lt;55，股息&gt;0.8%</option>
+                        </select>
+                        <p id="priceHint" class="text-xs text-cyan-500/70 mt-2 pl-1"></p>
+                    </div>
+                    <div>
+                        <div class="flex items-center mb-3"><span class="step-badge">2</span><span class="text-sm font-bold">扫描优质股</span></div>
+                        <button id="scanBtn" onclick="doScan()" class="w-full py-4 bg-cyan-400 text-black font-black rounded-2xl hover:bg-cyan-300 transition-all text-sm">
+                            开启量化扫描
+                        </button>
+                    </div>
+                    <div class="flex items-start">
+                        <span class="step-badge mt-0.5">3</span>
+                        <div>
+                            <span class="text-sm font-bold block">点击卡片 → 自动回测</span>
+                            <span class="text-xs text-slate-500">★ 长按卡片 → 加入关注池</span>
                         </div>
                     </div>
-                    <p id="selectedInfo" class="text-[10px] text-cyan-400 mt-1 hidden"></p>
                 </div>
-                <div>
-                    <div class="flex items-center mb-3"><span class="step-badge">2</span><span class="text-sm font-bold">选择回测年份</span></div>
-                    <div class="flex gap-3">
-                        <select id="startYear" class="flex-1">
-                            <option value="2020">2020年</option>
-                            <option value="2021" selected>2021年</option>
-                            <option value="2022">2022年</option>
-                            <option value="2023">2023年</option>
-                        </select>
-                        <select id="endYear" class="flex-1">
-                            <option value="2022">2022年</option>
-                            <option value="2023">2023年</option>
-                            <option value="2024" selected>2024年</option>
-                            <option value="2025">2025年</option>
-                        </select>
+            </aside>
+            <main class="lg:col-span-8 space-y-5">
+                <!-- 第一页右侧：操作说明卡 + 关注池入口 -->
+                <div class="glass rounded-3xl p-6">
+                    <div class="flex items-center gap-3 mb-5">
+                        <span class="text-2xl">💡</span>
+                        <div>
+                            <h2 class="text-base font-black">怎么用这个工具？</h2>
+                            <p class="text-slate-400 text-xs mt-0.5">3步完成选股 · 点击卡片直接看结果</p>
+                        </div>
+                    </div>
+                    <div class="space-y-3">
+                        <div class="flex items-start gap-3 bg-white/5 rounded-2xl p-4">
+                            <span class="text-xl">①</span>
+                            <div>
+                                <div class="text-sm font-bold">填本金，选风险偏好</div>
+                                <div class="text-xs text-slate-500 mt-0.5">比如本金1000元，选「稳健型」，系统自动帮你找股价10元以内、高股息的好股票。</div>
+                            </div>
+                        </div>
+                        <div class="flex items-start gap-3 bg-white/5 rounded-2xl p-4">
+                            <span class="text-xl">②</span>
+                            <div>
+                                <div class="text-sm font-bold">点「开启量化扫描」</div>
+                                <div class="text-xs text-slate-500 mt-0.5">系统从几千只股票里筛出最合适的，按得分排列，1秒出结果。</div>
+                            </div>
+                        </div>
+                        <div class="flex items-start gap-3 bg-white/5 rounded-2xl p-4">
+                            <span class="text-xl">③</span>
+                            <div>
+                                <div class="text-sm font-bold">点击卡片 → 自动跳到「深度回测」查看历史曲线</div>
+                                <div class="text-xs text-slate-500 mt-0.5">看这只股过去几年涨了多少，本金¥2000变成多少钱。</div>
+                            </div>
+                        </div>
+                        <div class="flex items-start gap-3 bg-cyan-400/10 border border-cyan-400/20 rounded-2xl p-4">
+                            <span class="text-xl">★</span>
+                            <div>
+                                <div class="text-sm font-bold text-cyan-400">长按卡片 → 加入「关注池预警」</div>
+                                <div class="text-xs text-slate-500 mt-0.5">加入后可在第4个标签页实时查看预警，买入时机到了系统会提示。</div>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- 快速跳转按钮 -->
+                    <div class="flex gap-3 mt-5">
+                        <button onclick="switchTabByName('watchlist')" class="flex-1 py-2.5 text-xs font-bold border border-cyan-400/30 text-cyan-400 rounded-xl hover:bg-cyan-400/10 transition-all">
+                            👁️ 查看我的关注池
+                        </button>
+                        <button onclick="switchTabByName('strategy')" class="flex-1 py-2.5 text-xs font-bold border border-purple-400/30 text-purple-400 rounded-xl hover:bg-purple-400/10 transition-all">
+                            ⚙️ 去策略回测
+                        </button>
                     </div>
                 </div>
+                <!-- 选股结果 -->
                 <div>
-                    <div class="flex items-center mb-3"><span class="step-badge">3</span><span class="text-sm font-bold">生成收益曲线</span></div>
-                    <button id="manualBtn" onclick="doManualBacktest()"
-                        class="w-full py-4 bg-purple-500 text-white font-black rounded-2xl hover:bg-purple-400 transition-all text-sm">
-                        立即开始回测
+                    <h3 class="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2">
+                        <span class="w-2 h-2 bg-cyan-400 rounded-full animate-pulse"></span>AI 优选结果 &nbsp;·&nbsp; 单击回测 &nbsp;·&nbsp; 长按加入关注池
+                    </h3>
+                    <!-- 评分说明 -->
+                    <div id="scoreGuide" class="hidden mb-3 bg-white/5 rounded-2xl px-4 py-3 text-xs text-slate-400 flex flex-wrap gap-3 items-center">
+                        <span class="font-bold text-slate-300">综合评分满分100：</span>
+                        <span>📈 <b class="text-yellow-400">股息率</b> 20分 · 越高越好</span>
+                        <span>💰 <b class="text-cyan-400">市盈率</b> 20分 · 越低越便宜</span>
+                        <span>🧱 <b class="text-purple-400">市净率</b> 20分 · 越低越安全</span>
+                        <span>💪 <b class="text-emerald-400">ROE</b> 20分 · 公司赚钱能力</span>
+                        <span>🎯 <b class="text-orange-400">价格匹配</b> 20分 · 与本金适配度</span>
+                    </div>
+                    <div id="radarList" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                        <div class="glass p-4 rounded-2xl text-center opacity-30 col-span-3 text-xs text-slate-500">请先点击「开启量化扫描」</div>
+                    </div>
+                </div>
+            </main>
+        </div>
+    </div>
+
+    <!-- ===================== 面板 2: 深度回测 ===================== -->
+    <div id="panel-backtest" class="panel">
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            <aside class="lg:col-span-4">
+                <div class="glass rounded-3xl p-6 space-y-5">
+                    <div>
+                        <div class="flex items-center mb-3"><span class="step-badge">1</span><span class="text-sm font-bold">搜索个股</span></div>
+                        <div class="relative">
+                            <input id="stockSearch" type="text" placeholder="搜索股票名称或代码…">
+                            <div id="searchSuggestions" class="sugg-box hidden"></div>
+                        </div>
+                        <p id="selectedInfo" class="text-xs text-cyan-400/80 mt-1.5 pl-1 hidden"></p>
+                    </div>
+                    <div>
+                        <div class="flex items-center mb-3"><span class="step-badge">2</span><span class="text-sm font-bold">回测区间</span></div>
+                        <div class="flex gap-3">
+                            <select id="startYear" class="flex-1"></select>
+                            <select id="endYear" class="flex-1"></select>
+                        </div>
+                    </div>
+                    <div>
+                        <div class="flex items-center mb-3"><span class="step-badge">3</span><span class="text-sm font-bold">生成曲线</span></div>
+                        <button id="manualBtn" onclick="doManualBacktest()" class="w-full py-4 bg-purple-500 text-white font-black rounded-2xl hover:bg-purple-400 transition-all text-sm">立即开始回测</button>
+                    </div>
+                </div>
+            </aside>
+            <main class="lg:col-span-8">
+                <div class="glass rounded-3xl p-6" style="min-height:400px">
+                    <div class="flex justify-between items-start mb-4">
+                        <div>
+                            <h2 id="bt2Title" class="text-base font-black">历史收益曲线</h2>
+                            <p id="bt2Sub" class="text-slate-400 text-xs mt-0.5">搜索并选择个股后开始分析</p>
+                        </div>
+                        <div id="bt2Badge" class="hidden shrink-0 bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-3 py-1 rounded-lg font-bold text-xs ml-4"></div>
+                    </div>
+                    <div id="bt2Placeholder" class="flex items-center justify-center text-slate-700 text-sm" style="min-height:300px">等待数据…</div>
+                    <div id="bt2Wrap" style="display:none; min-height:300px"><canvas id="bt2Chart"></canvas></div>
+                </div>
+            </main>
+        </div>
+    </div>
+
+    <!-- ===================== 面板 3: 策略回测 ===================== -->
+    <div id="panel-strategy" class="panel">
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            <aside class="lg:col-span-4 space-y-4">
+                <div class="glass rounded-3xl p-6 space-y-4">
+                    <div class="text-sm font-bold text-cyan-400 mb-1">⚙️ 策略参数</div>
+
+                    <!-- 说明 -->
+                    <div class="bg-white/5 rounded-xl p-3 text-xs text-slate-400 leading-relaxed">
+                        设置"什么时候买、什么时候卖"的规则，系统会用历史数据模拟每一笔交易，告诉你这个策略过去能赚多少。
+                    </div>
+
+                    <div>
+                        <label class="text-[10px] text-slate-500 uppercase block mb-1">回测股票</label>
+                        <div class="relative">
+                            <input id="stratSearch" type="text" placeholder="搜索股票名称或代码…">
+                            <div id="stratSuggestions" class="sugg-box hidden"></div>
+                        </div>
+                        <p id="stratSelected" class="text-xs text-cyan-400/80 mt-1 pl-1 hidden"></p>
+                    </div>
+                    <div class="grid grid-cols-2 gap-3">
+                        <div>
+                            <label class="text-[10px] text-slate-500 uppercase block mb-1">开始年份</label>
+                            <select id="stratStart" class="text-sm"></select>
+                        </div>
+                        <div>
+                            <label class="text-[10px] text-slate-500 uppercase block mb-1">结束年份</label>
+                            <select id="stratEnd" class="text-sm"></select>
+                        </div>
+                    </div>
+                    <div>
+                        <label class="text-[10px] text-slate-500 uppercase block mb-1">模拟本金 (¥)</label>
+                        <input id="stratPrincipal" type="number" value="2000">
+                    </div>
+                    <hr class="border-white/10">
+
+                    <!-- 买入规则 -->
+                    <div class="text-xs font-bold text-emerald-400 mb-1">📗 买入规则（同时满足才买）</div>
+                    <div class="grid grid-cols-2 gap-3">
+                        <div>
+                            <label class="text-[10px] text-slate-500 uppercase block mb-1">股息率 ≥ (%)</label>
+                            <input id="buyDv" type="number" value="4" step="0.5"
+                                   title="股息率=每年分红÷股价。越高说明每年拿到手的分红越多。建议>4%">
+                            <p class="text-[9px] text-slate-600 mt-0.5">每年分红/股价，越高越好</p>
+                        </div>
+                        <div>
+                            <label class="text-[10px] text-slate-500 uppercase block mb-1">市盈率 ≤</label>
+                            <input id="buyPe" type="number" value="15"
+                                   title="市盈率=股价÷每股盈利。越低说明股票越便宜，建议<15">
+                            <p class="text-[9px] text-slate-600 mt-0.5">股价÷盈利，越低越便宜</p>
+                        </div>
+                    </div>
+
+                    <!-- 卖出规则 -->
+                    <div class="text-xs font-bold text-red-400 mb-1">📕 卖出规则（任一满足就卖）</div>
+                    <div class="grid grid-cols-2 gap-3">
+                        <div>
+                            <label class="text-[10px] text-slate-500 uppercase block mb-1">市盈率 超过</label>
+                            <input id="sellPe" type="number" value="25"
+                                   title="市盈率超过此值说明股票涨贵了，卖出锁定利润">
+                            <p class="text-[9px] text-slate-600 mt-0.5">涨贵了就卖，锁定利润</p>
+                        </div>
+                        <div>
+                            <label class="text-[10px] text-slate-500 uppercase block mb-1">止损线 (%)</label>
+                            <input id="stopLoss" type="number" value="15"
+                                   title="亏损超过此比例就止损卖出，保护本金">
+                            <p class="text-[9px] text-slate-600 mt-0.5">亏损超此比例自动止损</p>
+                        </div>
+                    </div>
+
+                    <button id="stratBtn" onclick="doStrategyBacktest(this)" class="w-full py-4 bg-emerald-500 text-white font-black rounded-2xl hover:bg-emerald-400 transition-all text-sm">
+                        运行策略回测
                     </button>
                 </div>
-            </div>
+            </aside>
 
-        </aside>
-
-        <!-- ===== 右侧结果区 ===== -->
-        <main class="lg:col-span-8 space-y-5">
-
-            <!-- 图表区 -->
-            <div class="glass rounded-3xl p-6 flex flex-col" style="min-height:360px">
-                <div class="flex justify-between items-start mb-4">
-                    <div>
-                        <h2 id="chartTitle" class="text-lg font-black leading-tight">资产增长曲线</h2>
-                        <p id="chartSub" class="text-slate-400 text-xs mt-0.5">点击左侧按钮或下方卡片开始分析</p>
+            <main class="lg:col-span-8 space-y-4">
+                <!-- 4 个统计指标 -->
+                <div id="statsRow" class="grid grid-cols-2 sm:grid-cols-4 gap-3 hidden">
+                    <div class="stat-card">
+                        <div class="text-[10px] text-slate-500 mb-1">累计总收益</div>
+                        <div id="statReturn" class="text-xl font-black text-emerald-400">-</div>
+                        <div class="text-[9px] text-slate-600 mt-1">整段期间赚了多少</div>
                     </div>
-                    <div id="resultBadge"
-                         class="hidden shrink-0 bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-3 py-1 rounded-lg font-bold text-xs ml-4">
+                    <div class="stat-card">
+                        <div class="text-[10px] text-slate-500 mb-1">折算年化收益</div>
+                        <div id="statAnnual" class="text-xl font-black text-cyan-400">-</div>
+                        <div class="text-[9px] text-slate-600 mt-1">平均每年赚多少</div>
                     </div>
-                </div>
-                <div id="chartPlaceholder" class="flex-1 flex items-center justify-center text-slate-700 text-sm">
-                    等待数据中…
-                </div>
-                <div class="flex-1" id="chartWrap" style="display:none; min-height:280px">
-                    <canvas id="mainChart"></canvas>
-                </div>
-            </div>
-
-            <!-- 选股推荐列表 -->
-            <div>
-                <h3 class="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2">
-                    <span class="w-2 h-2 bg-cyan-400 rounded-full animate-pulse"></span>
-                    AI 优选结果 · 点击卡片立即回测
-                </h3>
-                <div id="radarList" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-                    <div class="glass p-4 rounded-2xl text-center opacity-30 col-span-2 sm:col-span-3 md:col-span-4">
-                        <div class="text-xs text-slate-500">请先在左侧输入本金并点击「开启量化扫描」</div>
+                    <div class="stat-card">
+                        <div class="text-[10px] text-slate-500 mb-1">最大亏损幅度</div>
+                        <div id="statDrawdown" class="text-xl font-black text-red-400">-</div>
+                        <div class="text-[9px] text-slate-600 mt-1">历史最惨亏多少</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="text-[10px] text-slate-500 mb-1">月度胜率</div>
+                        <div id="statWin" class="text-xl font-black text-purple-400">-</div>
+                        <div class="text-[9px] text-slate-600 mt-1">每月盈利的概率</div>
                     </div>
                 </div>
-            </div>
-
-        </main>
+                <!-- 策略曲线 -->
+                <div class="glass rounded-3xl p-6" style="min-height:300px">
+                    <div class="flex justify-between items-center mb-3">
+                        <h2 id="stratTitle" class="text-base font-black">策略净值曲线</h2>
+                        <div class="flex gap-4 text-xs">
+                            <span class="flex items-center gap-1"><span class="inline-block w-3 h-1 bg-cyan-400 rounded"></span>策略结果</span>
+                            <span class="flex items-center gap-1"><span class="inline-block w-3 h-1 bg-slate-500 rounded" style="border-top:2px dashed #64748b"></span>沪深300指数</span>
+                        </div>
+                    </div>
+                    <div id="stratPlaceholder" class="flex items-center justify-center text-slate-700 text-sm" style="min-height:250px">
+                        设置左侧参数后点击「运行策略回测」
+                    </div>
+                    <div id="stratWrap" style="display:none; min-height:250px"><canvas id="stratChart"></canvas></div>
+                </div>
+                <!-- 交易记录 -->
+                <div id="tradeLogSection" class="glass rounded-3xl p-6 hidden">
+                    <h3 class="text-sm font-bold mb-3 text-slate-300">📋 模拟交易记录 <span id="tradeCount" class="text-xs text-slate-500 ml-2"></span></h3>
+                    <div id="tradeLog" class="space-y-2 max-h-56 overflow-y-auto pr-1"></div>
+                    <p id="simNote" class="text-xs text-slate-600 mt-3 hidden">* 此股票暂无精确历史数据，使用模拟曲线展示策略形态，仅供参考</p>
+                </div>
+            </main>
+        </div>
     </div>
-</div>
+
+    <!-- ===================== 面板 4: 关注池预警 ===================== -->
+    <div id="panel-watchlist" class="panel">
+        <!-- 顶部醒目引导横幅 -->
+        <div class="watch-guide mb-5">
+            <div class="flex items-start gap-4">
+                <span class="text-3xl">📌</span>
+                <div class="flex-1">
+                    <div class="text-base font-black mb-1">如何加入关注池？</div>
+                    <div class="text-sm text-slate-300 mb-3">
+                        在 <button onclick="switchTabByName('scan')" class="text-cyan-400 font-bold underline underline-offset-2">🔍 一键选股</button> 页面，扫描出结果后，<strong class="text-white">在股票卡片上长按（电脑端：按住鼠标1秒）</strong>，即可加入关注池。
+                    </div>
+                    <div class="flex flex-wrap gap-2 text-xs">
+                        <span class="bg-emerald-500/20 text-emerald-400 px-2 py-1 rounded-lg">✅ 正常 = 指标健康，可持仓</span>
+                        <span class="bg-yellow-500/20 text-yellow-400 px-2 py-1 rounded-lg">⚠️ 注意 = 指标出现变化，留意</span>
+                        <span class="bg-red-500/20 text-red-400 px-2 py-1 rounded-lg">🚨 预警 = 建议考虑卖出</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            <aside class="lg:col-span-4">
+                <div class="glass rounded-3xl p-6 space-y-4">
+                    <div class="text-sm font-bold text-cyan-400">👁️ 我的关注池</div>
+                    <div id="watchCount" class="text-sm font-bold text-slate-300 text-center py-2"></div>
+                    <button onclick="checkWatchlist()" class="w-full py-3 bg-cyan-400 text-black font-black rounded-2xl hover:bg-cyan-300 transition-all text-sm">
+                        🔄 刷新预警检查
+                    </button>
+                    <button onclick="switchTabByName('scan')" class="w-full py-3 bg-white/5 text-slate-300 font-bold rounded-2xl hover:bg-white/10 transition-all text-sm border border-white/10">
+                        ＋ 去选股页添加股票
+                    </button>
+                    <button onclick="clearWatchlist()" class="w-full py-2 text-slate-600 text-xs hover:text-red-400 transition-all">
+                        清空关注池
+                    </button>
+                </div>
+            </aside>
+            <main class="lg:col-span-8">
+                <div id="watchlistResult" class="space-y-3">
+                    <div class="glass rounded-2xl p-10 text-center">
+                        <div class="text-4xl mb-3">📭</div>
+                        <div class="text-slate-300 font-bold mb-1">关注池为空</div>
+                        <div class="text-slate-500 text-sm">请先去「一键选股」扫描结果，<br>长按股票卡片即可加入关注池</div>
+                        <button onclick="switchTabByName('scan')" class="mt-4 px-6 py-2.5 bg-cyan-400 text-black font-black rounded-xl text-sm hover:bg-cyan-300 transition-all">
+                            去选股 →
+                        </button>
+                    </div>
+                </div>
+            </main>
+        </div>
+    </div>
+
+    <!-- ===================== 面板 5: 组合管理 ===================== -->
+    <div id="panel-portfolio" class="panel">
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+
+            <!-- 左侧：组合配置 -->
+            <aside class="lg:col-span-4 space-y-4">
+                <div class="glass rounded-3xl p-5 space-y-4">
+                    <div class="text-sm font-bold text-cyan-400">📊 我的投资组合</div>
+                    <p class="text-xs text-slate-500">添加多只股票并设置仓位比例，回测看组合整体表现是否强于沪深300。</p>
+
+                    <!-- 搜索添加 -->
+                    <div>
+                        <label class="text-[10px] text-slate-500 uppercase block mb-1">添加股票</label>
+                        <div class="relative">
+                            <input id="pfSearch" type="text" placeholder="搜索股票名称或代码…">
+                            <div id="pfSuggestions" class="sugg-box hidden"></div>
+                        </div>
+                    </div>
+
+                    <!-- 快速从关注池导入 -->
+                    <button onclick="importFromWatchlist()" class="w-full py-2 text-xs font-bold border border-cyan-400/20 text-cyan-400 rounded-xl hover:bg-cyan-400/10 transition-all">
+                        ＋ 从关注池一键导入
+                    </button>
+
+                    <!-- 股票列表 -->
+                    <div id="pfStockList" class="space-y-2">
+                        <div class="text-xs text-slate-600 text-center py-3">还没有添加股票</div>
+                    </div>
+
+                    <!-- 仓位合计提示 -->
+                    <div class="flex justify-between items-center">
+                        <span class="text-xs text-slate-500">仓位合计</span>
+                        <span id="pfWeightTotal" class="text-sm font-black text-yellow-400">0%</span>
+                    </div>
+                    <div class="w-full bg-white/10 rounded-full h-1.5">
+                        <div id="pfWeightBar" class="h-1.5 rounded-full transition-all bg-yellow-400" style="width:0%"></div>
+                    </div>
+
+                    <hr class="border-white/10">
+
+                    <!-- 回测设置 -->
+                    <div class="grid grid-cols-2 gap-3">
+                        <div>
+                            <label class="text-[10px] text-slate-500 uppercase block mb-1">开始年份</label>
+                            <select id="pfStart" class="text-sm"></select>
+                        </div>
+                        <div>
+                            <label class="text-[10px] text-slate-500 uppercase block mb-1">结束年份</label>
+                            <select id="pfEnd" class="text-sm"></select>
+                        </div>
+                    </div>
+                    <div>
+                        <label class="text-[10px] text-slate-500 uppercase block mb-1">模拟本金 (¥)</label>
+                        <input id="pfPrincipal" type="number" value="2000">
+                    </div>
+
+                    <button onclick="runPortfolioBacktest(this)" class="w-full py-4 bg-cyan-400 text-black font-black rounded-2xl hover:bg-cyan-300 transition-all text-sm">
+                        运行组合回测
+                    </button>
+                </div>
+            </aside>
+
+            <!-- 右侧：结果 -->
+            <main class="lg:col-span-8 space-y-4">
+                <!-- 4 个统计指标 -->
+                <div id="pfStatsRow" class="grid grid-cols-2 sm:grid-cols-4 gap-3 hidden">
+                    <div class="stat-card">
+                        <div class="text-[10px] text-slate-500 mb-1">组合终值</div>
+                        <div id="pfFinal" class="text-xl font-black text-white">-</div>
+                        <div class="text-[9px] text-slate-600 mt-1">本金最终变成多少</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="text-[10px] text-slate-500 mb-1">年化收益</div>
+                        <div id="pfAnnual" class="text-xl font-black text-cyan-400">-</div>
+                        <div class="text-[9px] text-slate-600 mt-1">平均每年赚多少</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="text-[10px] text-slate-500 mb-1">最大亏损</div>
+                        <div id="pfDrawdown" class="text-xl font-black text-red-400">-</div>
+                        <div class="text-[9px] text-slate-600 mt-1">历史最惨跌多少</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="text-[10px] text-slate-500 mb-1">月度胜率</div>
+                        <div id="pfWin" class="text-xl font-black text-purple-400">-</div>
+                        <div class="text-[9px] text-slate-600 mt-1">每月盈利概率</div>
+                    </div>
+                </div>
+
+                <!-- 组合净值曲线 -->
+                <div class="glass rounded-3xl p-6" style="min-height:280px">
+                    <div class="flex justify-between items-center mb-3">
+                        <h2 class="text-base font-black">组合净值曲线</h2>
+                        <div class="flex gap-4 text-xs">
+                            <span class="flex items-center gap-1"><span class="inline-block w-3 h-1 bg-cyan-400 rounded"></span>我的组合</span>
+                            <span class="flex items-center gap-1"><span class="inline-block w-3 h-1 bg-slate-500 rounded"></span>沪深300</span>
+                        </div>
+                    </div>
+                    <div id="pfChartPlaceholder" class="flex items-center justify-center text-slate-700 text-sm" style="min-height:220px">添加股票并运行回测后显示</div>
+                    <div id="pfChartWrap" style="display:none; min-height:220px"><canvas id="pfChart"></canvas></div>
+                </div>
+
+                <!-- 个股贡献度 + 持仓明细 -->
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <!-- 饼图 -->
+                    <div class="glass rounded-3xl p-5">
+                        <h3 class="text-sm font-bold mb-3">仓位分布</h3>
+                        <div id="pfPiePlaceholder" class="flex items-center justify-center text-slate-700 text-xs" style="min-height:160px">运行回测后显示</div>
+                        <div id="pfPieWrap" style="display:none; max-height:180px"><canvas id="pfPie"></canvas></div>
+                    </div>
+                    <!-- 各股贡献表 -->
+                    <div class="glass rounded-3xl p-5">
+                        <h3 class="text-sm font-bold mb-3">各股年化贡献</h3>
+                        <div id="pfContribList" class="space-y-2 text-xs text-slate-500 flex items-center justify-center" style="min-height:160px">
+                            运行回测后显示
+                        </div>
+                    </div>
+                </div>
+            </main>
+        </div>
+    </div>
+
+</div><!-- end max-w -->
 
 <script>
-// ===== 全局状态 =====
-let chartInstance = null;
-let selectedCode  = '';
-let selectedName  = '';
+// ─────────────────────────────────────────────
+// 年份选择器
+// ─────────────────────────────────────────────
+function buildYearOptions(selId, from, to, selected) {
+    const sel = document.getElementById(selId);
+    if (!sel) return;
+    sel.innerHTML = '';
+    for (let y = from; y <= to; y++) {
+        const opt = document.createElement('option');
+        opt.value = y; opt.text = y + '年';
+        if (y === selected) opt.selected = true;
+        sel.appendChild(opt);
+    }
+}
+buildYearOptions('startYear',  1990, 2024, 2021);
+buildYearOptions('endYear',    1993, 2026, 2025);
+buildYearOptions('stratStart', 1990, 2024, 2020);
+buildYearOptions('stratEnd',   1993, 2026, 2024);
 
-// ===== 模式切换 =====
-function switchMode(m) {
-    document.getElementById('mode1Panel').classList.toggle('hidden', m !== 1);
-    document.getElementById('mode2Panel').classList.toggle('hidden', m !== 2);
-    document.getElementById('mode1Tab').classList.toggle('tab-active', m === 1);
-    document.getElementById('mode1Tab').classList.toggle('text-slate-500', m !== 1);
-    document.getElementById('mode2Tab').classList.toggle('tab-active', m === 2);
-    document.getElementById('mode2Tab').classList.toggle('text-slate-500', m !== 2);
+// ─────────────────────────────────────────────
+// Tab 切换（修复：不依赖全局 event 对象）
+// ─────────────────────────────────────────────
+function switchTab(name, btnEl) {
+    document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.getElementById('panel-' + name).classList.add('active');
+    if (btnEl) btnEl.classList.add('active');
+    if (name === 'watchlist') renderWatchlist();
+}
+// 通过名字切 tab（不依赖点击事件）
+function switchTabByName(name) {
+    const tabMap = { scan:0, backtest:1, strategy:2, watchlist:3, portfolio:4 };
+    const btns = document.querySelectorAll('.tab-btn');
+    switchTab(name, btns[tabMap[name]]);
 }
 
-// ===== 图表渲染 =====
-function renderChart(labels, data, subtitle) {
-    document.getElementById('chartPlaceholder').style.display = 'none';
-    const wrap = document.getElementById('chartWrap');
-    wrap.style.display = 'block';
+// ─────────────────────────────────────────────
+// 本金提示
+// ─────────────────────────────────────────────
+function updatePriceHint() {
+    const p = parseFloat(document.getElementById('principalInput').value) || 2000;
+    const max = Math.min(p / 100, 300).toFixed(1);
+    document.getElementById('displayBalance').innerText = '¥' + p.toLocaleString('zh-CN', {minimumFractionDigits:2});
+    const h = document.getElementById('priceHint');
+    if (h) h.innerText = `当前本金可买 ¥${max} 以下的股票（每手100股）`;
+}
+updatePriceHint();
 
-    const canvas = document.getElementById('mainChart');
-    const ctx = canvas.getContext('2d');
-
-    if (chartInstance) { chartInstance.destroy(); }
-
-    const grad = ctx.createLinearGradient(0, 0, 0, 280);
-    grad.addColorStop(0, 'rgba(0,242,255,0.3)');
-    grad.addColorStop(1, 'rgba(0,242,255,0)');
-
-    chartInstance = new Chart(ctx, {
+// ─────────────────────────────────────────────
+// 图表实例管理
+// ─────────────────────────────────────────────
+const charts = {};
+function renderChart(id, labels, datasets) {
+    const wrap = document.getElementById(id + 'Wrap');
+    const ph   = document.getElementById(id + 'Placeholder');
+    if (ph) ph.style.display = 'none';
+    if (wrap) wrap.style.display = 'block';
+    const ctx = document.getElementById(id + 'Chart').getContext('2d');
+    if (charts[id]) charts[id].destroy();
+    charts[id] = new Chart(ctx, {
         type: 'line',
-        data: {
-            labels,
-            datasets: [{
-                label: '账户净值(¥)',
-                data,
-                borderColor: '#00f2ff',
-                borderWidth: 2.5,
-                tension: 0.4,
-                pointRadius: 0,
-                pointHoverRadius: 4,
-                fill: true,
-                backgroundColor: grad
-            }]
-        },
+        data: { labels, datasets },
         options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            animation: { duration: 600 },
-            plugins: {
-                legend: { display: false },
-                tooltip: {
-                    callbacks: {
-                        label: ctx => `¥${ctx.parsed.y.toLocaleString('zh-CN', {minimumFractionDigits:2, maximumFractionDigits:2})}`
-                    }
-                }
-            },
+            responsive: true, maintainAspectRatio: false, animation: { duration: 600 },
+            plugins: { legend: { display: false } },
             scales: {
-                x: {
-                    grid: { display: false },
-                    ticks: {
-                        color: '#475569',
-                        maxTicksLimit: 12,
-                        maxRotation: 45
-                    }
-                },
-                y: {
-                    grid: { color: 'rgba(255,255,255,0.04)' },
-                    ticks: {
-                        color: '#475569',
-                        callback: v => '¥' + v.toLocaleString()
-                    }
-                }
+                x: { grid:{display:false}, ticks:{color:'#475569', maxTicksLimit:12, maxRotation:45} },
+                y: { grid:{color:'rgba(255,255,255,0.04)'}, ticks:{color:'#475569', callback: v => '¥'+v.toLocaleString()} }
             }
         }
     });
 }
 
-// ===== 模式一：扫描 =====
+// ─────────────────────────────────────────────
+// 一键选股
+// ─────────────────────────────────────────────
+let selectedCode = '', selectedName = '';
+
 async function doScan() {
     const principal = parseFloat(document.getElementById('principalInput').value) || 2000;
     const risk      = document.getElementById('riskSelect').value;
     const btn       = document.getElementById('scanBtn');
-
-    btn.innerHTML   = '<span class="loading-dots">AI 正在扫描全市场</span>';
-    btn.disabled    = true;
-
-    // 更新顶部余额显示
-    document.getElementById('displayBalance').innerText =
-        '¥' + principal.toLocaleString('zh-CN', {minimumFractionDigits:2});
-
+    btn.innerHTML = '<span class="loading-dots">AI 扫描中</span>'; btn.disabled = true;
+    updatePriceHint();
     try {
         const res  = await fetch(`/api/scan?principal=${principal}&risk=${risk}`);
         const data = await res.json();
-
         if (data.error) {
-            document.getElementById('radarList').innerHTML =
-                `<div class="glass p-4 rounded-2xl col-span-4 text-center text-red-400 text-sm">${data.error}</div>`;
-            return;
+            document.getElementById('radarList').innerHTML = `<div class="col-span-4 text-center text-red-400 text-sm p-4">${data.error}</div>`;
+            btn.innerHTML = '开启量化扫描'; btn.disabled = false; return;
         }
-
-        const maxPrice = data.max_price || (principal / 100);
-        const picks    = data.top_picks || [];
-
+        const picks = data.top_picks || [];
         if (picks.length === 0) {
-            document.getElementById('radarList').innerHTML =
-                `<div class="glass p-4 rounded-2xl col-span-4 text-center text-slate-400 text-sm">
-                    当前筛选条件（本金¥${principal.toLocaleString()}，最高股价¥${maxPrice.toFixed(2)}）未找到符合条件的股票。<br>
-                    建议适当增大本金或切换到成长型风险偏好。
-                </div>`;
-            return;
+            document.getElementById('radarList').innerHTML = `<div class="col-span-4 text-center text-slate-400 text-sm p-4">本金¥${principal.toLocaleString()}（最高股价¥${data.max_price}）未找到符合条件的股票。<br>建议增大本金或调整风险偏好。</div>`;
+            btn.innerHTML = '开启量化扫描'; btn.disabled = false; return;
         }
-
-        document.getElementById('radarList').innerHTML = picks.map(p => `
+        document.getElementById('scoreGuide').classList.remove('hidden');
+        document.getElementById('radarList').innerHTML = picks.map((p, idx) => {
+            const sd = p.score_detail || {};
+            const score = p.score || 0;
+            const scoreColor = score >= 75 ? '#34d399' : score >= 55 ? '#fbbf24' : '#f87171';
+            const rank = idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : `#${idx+1}`;
+            const factors = [
+                { label:'股息率', val: sd.s_dv||0,    raw: p.dv+'%',    color:'#fbbf24' },
+                { label:'市盈率', val: sd.s_pe||0,    raw: p.pe,        color:'#00f2ff' },
+                { label:'市净率', val: sd.s_pb||0,    raw: p.pb,        color:'#a78bfa' },
+                { label:'ROE',   val: sd.s_roe||0,   raw: (p.roe||0)+'%', color:'#34d399' },
+                { label:'价格匹配', val: sd.s_price||0, raw: '¥'+p.price, color:'#fb923c' },
+            ];
+            return `
             <div class="glass p-4 rounded-2xl stock-card border border-transparent"
-                 onclick="autoBacktest('${p.code}','${p.name}')">
-                <div class="text-[11px] text-slate-400 truncate mb-1">${p.name}</div>
-                <div class="font-bold text-sm text-cyan-400 mb-2">${p.code}</div>
-                <div class="flex flex-col gap-0.5">
-                    <div class="text-[10px] text-emerald-400">股息 ${p.dv}%</div>
-                    <div class="text-[10px] text-slate-500">PE ${p.pe} · 股价¥${p.price}</div>
+                 onclick="autoBacktest('${p.code}','${p.name}')"
+                 data-code="${p.code}" data-name="${p.name}"
+                 data-dv="${p.dv}" data-pe="${p.pe}" data-pb="${p.pb}" data-price="${p.price}"
+                 title="单击回测 · 长按加入关注池">
+                <!-- 顶部：排名 + 名称 + 总分 -->
+                <div class="flex justify-between items-start mb-2">
+                    <div>
+                        <span class="text-base mr-1">${rank}</span>
+                        <span class="text-sm font-black">${p.name}</span>
+                        <div class="text-[10px] text-slate-500 font-mono mt-0.5">${p.code} · ¥${p.price}</div>
+                    </div>
+                    <div class="text-right shrink-0 ml-2">
+                        <div class="text-2xl font-black" style="color:${scoreColor}">${score}</div>
+                        <div class="text-[9px] text-slate-500">综合评分</div>
+                    </div>
                 </div>
-            </div>
-        `).join('');
-
-        btn.innerHTML = `扫描完成，共 ${picks.length} 支 ✓`;
+                <!-- 总分进度条 -->
+                <div class="w-full bg-white/10 rounded-full h-1.5 mb-3">
+                    <div class="h-1.5 rounded-full transition-all" style="width:${score}%;background:${scoreColor}"></div>
+                </div>
+                <!-- 5因子条形 -->
+                <div class="space-y-1.5">
+                    ${factors.map(f => `
+                    <div class="flex items-center gap-2">
+                        <span class="text-[9px] text-slate-500 w-10 shrink-0">${f.label}</span>
+                        <div class="flex-1 bg-white/10 rounded-full h-1">
+                            <div class="h-1 rounded-full" style="width:${(f.val/20*100).toFixed(0)}%;background:${f.color}"></div>
+                        </div>
+                        <span class="text-[9px] shrink-0" style="color:${f.color}">${f.raw}</span>
+                    </div>`).join('')}
+                </div>
+                <div class="text-[9px] text-slate-600 mt-2.5 border-t border-white/10 pt-2 flex justify-between">
+                    <span>ROE估算 ${p.roe||0}%</span>
+                    <span>长按加入关注池 ★</span>
+                </div>
+            </div>`;
+        }).join('');
+        // 绑定长按事件
+        document.querySelectorAll('.stock-card[data-code]').forEach(card => {
+            let timer;
+            card.addEventListener('mousedown', () => {
+                timer = setTimeout(() => {
+                    addToWatchlist(card.dataset.code, card.dataset.name,
+                        parseFloat(card.dataset.dv), parseFloat(card.dataset.pe),
+                        parseFloat(card.dataset.pb), parseFloat(card.dataset.price));
+                }, 800);
+            });
+            card.addEventListener('mouseup',   () => clearTimeout(timer));
+            card.addEventListener('mouseleave',() => clearTimeout(timer));
+            // 移动端触摸
+            card.addEventListener('touchstart', () => {
+                timer = setTimeout(() => {
+                    addToWatchlist(card.dataset.code, card.dataset.name,
+                        parseFloat(card.dataset.dv), parseFloat(card.dataset.pe),
+                        parseFloat(card.dataset.pb), parseFloat(card.dataset.price));
+                }, 800);
+            }, {passive:true});
+            card.addEventListener('touchend', () => clearTimeout(timer));
+        });
+        btn.innerHTML = `扫描完成 ${picks.length} 支 ✓`;
         setTimeout(() => { btn.innerHTML = '开启量化扫描'; btn.disabled = false; }, 3000);
-    } catch (e) {
-        btn.innerHTML = '网络错误，请重试';
-        btn.disabled  = false;
+    } catch(e) {
+        btn.innerHTML = '网络错误，请重试'; btn.disabled = false;
     }
 }
 
-// ===== 模式一点击卡片 → 自动切换到模式二并回测 =====
+// 单击卡片 → 自动回测（切到第2页）
 async function autoBacktest(code, name) {
-    switchMode(2);
-    selectedCode = code;
-    selectedName = name;
+    selectedCode = code; selectedName = name;
+    switchTabByName('backtest');
     document.getElementById('stockSearch').value = `${name}  (${code})`;
-    document.getElementById('selectedInfo').innerText = `已选中：${name} ${code}`;
+    document.getElementById('selectedInfo').innerText = `已选中：${name}`;
     document.getElementById('selectedInfo').classList.remove('hidden');
     await doBacktest(code, name);
 }
 
-// ===== 模式二：手动回测 =====
+// ─────────────────────────────────────────────
+// 深度回测
+// ─────────────────────────────────────────────
 async function doManualBacktest() {
+    // 如果变量为空，尝试从输入框文字里提取股票代码（格式：名称  (代码)）
     if (!selectedCode) {
-        alert('请先在搜索框中选择一支股票');
-        return;
+        const txt = (document.getElementById('stockSearch').value || '').trim();
+        const match = txt.match(/[\(（]([0-9]{6}\.[A-Z]{2})[\)）]/);
+        if (match) {
+            selectedCode = match[1];
+            selectedName = txt.replace(/\s*[\(（].*/, '').trim();
+        }
     }
+    if (!selectedCode) { alert('请先在搜索框输入股票名称或代码，从下拉列表中点击选择'); return; }
     await doBacktest(selectedCode, selectedName);
 }
 
-// ===== 核心回测逻辑 =====
 async function doBacktest(code, name) {
-    const principal  = parseFloat(document.getElementById('principalInput').value) || 2000;
-    const start      = document.getElementById('startYear').value;
-    const end        = document.getElementById('endYear').value;
-    const btn        = document.getElementById('manualBtn');
-    const origText   = btn ? btn.innerHTML : '';
-
-    if (btn) { btn.innerHTML = '正在获取历史数据…'; btn.disabled = true; }
-
-    document.getElementById('chartTitle').innerText = `${name} (${code}) 历史收益曲线`;
-    document.getElementById('chartSub').innerText   = '数据加载中，请稍候…';
-
+    const principal = parseFloat(document.getElementById('principalInput').value) || 2000;
+    const start     = document.getElementById('startYear').value;
+    const end       = document.getElementById('endYear').value;
+    const btn       = document.getElementById('manualBtn');
+    const origText  = btn ? btn.innerHTML : '';
+    if (btn) { btn.innerHTML = '加载中…'; btn.disabled = true; }
+    document.getElementById('bt2Title').innerText = `${name} (${code})`;
+    document.getElementById('bt2Sub').innerText = '数据加载中…';
     try {
         const res  = await fetch(`/api/backtest?code=${code}&start_year=${start}&end_year=${end}&principal=${principal}`);
         const data = await res.json();
-
         if (!data.labels || data.labels.length === 0) {
-            document.getElementById('chartSub').innerText = '该股票暂无历史数据';
+            document.getElementById('bt2Sub').innerText = '暂无历史数据';
             if (btn) { btn.innerHTML = origText; btn.disabled = false; }
             return;
         }
-
-        // 更新标题和副标题
-        document.getElementById('chartTitle').innerText =
-            `${data.name || name} (${code})`;
-        document.getElementById('chartSub').innerText =
-            `${start}年 → ${end}年  |  本金 ¥${principal.toLocaleString()}  →  终值 ¥${(data.final_value||0).toLocaleString('zh-CN',{minimumFractionDigits:2})}`;
-
-        // 更新收益徽章
-        const badge = document.getElementById('resultBadge');
-        badge.innerText = `累计收益 ${data.total_return}`;
-        badge.classList.remove('hidden');
-
-        // 渲染图表
-        renderChart(data.labels, data.history_performance, '');
-
-        if (btn) { btn.innerHTML = '回测完成 ✓'; setTimeout(() => { btn.innerHTML = origText; btn.disabled = false; }, 2000); }
+        document.getElementById('bt2Sub').innerText =
+            `${start}年→${end}年 | 本金¥${principal.toLocaleString()} → 终值¥${(data.final_value||0).toLocaleString('zh-CN',{minimumFractionDigits:2})}`;
+        const badge = document.getElementById('bt2Badge');
+        badge.innerText = `累计收益 ${data.total_return}`; badge.classList.remove('hidden');
+        renderChart('bt2', data.labels, [{
+            label:'账户净值', data: data.history_performance,
+            borderColor:'#00f2ff', borderWidth:2.5, tension:0.4, pointRadius:0, fill:true,
+            backgroundColor:(c) => {
+                const g = c.chart.ctx.createLinearGradient(0,0,0,280);
+                g.addColorStop(0,'rgba(0,242,255,0.25)'); g.addColorStop(1,'rgba(0,242,255,0)'); return g;
+            }
+        }]);
+        if (btn) { btn.innerHTML = '完成 ✓'; setTimeout(() => { btn.innerHTML = origText; btn.disabled = false; }, 2000); }
     } catch(e) {
-        console.error(e);
-        document.getElementById('chartSub').innerText = '请求失败，请检查网络';
+        document.getElementById('bt2Sub').innerText = '请求失败，请稍后再试';
         if (btn) { btn.innerHTML = origText; btn.disabled = false; }
     }
 }
 
-// ===== 搜索自动补全 =====
-const searchInput = document.getElementById('stockSearch');
-const suggBox     = document.getElementById('searchSuggestions');
-let   searchTimer = null;
+// ─────────────────────────────────────────────
+// 策略回测（修复：按钮元素作为参数传入，不再依赖 event.currentTarget）
+// ─────────────────────────────────────────────
+let stratCode = '', stratName = '';
 
-searchInput.addEventListener('input', () => {
-    clearTimeout(searchTimer);
-    const kw = searchInput.value.trim();
-    if (kw.length < 1) { suggBox.classList.add('hidden'); return; }
-    searchTimer = setTimeout(async () => {
-        try {
-            const res  = await fetch(`/api/search?keyword=${encodeURIComponent(kw)}`);
-            const data = await res.json();
-            if (!data.items || data.items.length === 0) { suggBox.classList.add('hidden'); return; }
-            suggBox.innerHTML = data.items.map(i =>
-                `<div class="px-4 py-2.5 text-sm flex justify-between items-center"
-                      onclick="pickStock('${i.code}','${i.name}')">
-                    <span class="font-medium">${i.name}</span>
-                    <span class="text-slate-500 text-xs">${i.code}</span>
-                 </div>`
-            ).join('');
-            suggBox.classList.remove('hidden');
-        } catch(e) { /* ignore */ }
-    }, 300);
+async function doStrategyBacktest(btn) {
+    if (!stratCode) {
+        const txt = (document.getElementById('stratSearch').value || '').trim();
+        const match = txt.match(/[\(（]([0-9]{6}\.[A-Z]{2})[\)）]/);
+        if (match) { stratCode = match[1]; stratName = txt.replace(/\s*[\(（].*/, '').trim(); }
+    }
+    if (!stratCode) { alert('请先在搜索框输入股票名称或代码，从下拉列表中点击选择'); return; }
+    const principal = parseFloat(document.getElementById('stratPrincipal').value) || 2000;
+    const start     = document.getElementById('stratStart').value;
+    const end       = document.getElementById('stratEnd').value;
+    const buyDv     = parseFloat(document.getElementById('buyDv').value) || 4;
+    const buyPe     = parseFloat(document.getElementById('buyPe').value) || 15;
+    const sellPe    = parseFloat(document.getElementById('sellPe').value) || 25;
+    const stopLoss  = parseFloat(document.getElementById('stopLoss').value) / 100 || 0.15;
+    const commission = 0.001;
+
+    btn.innerHTML = '<span class="loading-dots">数据加载中</span>'; btn.disabled = true;
+    document.getElementById('stratTitle').innerText = `${stratName} (${stratCode}) 策略净值`;
+    document.getElementById('stratPlaceholder').style.display = 'flex';
+    document.getElementById('stratPlaceholder').innerText = '数据加载中，请稍候…';
+    document.getElementById('stratWrap').style.display = 'none';
+    document.getElementById('statsRow').classList.add('hidden');
+    document.getElementById('tradeLogSection').classList.add('hidden');
+
+    try {
+        const url = `/api/strategy_backtest?code=${stratCode}&start_year=${start}&end_year=${end}&principal=${principal}&buy_dv_min=${buyDv}&buy_pe_max=${buyPe}&sell_pe_max=${sellPe}&stop_loss=${-stopLoss}&commission=${commission}`;
+        const res  = await fetch(url);
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const data = await res.json();
+
+        if (data.error) {
+            document.getElementById('stratPlaceholder').innerText = '错误：' + data.error;
+            btn.innerHTML = '运行策略回测'; btn.disabled = false; return;
+        }
+
+        // ── 前端跑策略逻辑 ──────────────────────────────
+        const rows = data.rows || [];
+        if (rows.length === 0) {
+            document.getElementById('stratPlaceholder').innerText = '无历史数据，请换一只股票或缩短时间范围';
+            btn.innerHTML = '运行策略回测'; btn.disabled = false; return;
+        }
+
+        let cash = principal, shares = 0, buyPrice = 0;
+        const labels = [], portfolio = [], tradeLog = [];
+
+        for (const r of rows) {
+            const close = r.close, pe = r.pe, dv = r.dv;
+            labels.push(r.date);
+
+            // 买入
+            if (shares === 0 && cash >= close * 100) {
+                if (dv !== null && dv >= buyDv && pe !== null && pe > 0 && pe <= buyPe) {
+                    const lots = Math.floor(cash / (close * 100));
+                    const cost = lots * 100 * close * (1 + commission);
+                    if (cost <= cash && lots > 0) {
+                        shares = lots * 100;
+                        buyPrice = close;
+                        cash -= cost;
+                        tradeLog.push({ date: r.date, action:'买入', price: close.toFixed(2),
+                            reason: `股息${dv?.toFixed(1)}% 市盈率${pe?.toFixed(1)}` });
+                    }
+                }
+            }
+            // 卖出
+            else if (shares > 0) {
+                let sell = false, reason = '';
+                if (pe !== null && pe > sellPe) {
+                    sell = true; reason = `市盈率偏高(${pe.toFixed(1)}>${sellPe})`;
+                } else if (dv !== null && dv < buyDv * 0.5) {
+                    sell = true; reason = `股息率骤降(${dv.toFixed(2)}%)`;
+                } else if (buyPrice > 0 && (close - buyPrice) / buyPrice < -stopLoss) {
+                    sell = true; reason = `触达止损(${(((close-buyPrice)/buyPrice)*100).toFixed(1)}%)`;
+                }
+                if (sell) {
+                    cash += shares * close * (1 - commission);
+                    tradeLog.push({ date: r.date, action:'卖出', price: close.toFixed(2), reason });
+                    shares = 0; buyPrice = 0;
+                }
+            }
+            portfolio.push(parseFloat((cash + shares * close).toFixed(2)));
+        }
+
+        // 沪深300 基准
+        let benchmarkVals = [];
+        const hs300rows = data.hs300 || [];
+        if (hs300rows.length >= 3) {
+            const base = hs300rows[0].close;
+            // 对齐到 labels
+            const hs300map = {};
+            for (const r of hs300rows) hs300map[r.date] = r.close;
+            benchmarkVals = labels.map(d => hs300map[d] ? parseFloat(((hs300map[d]/base)*principal).toFixed(2)) : null);
+        }
+
+        // 统计指标
+        const finalVal    = portfolio[portfolio.length - 1];
+        const totalReturn = ((finalVal / principal - 1) * 100).toFixed(2) + '%';
+        const nYears      = Math.max(parseInt(end) - parseInt(start), 1);
+        const annualRet   = (((finalVal / principal) ** (1 / nYears) - 1) * 100).toFixed(2) + '%';
+        let peak = portfolio[0], maxDD = 0;
+        for (const v of portfolio) {
+            if (v > peak) peak = v;
+            const dd = (v - peak) / peak;
+            if (dd < maxDD) maxDD = dd;
+        }
+        const monthlyR = portfolio.slice(1).map((v,i) => (v - portfolio[i]) / portfolio[i]);
+        const winRate  = monthlyR.length > 0
+            ? ((monthlyR.filter(r => r > 0).length / monthlyR.length) * 100).toFixed(1) + '%'
+            : '-';
+
+        // 更新 UI
+        document.getElementById('statReturn').innerText   = totalReturn;
+        document.getElementById('statAnnual').innerText   = annualRet;
+        document.getElementById('statDrawdown').innerText = (maxDD * 100).toFixed(2) + '%';
+        document.getElementById('statWin').innerText      = winRate;
+        document.getElementById('statsRow').classList.remove('hidden');
+
+        const datasets = [{
+            label:'策略', data: portfolio,
+            borderColor:'#00f2ff', borderWidth:2.5, tension:0.4, pointRadius:0, fill:true,
+            backgroundColor: c => {
+                const g = c.chart.ctx.createLinearGradient(0,0,0,260);
+                g.addColorStop(0,'rgba(0,242,255,0.2)'); g.addColorStop(1,'rgba(0,242,255,0)'); return g;
+            }
+        }];
+        if (benchmarkVals.filter(v => v !== null).length > 3) {
+            datasets.push({
+                label:'沪深300', data: benchmarkVals,
+                borderColor:'#64748b', borderWidth:1.5, tension:0.4,
+                pointRadius:0, fill:false, borderDash:[5,5]
+            });
+        }
+        renderChart('strat', labels, datasets);
+
+        document.getElementById('tradeLogSection').classList.remove('hidden');
+        document.getElementById('tradeCount').innerText = `共 ${tradeLog.length} 笔交易`;
+        document.getElementById('tradeLog').innerHTML = tradeLog.length === 0
+            ? '<div class="text-xs text-slate-500 text-center py-4">当前参数在此区间内未触发买入信号<br>可尝试降低股息率门槛或放宽市盈率限制</div>'
+            : tradeLog.map(t => `
+                <div class="flex justify-between items-center text-xs bg-white/5 rounded-xl px-3 py-2">
+                    <span class="text-slate-400 shrink-0">${t.date}</span>
+                    <span class="font-bold shrink-0 ${t.action==='买入'?'text-emerald-400':'text-red-400'}">${t.action}</span>
+                    <span class="text-slate-300 shrink-0">¥${t.price}</span>
+                    <span class="text-slate-500 truncate ml-2">${t.reason}</span>
+                </div>`).join('');
+
+        if (data.simulated) document.getElementById('simNote').classList.remove('hidden');
+
+        btn.innerHTML = '回测完成 ✓';
+        setTimeout(() => { btn.innerHTML = '运行策略回测'; btn.disabled = false; }, 2000);
+    } catch(e) {
+        document.getElementById('stratPlaceholder').innerText = '加载失败，请重试（' + e.message + '）';
+        document.getElementById('stratPlaceholder').style.display = 'flex';
+        document.getElementById('stratWrap').style.display = 'none';
+        btn.innerHTML = '运行策略回测'; btn.disabled = false;
+        console.error(e);
+    }
+}
+
+// ─────────────────────────────────────────────
+// 搜索自动补全（通用）
+// ─────────────────────────────────────────────
+function setupSearch(inputId, suggId, onPick) {
+    const input = document.getElementById(inputId);
+    const sugg  = document.getElementById(suggId);
+    let timer = null;
+    input.addEventListener('input', () => {
+        clearTimeout(timer);
+        const kw = input.value.trim();
+        if (kw.length < 1) { sugg.classList.add('hidden'); return; }
+        timer = setTimeout(async () => {
+            try {
+                const res  = await fetch(`/api/search?keyword=${encodeURIComponent(kw)}`);
+                const data = await res.json();
+                if (!data.items || data.items.length === 0) { sugg.classList.add('hidden'); return; }
+                sugg.innerHTML = data.items.map(i =>
+                    `<div class="sugg-item" onmousedown="event.preventDefault(); window['_pick_${inputId}']('${i.code}','${i.name.replace(/'/g,"\\'")}')">
+                        <span class="sugg-name">${i.name}</span>
+                        <span class="sugg-code">${i.code}</span>
+                    </div>`
+                ).join('');
+                window[`_pick_${inputId}`] = (code, name) => {
+                    onPick(code, name);
+                    input.value = `${name}  (${code})`;
+                    sugg.classList.add('hidden');
+                };
+                sugg.classList.remove('hidden');
+            } catch(e) {}
+        }, 250);
+    });
+    document.addEventListener('click', e => {
+        if (!sugg.contains(e.target) && e.target !== input) sugg.classList.add('hidden');
+    });
+}
+
+setupSearch('stockSearch', 'searchSuggestions', (code, name) => {
+    selectedCode = code; selectedName = name;
+    const si = document.getElementById('selectedInfo');
+    si.innerText = `已选中：${name}`; si.classList.remove('hidden');
+});
+setupSearch('stratSearch', 'stratSuggestions', (code, name) => {
+    stratCode = code; stratName = name;
+    const ss = document.getElementById('stratSelected');
+    ss.innerText = `已选中：${name}`; ss.classList.remove('hidden');
 });
 
-document.addEventListener('click', e => {
-    if (!suggBox.contains(e.target) && e.target !== searchInput)
-        suggBox.classList.add('hidden');
+// ─────────────────────────────────────────────
+// 关注池（localStorage）
+// ─────────────────────────────────────────────
+function getWatchlist() { return JSON.parse(localStorage.getItem('sq_watchlist') || '[]'); }
+function saveWatchlist(list) { localStorage.setItem('sq_watchlist', JSON.stringify(list)); updateWatchCount(); }
+function updateWatchCount() {
+    const n = getWatchlist().length;
+    const el = document.getElementById('watchCount');
+    if (el) el.innerText = n > 0 ? `共 ${n} 只股票在观察中` : '关注池为空';
+}
+
+function addToWatchlist(code, name, dv, pe, pb, price) {
+    const list = getWatchlist();
+    if (list.find(x => x.code === code)) { showToast(`${name} 已在关注池中`); return; }
+    list.push({ code, name, dv, pe, pb, price, addedAt: new Date().toLocaleDateString() });
+    saveWatchlist(list);
+    showToast(`★ ${name} 已加入关注池！可到「关注池预警」页查看`);
+}
+
+function clearWatchlist() {
+    if (!confirm('确定清空关注池？')) return;
+    saveWatchlist([]); renderWatchlist();
+}
+
+function showToast(msg) {
+    const t = document.createElement('div');
+    t.className = 'fixed bottom-6 left-1/2 -translate-x-1/2 bg-cyan-500 text-black font-bold text-sm px-5 py-3 rounded-2xl shadow-xl z-[9999] whitespace-nowrap';
+    t.innerText = msg;
+    document.body.appendChild(t);
+    setTimeout(() => t.remove(), 3000);
+}
+
+async function checkWatchlist() {
+    const list = getWatchlist();
+    if (list.length === 0) { renderWatchlist(); return; }
+    const codes = list.map(x => x.code).join(',');
+    try {
+        const res  = await fetch(`/api/watchlist/check?codes=${codes}`);
+        const data = await res.json();
+        renderWatchlistItems(data.items || [], list);
+    } catch(e) { renderWatchlist(); }
+}
+
+function renderWatchlist() {
+    const list = getWatchlist();
+    updateWatchCount();
+    if (list.length === 0) {
+        document.getElementById('watchlistResult').innerHTML = `
+            <div class="glass rounded-2xl p-10 text-center">
+                <div class="text-4xl mb-3">📭</div>
+                <div class="text-slate-300 font-bold mb-1">关注池为空</div>
+                <div class="text-slate-500 text-sm">请先去「一键选股」扫描结果，<br>长按股票卡片即可加入关注池</div>
+                <button onclick="switchTabByName('scan')" class="mt-4 px-6 py-2.5 bg-cyan-400 text-black font-black rounded-xl text-sm hover:bg-cyan-300 transition-all">去选股 →</button>
+            </div>`;
+        return;
+    }
+    renderWatchlistItems(list.map(x => ({ ...x, status:'normal', alerts:[] })), list);
+    checkWatchlist();
+}
+
+function renderWatchlistItems(items, origList) {
+    const colorMap = { normal:'text-emerald-400', warning:'text-yellow-400', danger:'text-red-400' };
+    const iconMap  = { normal:'✅ 正常', warning:'⚠️ 注意', danger:'🚨 预警' };
+    document.getElementById('watchlistResult').innerHTML = items.map((item, i) => {
+        const orig = origList[i] || {};
+        return `
+        <div class="glass rounded-2xl p-5 flex justify-between items-start gap-4">
+            <div class="flex-1 min-w-0">
+                <div class="flex items-center gap-2 mb-1 flex-wrap">
+                    <span class="text-sm font-bold">${item.name}</span>
+                    <span class="text-xs text-slate-500 font-mono">${item.code}</span>
+                    <span class="text-xs font-bold px-2 py-0.5 rounded-lg
+                        ${item.status==='normal'?'bg-emerald-500/20 text-emerald-400':item.status==='warning'?'bg-yellow-500/20 text-yellow-400':'bg-red-500/20 text-red-400'}">
+                        ${iconMap[item.status]||'✅ 正常'}
+                    </span>
+                </div>
+                ${item.alerts && item.alerts.length > 0
+                    ? `<div class="text-xs ${colorMap[item.status]} mt-1">${item.alerts.join(' · ')}</div>`
+                    : `<div class="text-xs text-slate-500">各项指标正常，可继续持仓</div>`}
+                <div class="text-xs text-slate-600 mt-1">加入于 ${orig.addedAt || '-'}</div>
+            </div>
+            <div class="text-right text-xs space-y-1 shrink-0">
+                <div class="text-slate-400">股价 <span class="text-white font-bold">¥${item.close ?? orig.price ?? '-'}</span></div>
+                <div class="text-slate-400">股息率 <span class="text-emerald-400 font-bold">${item.dv ?? orig.dv ?? '-'}%</span></div>
+                <div class="text-slate-400">市盈率 <span class="text-white">${item.pe ?? orig.pe ?? '-'}</span></div>
+                <button onclick="removeFromWatchlist('${item.code}')" class="text-red-400/40 hover:text-red-400 mt-1 transition-all text-[11px]">移除</button>
+            </div>
+        </div>`;
+    }).join('');
+}
+
+function removeFromWatchlist(code) {
+    saveWatchlist(getWatchlist().filter(x => x.code !== code));
+    renderWatchlist();
+}
+
+// 初始化
+updateWatchCount();
+
+// ─────────────────────────────────────────────
+// 组合管理
+// ─────────────────────────────────────────────
+buildYearOptions('pfStart', 1990, 2024, 2020);
+buildYearOptions('pfEnd',   1993, 2026, 2024);
+
+let pfStocks = [];  // [{code, name, weight}]
+
+// 设置组合搜索框
+setupSearch('pfSearch', 'pfSuggestions', (code, name) => {
+    addToPortfolio(code, name);
+    document.getElementById('pfSearch').value = '';
 });
 
-function pickStock(code, name) {
-    selectedCode = code;
-    selectedName = name;
-    searchInput.value = `${name}  (${code})`;
-    document.getElementById('selectedInfo').innerText = `已选中：${name} ${code}`;
-    document.getElementById('selectedInfo').classList.remove('hidden');
-    suggBox.classList.add('hidden');
+function addToPortfolio(code, name) {
+    if (pfStocks.find(s => s.code === code)) { showToast(`${name} 已在组合中`); return; }
+    // 平均分配剩余仓位
+    const n = pfStocks.length + 1;
+    pfStocks = pfStocks.map(s => ({ ...s, weight: Math.floor(100 / n) }));
+    pfStocks.push({ code, name, weight: 100 - pfStocks.reduce((a, s) => a + s.weight, 0) });
+    renderPfList();
+    showToast(`✓ ${name} 已加入组合`);
+}
+
+function importFromWatchlist() {
+    const wl = getWatchlist();
+    if (wl.length === 0) { showToast('关注池为空，请先添加股票'); return; }
+    let added = 0;
+    wl.forEach(s => {
+        if (!pfStocks.find(p => p.code === s.code)) {
+            pfStocks.push({ code: s.code, name: s.name, weight: 0 });
+            added++;
+        }
+    });
+    // 重新平均分配
+    const n = pfStocks.length;
+    pfStocks = pfStocks.map((s, i) => ({
+        ...s,
+        weight: i < n - 1 ? Math.floor(100 / n) : 100 - Math.floor(100 / n) * (n - 1)
+    }));
+    renderPfList();
+    showToast(`✓ 已导入 ${added} 只股票`);
+}
+
+function removeFromPortfolio(code) {
+    pfStocks = pfStocks.filter(s => s.code !== code);
+    // 重新均分
+    if (pfStocks.length > 0) {
+        const n = pfStocks.length;
+        pfStocks = pfStocks.map((s, i) => ({
+            ...s,
+            weight: i < n - 1 ? Math.floor(100 / n) : 100 - Math.floor(100 / n) * (n - 1)
+        }));
+    }
+    renderPfList();
+}
+
+function updateWeight(code, val) {
+    const s = pfStocks.find(s => s.code === code);
+    if (s) s.weight = parseInt(val) || 0;
+    updateWeightBar();
+}
+
+function updateWeightBar() {
+    const total = pfStocks.reduce((a, s) => a + s.weight, 0);
+    const el    = document.getElementById('pfWeightTotal');
+    const bar   = document.getElementById('pfWeightBar');
+    if (el) el.innerText = total + '%';
+    if (bar) {
+        bar.style.width = Math.min(total, 100) + '%';
+        bar.style.background = total === 100 ? '#34d399' : total > 100 ? '#f87171' : '#fbbf24';
+    }
+    if (el) el.className = 'text-sm font-black ' + (total === 100 ? 'text-emerald-400' : total > 100 ? 'text-red-400' : 'text-yellow-400');
+}
+
+function renderPfList() {
+    const el = document.getElementById('pfStockList');
+    if (!el) return;
+    if (pfStocks.length === 0) {
+        el.innerHTML = '<div class="text-xs text-slate-600 text-center py-3">还没有添加股票</div>';
+        updateWeightBar();
+        return;
+    }
+    const colors = ['#00f2ff','#34d399','#fbbf24','#a78bfa','#fb923c','#f87171','#60a5fa','#e879f9'];
+    el.innerHTML = pfStocks.map((s, i) => `
+        <div class="bg-white/5 rounded-2xl p-3">
+            <div class="flex justify-between items-center mb-2">
+                <div class="flex items-center gap-2">
+                    <span class="w-2.5 h-2.5 rounded-full shrink-0" style="background:${colors[i % colors.length]}"></span>
+                    <div>
+                        <div class="text-xs font-bold">${s.name}</div>
+                        <div class="text-[10px] text-slate-500 font-mono">${s.code}</div>
+                    </div>
+                </div>
+                <button onclick="removeFromPortfolio('${s.code}')" class="text-slate-600 hover:text-red-400 text-xs transition-all">✕</button>
+            </div>
+            <div class="flex items-center gap-2">
+                <input type="range" min="0" max="100" value="${s.weight}"
+                       oninput="updateWeight('${s.code}', this.value); this.nextElementSibling.innerText=this.value+'%'"
+                       class="flex-1 h-1 rounded-full accent-cyan-400" style="background:rgba(255,255,255,0.1)">
+                <span class="text-xs font-bold w-8 text-right" style="color:${colors[i % colors.length]}">${s.weight}%</span>
+            </div>
+        </div>
+    `).join('');
+    updateWeightBar();
+}
+
+async function runPortfolioBacktest(btn) {
+    if (pfStocks.length === 0) { showToast('请先添加股票'); return; }
+    const total = pfStocks.reduce((a, s) => a + s.weight, 0);
+    if (total <= 0) { showToast('仓位合计不能为0'); return; }
+
+    const codes     = pfStocks.map(s => s.code).join(',');
+    const weights   = pfStocks.map(s => (s.weight / total).toFixed(4)).join(',');
+    const start     = document.getElementById('pfStart').value;
+    const end       = document.getElementById('pfEnd').value;
+    const principal = parseFloat(document.getElementById('pfPrincipal').value) || 2000;
+
+    btn.innerHTML = '<span class="loading-dots">回测运行中</span>'; btn.disabled = true;
+    document.getElementById('pfChartPlaceholder').style.display = 'flex';
+    document.getElementById('pfChartPlaceholder').innerText = '数据加载中，请稍候…';
+    document.getElementById('pfChartWrap').style.display = 'none';
+    document.getElementById('pfStatsRow').classList.add('hidden');
+
+    try {
+        const url = `/api/portfolio/backtest?codes=${encodeURIComponent(codes)}&weights=${encodeURIComponent(weights)}&start_year=${start}&end_year=${end}&principal=${principal}`;
+        const res  = await fetch(url);
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const data = await res.json();
+        if (data.error) { document.getElementById('pfChartPlaceholder').innerText = '错误：' + data.error; btn.innerHTML='运行组合回测'; btn.disabled=false; return; }
+
+        // 统计指标
+        const s = data.stats;
+        document.getElementById('pfFinal').innerText    = '¥' + parseFloat(s.final_value).toLocaleString('zh-CN', {minimumFractionDigits:2});
+        document.getElementById('pfAnnual').innerText   = s.annual_return;
+        document.getElementById('pfDrawdown').innerText = s.max_drawdown;
+        document.getElementById('pfWin').innerText      = s.win_rate;
+        document.getElementById('pfStatsRow').classList.remove('hidden');
+
+        // 净值曲线
+        const datasets = [{
+            label:'我的组合', data: data.portfolio,
+            borderColor:'#00f2ff', borderWidth:2.5, tension:0.4, pointRadius:0, fill:true,
+            backgroundColor: c => {
+                const g = c.chart.ctx.createLinearGradient(0,0,0,220);
+                g.addColorStop(0,'rgba(0,242,255,0.2)'); g.addColorStop(1,'rgba(0,242,255,0)'); return g;
+            }
+        }];
+        if (data.benchmark && data.benchmark.length === data.labels.length && data.benchmark.length > 0) {
+            datasets.push({
+                label:'沪深300', data: data.benchmark,
+                borderColor:'#64748b', borderWidth:1.5, tension:0.4,
+                pointRadius:0, fill:false, borderDash:[5,5]
+            });
+        }
+        renderChart('pf', data.labels, datasets);
+
+        // 饼图
+        const colors = ['#00f2ff','#34d399','#fbbf24','#a78bfa','#fb923c','#f87171','#60a5fa','#e879f9'];
+        document.getElementById('pfPiePlaceholder').style.display = 'none';
+        document.getElementById('pfPieWrap').style.display = 'block';
+        const pieCtx = document.getElementById('pfPie').getContext('2d');
+        if (charts['pie']) charts['pie'].destroy();
+        charts['pie'] = new Chart(pieCtx, {
+            type: 'doughnut',
+            data: {
+                labels: (data.stocks || []).map(s => s.name),
+                datasets: [{ data: (data.stocks || []).map(s => s.weight), backgroundColor: colors, borderWidth: 0 }]
+            },
+            options: {
+                responsive: true, maintainAspectRatio: false,
+                plugins: { legend: { position:'bottom', labels:{ color:'#94a3b8', font:{size:10}, boxWidth:10 } } }
+            }
+        });
+
+        // 贡献表
+        const contribEl = document.getElementById('pfContribList');
+        contribEl.style.removeProperty('min-height');
+        contribEl.style.removeProperty('display');
+        contribEl.className = 'space-y-2';
+        contribEl.innerHTML = (data.stocks || []).map((s, i) => `
+            <div class="flex justify-between items-center bg-white/5 rounded-xl px-3 py-2 text-xs">
+                <div class="flex items-center gap-2">
+                    <span class="w-2 h-2 rounded-full" style="background:${colors[i%colors.length]}"></span>
+                    <span class="font-bold">${s.name}</span>
+                </div>
+                <span class="text-slate-400">${s.weight}%仓</span>
+                <span class="font-bold ${s.contrib_annual >= 0 ? 'text-emerald-400' : 'text-red-400'}">
+                    ${s.contrib_annual >= 0 ? '+' : ''}${s.contrib_annual}%/年
+                </span>
+            </div>`).join('');
+
+        btn.innerHTML = '回测完成 ✓';
+        setTimeout(() => { btn.innerHTML = '运行组合回测'; btn.disabled = false; }, 2500);
+    } catch(e) {
+        document.getElementById('pfChartPlaceholder').innerText = '加载失败：' + e.message;
+        document.getElementById('pfChartPlaceholder').style.display = 'flex';
+        document.getElementById('pfChartWrap').style.display = 'none';
+        btn.innerHTML = '运行组合回测'; btn.disabled = false;
+    }
 }
 </script>
 </body>
