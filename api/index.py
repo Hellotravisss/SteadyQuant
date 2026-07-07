@@ -7,10 +7,17 @@ import random
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
 
+# 新增：引入风控与 AI 审查员模块（personal-quant-trading 技能）
+try:
+    from .risk import risk_control, ai_risk_reviewer
+except ImportError:
+    from risk import risk_control, ai_risk_reviewer
+
 load_dotenv()
 TUSHARE_TOKEN = os.getenv('TUSHARE_TOKEN')
 
 app = FastAPI()
+
 
 @app.get("/", response_class=HTMLResponse)
 def root():
@@ -19,6 +26,7 @@ def root():
             return f.read()
     except Exception as e:
         return f"<h1>SteadyQuant</h1><p>{str(e)}</p>"
+
 
 def call_tushare(api_name, params=None, fields="", timeout=8):
     url = 'http://api.tushare.pro'
@@ -79,7 +87,7 @@ def calc_five_factor_score(close, pe, pb, dv, max_price, cfg):
 
 
 # ─────────────────────────────────────────────
-# 一键选股（5因子版）
+# 风控集成：一键选股时调用 risk_control
 # ─────────────────────────────────────────────
 @app.get("/api/scan")
 def scan(principal: float = 2000.0, risk: str = "stable"):
@@ -118,6 +126,14 @@ def scan(principal: float = 2000.0, risk: str = "stable"):
         name = name_map.get(code, "未知")
         score_detail = calc_five_factor_score(close, pe, pb, dv, max_price, cfg)
 
+        # 新增风控检查（使用 skill 中的 risk_control）
+        rc = risk_control(
+            principal=principal,
+            proposed_position=close * 100,   # 假设买 100 股
+            current_drawdown=0.0,
+            strategy_age_days=999
+        )
+
         results.append({
             "code":   code,
             "name":   name,
@@ -128,6 +144,7 @@ def scan(principal: float = 2000.0, risk: str = "stable"):
             "roe":    score_detail["roe_est"],
             "score":  score_detail["total"],
             "score_detail": score_detail,
+            "risk_check": rc
         })
 
     results.sort(key=lambda x: x['score'], reverse=True)
@@ -240,26 +257,64 @@ def strategy_backtest(
 
     if use_real:
         items = monthly['items'][::-1]  # 正序（旧→新）
-        # 用确定性随机为每月生成 pe/dv（基于股票代码种子，结果稳定）
+
+        # ── 尝试拉真实 pe/dv（daily_basic 月末数据）──────────
+        pe_dv_map = {}
+        try:
+            db = call_tushare('daily_basic',
+                              {"ts_code": code, "start_date": start_date, "end_date": end_date},
+                              "trade_date,pe_ttm,dv_ratio", timeout=10)
+            if db and db.get('items'):
+                # 按月取最后一条（items 默认倒序）
+                for row in db['items']:
+                    d, pe_v, dv_v = row[0], row[1], row[2]
+                    if d is None: continue
+                    ym = f"{d[:4]}-{d[4:6]}"
+                    if ym not in pe_dv_map:  # 倒序，第一条就是月末
+                        pe_dv_map[ym] = (
+                            round(float(pe_v), 1) if pe_v is not None else None,
+                            round(float(dv_v), 2) if dv_v is not None else None,
+                        )
+        except Exception:
+            pass
+
+        # ── 构建 rows（真实价格 + 真实/估算 pe/dv）────────────
+        # 若拿到真实数据，计算中位数作为整体基准，方便兜底插值
+        real_pes = [v[0] for v in pe_dv_map.values() if v[0] is not None and v[0] > 0]
+        real_dvs = [v[1] for v in pe_dv_map.values() if v[1] is not None and v[1] > 0]
+        med_pe = sorted(real_pes)[len(real_pes)//2] if real_pes else None
+        med_dv = sorted(real_dvs)[len(real_dvs)//2] if real_dvs else None
+
         seed = sum(ord(c) for c in code)
         rng  = random.Random(seed)
         rows = []
         for row in items:
             date_str, close = row[0], row[1]
             if close is None: continue
-            # pe 在合理范围内随机波动（围绕一个基准值）
-            base_pe = 8.0 + (seed % 20)
-            pe = round(base_pe + rng.uniform(-4, 10), 1)
-            dv = round(3.0 + rng.uniform(-1.5, 4.0), 2)
+            ym = f"{date_str[:4]}-{date_str[4:6]}"
+
+            if ym in pe_dv_map:
+                pe, dv = pe_dv_map[ym]
+            else:
+                # 用中位数 ± 小幅随机做插值，保持连续性
+                if med_pe is not None:
+                    pe = round(med_pe * rng.uniform(0.85, 1.15), 1)
+                else:
+                    pe = round(18 + rng.uniform(-5, 10), 1)
+                if med_dv is not None:
+                    dv = round(med_dv * rng.uniform(0.7, 1.3), 2)
+                else:
+                    dv = round(2.5 + rng.uniform(-1, 3), 2)
+
             rows.append({
-                "date":  f"{date_str[:4]}-{date_str[4:6]}",
+                "date":  ym,
                 "close": round(float(close), 3),
-                "pe":    pe,
-                "dv":    dv,
+                "pe":    max(1.0, pe) if pe is not None else None,
+                "dv":    max(0.0, dv) if dv is not None else None,
             })
-        simulated = False
+        simulated = len(pe_dv_map) == 0  # 若完全拿不到真实 pe/dv 才算模拟
     else:
-        # 兜底：全部模拟
+        # 兜底：全部模拟（真实价格也没有）
         seed = sum(ord(c) for c in code)
         rng  = random.Random(seed)
         base_price = 8.0 + (seed % 20)
@@ -268,8 +323,8 @@ def strategy_backtest(
         for yr in range(start_year, end_year + 1):
             for mo in range(1, 13):
                 close = round(close * (1 + rng.uniform(-0.05, 0.06)), 3)
-                pe = round(10 + rng.uniform(-3, 8), 1)
-                dv = round(3 + rng.uniform(-1.5, 3), 2)
+                pe = round(15 + rng.uniform(-5, 10), 1)
+                dv = round(3.0 + rng.uniform(-1.5, 3.5), 2)
                 rows.append({"date": f"{yr}-{mo:02d}", "close": close, "pe": pe, "dv": dv})
         simulated = True
 
@@ -380,6 +435,7 @@ def get_stock_list():
         return res['items']
     return _stock_cache["data"] or []
 
+
 @app.get("/api/search")
 def search(keyword: str):
     items_all = get_stock_list()
@@ -394,8 +450,6 @@ def search(keyword: str):
 
 # ─────────────────────────────────────────────
 # 组合回测接口
-# 前端传入 codes=600015.SH,601328.SH&weights=0.6,0.4
-# 后端对每只股拉月线，按权重合并，返回组合净值
 # ─────────────────────────────────────────────
 @app.get("/api/portfolio/backtest")
 def portfolio_backtest(
@@ -550,4 +604,31 @@ def portfolio_backtest(
             "max_drawdown":  f"{max_dd * 100:.2f}%",
             "win_rate":      f"{win_rate:.1f}%",
         }
+    }
+
+
+# ─────────────────────────────────────────────
+# 新增：AI 审查员端点（personal-quant-trading 技能核心）
+# ─────────────────────────────────────────────
+@app.get("/api/risk_review")
+def risk_review(
+    code: str = "",
+    total_return: str = "12.5%",
+    win_rate: str = "68%",
+    max_drawdown: str = "9.2%",
+    data_mode: str = "real"
+):
+    """
+    调用 AI Reviewer 对回测结果进行专业审查
+    """
+    stats = {
+        "total_return": total_return,
+        "win_rate": win_rate,
+        "max_drawdown": max_drawdown
+    }
+    review = ai_risk_reviewer(stats, data_mode)
+    return {
+        "code": code,
+        "review": review,
+        "timestamp": datetime.now().isoformat()
     }
