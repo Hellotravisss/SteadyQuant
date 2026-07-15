@@ -19,6 +19,26 @@
         input, select { background:#0f1a2e!important; border:1px solid rgba(255,255,255,0.12)!important; color:#e2e8f0!important; }
         .risk-pass { background:#052e16; color:#4ade80; }
         .risk-fail { background:#3b0d0d; color:#f87171; }
+        .main-btn { text-align:left; padding:20px 24px; border-radius:24px; border:1px solid rgba(255,255,255,.1);
+                    background:rgba(255,255,255,.03); transition:all .2s; }
+        .main-btn:hover { border-color:#22d3ee66; }
+        .main-btn.active { border-color:#22d3ee; background:rgba(34,211,238,.08); }
+        details.pro summary { cursor:pointer; font-size:12px; color:#64748b; list-style:none; }
+        details.pro summary:hover { color:#94a3b8; }
+        details.pro[open] summary { margin-bottom:12px; }
+        .ex-chip { color:#22d3ee; cursor:pointer; margin:0 4px; border-bottom:1px dashed #22d3ee55; }
+        .ex-chip:hover { color:#67e8f9; }
+        .code-link { color:#22d3ee; cursor:pointer; font-family:monospace; border-bottom:1px dashed #22d3ee66; }
+        .code-link:hover { background:#22d3ee22; }
+        .suggest-item { padding:10px 18px; font-size:13px; cursor:pointer; }
+        .suggest-item:hover { background:#1e293b; }
+        #toast { position:fixed; bottom:28px; left:50%; transform:translateX(-50%); z-index:50;
+                 background:#0f1a2e; border:1px solid #22d3ee66; color:#e2e8f0; padding:14px 22px;
+                 border-radius:16px; font-size:13px; display:none; box-shadow:0 8px 30px rgba(0,0,0,.5); }
+        .ai-md h3 { font-weight:800; font-size:15px; color:#c4b5fd; margin:18px 0 6px; }
+        .ai-md h2 { font-weight:800; font-size:17px; color:#a78bfa; margin:22px 0 8px; }
+        .ai-md li { margin-left:18px; list-style:disc; }
+        .ai-md strong { color:#fff; }
     </style>
 </head>
 <body class="p-6">
@@ -39,15 +59,95 @@
         </div>
     </div>
 
-    <!-- Tabs -->
-    <div class="flex border-b border-white/10 mb-8">
-        <button onclick="switchTab('scan',this)" class="tab-btn active">🔍 一键选股</button>
-        <button onclick="switchTab('riskreview',this)" class="tab-btn">🛡️ 风险审查</button>
-        <button onclick="switchTab('portfolio',this)" class="tab-btn">📊 组合回测</button>
+    <!-- 三个主入口 -->
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+        <button onclick="switchTab('check',this)" class="main-btn active">
+            <div class="text-2xl">🔍</div>
+            <div class="font-black text-lg mt-1">查一只股</div>
+            <div class="text-xs text-slate-400 mt-1">输入名字，给你一句大白话结论</div>
+        </button>
+        <button onclick="switchTab('ai',this)" class="main-btn">
+            <div class="text-2xl">💡</div>
+            <div class="font-black text-lg mt-1">帮我找股票</div>
+            <div class="text-xs text-slate-400 mt-1">说个方向，AI 挖别人没注意的机会</div>
+        </button>
+        <button onclick="switchTab('watch',this)" class="main-btn">
+            <div class="text-2xl">👁️</div>
+            <div class="font-black text-lg mt-1">我的关注 <span id="watchBadge"></span></div>
+            <div class="text-xs text-slate-400 mt-1">自动帮你盯着，该走的时候提醒你</div>
+        </button>
+    </div>
+    <div class="text-right mb-6">
+        <span class="text-[11px] text-slate-500 cursor-pointer hover:text-slate-300" onclick="document.getElementById('advTools').classList.toggle('hidden')">⚙️ 高级工具 ▾</span>
+        <div id="advTools" class="hidden inline-flex gap-4 ml-3">
+            <span class="text-[11px] text-slate-400 cursor-pointer hover:text-cyan-400 tab-btn" style="padding:0;border:none" onclick="switchTab('scan',this)">一键选股</span>
+            <span class="text-[11px] text-slate-400 cursor-pointer hover:text-cyan-400 tab-btn" style="padding:0;border:none" onclick="switchTab('riskreview',this)">风险审查</span>
+            <span class="text-[11px] text-slate-400 cursor-pointer hover:text-cyan-400 tab-btn" style="padding:0;border:none" onclick="switchTab('portfolio',this)">组合回测</span>
+        </div>
+    </div>
+
+    <!-- ===================== 卡点体检 ===================== -->
+    <div id="panel-check" class="panel active">
+        <div class="glass rounded-3xl p-8">
+            <div class="mb-2 text-2xl font-bold">查一只股：现在能不能碰？</div>
+            <div class="text-xs text-slate-400 mb-6">输入股票名字或代码，用真实行情帮你判断：价格贵不贵、有没有坑、什么时候该走</div>
+            <div class="flex gap-3 max-w-xl relative">
+                <div class="flex-1 relative">
+                    <input id="checkCode" class="w-full px-5 py-4 rounded-2xl" autocomplete="off"
+                           placeholder="输入股票名称或代码，如 茅台 / 002371"
+                           oninput="suggest(this.value)" onkeydown="if(event.key==='Enter'){hideSuggest();doCheck();}">
+                    <div id="suggestBox" class="absolute left-0 right-0 top-full mt-1 z-20 rounded-2xl overflow-hidden hidden" style="background:#0f1a2e;border:1px solid rgba(255,255,255,.15)"></div>
+                </div>
+                <button onclick="doCheck()" class="px-8 py-4 bg-cyan-400 text-black font-black rounded-2xl hover:bg-cyan-300">体检</button>
+            </div>
+            <div id="checkEmpty" class="mt-6 text-xs text-slate-500">
+                不知道查谁？试试：
+                <span class="ex-chip" onclick="goCheck('002371.SZ')">北方华创</span>
+                <span class="ex-chip" onclick="goCheck('600519.SH')">贵州茅台</span>
+                <span class="ex-chip" onclick="goCheck('688008.SH')">澜起科技</span>
+                ，或先去「🧠 AI 深度报告」让 AI 沿主题挖候选，报告里的代码可直接点进来体检。
+            </div>
+            <div id="checkResult" class="mt-8"></div>
+        </div>
+    </div>
+
+    <!-- ===================== AI 深度报告 ===================== -->
+    <div id="panel-ai" class="panel">
+        <div class="glass rounded-3xl p-8">
+            <div class="mb-2 text-2xl font-bold">帮我找股票</div>
+            <div class="text-xs text-slate-400 mb-6">告诉我你看好什么方向（比如"机器人"），AI 会顺着产业链往上游找那些还没被大家炒起来的公司，并把风险一起讲清楚</div>
+            <div class="flex gap-3 flex-wrap">
+                <input id="aiQuery" class="flex-1 min-w-[280px] px-5 py-4 rounded-2xl" placeholder="你看好什么方向？比如：机器人 / 芯片国产替代 / AI 算力" onkeydown="if(event.key==='Enter')doAnalyze()">
+                <select id="aiMarket" class="px-4 py-4 rounded-2xl">
+                    <option value="A股">A股</option>
+                    <option value="美股">美股</option>
+                    <option value="全球">全球</option>
+                </select>
+                <button id="aiBtn" onclick="doAnalyze()" class="px-8 py-4 bg-purple-400 text-black font-black rounded-2xl hover:bg-purple-300">生成报告</button>
+            </div>
+            <div class="text-xs text-slate-500 mt-3">
+                试试这些主题：
+                <span class="ex-chip" onclick="goAnalyze('AI 服务器液冷散热，A股沿这条链谁是被忽视的上游卡点？')">AI 液冷</span>
+                <span class="ex-chip" onclick="goAnalyze('人形机器人产业链，上游哪些环节是真瓶颈？')">人形机器人</span>
+                <span class="ex-chip" onclick="goAnalyze('HBM 存储产业链的国产替代，卡点在哪一层？')">HBM 国产替代</span>
+                <span class="ex-chip" onclick="goAnalyze('数据中心电力与电网设备，谁是产能售罄的卡点？')">数据中心电力</span>
+            </div>
+            <div class="text-[10px] text-slate-500 mt-2">⚠️ AI 无实时数据，报告中价格/市值类数字仅供参考需自行核实 · 仅供研究教育，非投资建议 · 报告中出现的 <span class="code-link">股票代码</span> 可直接点击跳转体检</div>
+            <div id="aiResult" class="ai-md mt-8 text-sm leading-relaxed text-slate-200"></div>
+        </div>
+    </div>
+
+    <!-- ===================== 观察池 ===================== -->
+    <div id="panel-watch" class="panel">
+        <div class="glass rounded-3xl p-8">
+            <div class="mb-2 text-2xl font-bold">我的关注</div>
+            <div class="text-xs text-slate-400 mb-6">你关注的股票都在这。每次打开自动查最新价格：跌破提醒线会亮红灯，提醒你该走了——不用天天盯盘</div>
+            <div id="watchResult"><div class="text-slate-500 text-sm">还没有关注任何股票。去「查一只股」查一只，然后点「帮我盯着」。</div></div>
+        </div>
     </div>
 
     <!-- ===================== 一键选股（最小可用版） ===================== -->
-    <div id="panel-scan" class="panel active">
+    <div id="panel-scan" class="panel">
         <div class="glass rounded-3xl p-8 max-w-5xl">
             <div class="grid grid-cols-1 lg:grid-cols-12 gap-8">
                 
@@ -127,9 +227,357 @@
 <script>
 function switchTab(tab, el) {
     document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
-    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.tab-btn, .main-btn').forEach(b => b.classList.remove('active'));
     document.getElementById('panel-' + tab).classList.add('active');
-    if (el) el.classList.add('active');
+    if (el) (el.closest('.main-btn') || el).classList.add('active');
+    if (tab === 'watch') refreshWatch();
+}
+
+/* ============ 通用：toast / 联想搜索 / 跨页跳转 ============ */
+function toast(msg) {
+    let t = document.getElementById('toast');
+    if (!t) { t = document.createElement('div'); t.id = 'toast'; document.body.appendChild(t); }
+    t.innerHTML = msg; t.style.display = 'block';
+    clearTimeout(t._timer); t._timer = setTimeout(() => t.style.display = 'none', 3500);
+}
+
+let _suggestTimer = null;
+function suggest(kw) {
+    clearTimeout(_suggestTimer);
+    const box = document.getElementById('suggestBox');
+    kw = kw.trim();
+    if (kw.length < 2 || /^\d{6}\.(SH|SZ)$/i.test(kw)) { box.classList.add('hidden'); return; }
+    _suggestTimer = setTimeout(async () => {
+        try {
+            const res = await fetch(`/api/search?keyword=${encodeURIComponent(kw)}`);
+            const d = await res.json();
+            if (!d.items || !d.items.length) { box.classList.add('hidden'); return; }
+            box.innerHTML = d.items.slice(0, 8).map(s =>
+                `<div class="suggest-item" onclick="pickSuggest('${s.code}','${s.name}')">
+                    <b>${s.name}</b> <span class="font-mono text-slate-400 text-xs ml-2">${s.code}</span></div>`).join('');
+            box.classList.remove('hidden');
+        } catch (e) { box.classList.add('hidden'); }
+    }, 300);
+}
+function pickSuggest(code, name) {
+    document.getElementById('checkCode').value = code;
+    hideSuggest(); doCheck();
+}
+function hideSuggest() { document.getElementById('suggestBox').classList.add('hidden'); }
+document.addEventListener('click', e => { if (!e.target.closest('#suggestBox') && e.target.id !== 'checkCode') hideSuggest(); });
+
+// fetch 包装：失败自动重试一次，报错说人话
+async function apiFetch(url) {
+    for (let i = 0; i < 2; i++) {
+        try {
+            const res = await fetch(url);
+            return await res.json();
+        } catch (e) {
+            if (i === 0) { await new Promise(r => setTimeout(r, 1500)); continue; }
+            throw new Error('连不上服务器。请刷新页面重试；如果一直失败，说明后端服务没在运行（本地要启动 uvicorn，线上要部署到 Vercel）');
+        }
+    }
+}
+
+function tabBtn(name) {
+    const alias = {'卡点体检':'查一只股', 'AI 深度报告':'帮我找股票', '观察池':'我的关注'};
+    name = alias[name] || name;
+    return [...document.querySelectorAll('.tab-btn, .main-btn')].find(b => b.textContent.includes(name));
+}
+// 从任何地方跳到体检页并直接体检
+function goCheck(code) {
+    switchTab('check', tabBtn('卡点体检'));
+    document.getElementById('checkCode').value = code;
+    doCheck();
+    window.scrollTo({top: 0, behavior: 'smooth'});
+}
+// 从任何地方跳到 AI 页并直接生成
+function goAnalyze(q) {
+    switchTab('ai', tabBtn('AI 深度报告'));
+    document.getElementById('aiQuery').value = q;
+    doAnalyze();
+}
+// 把文本里的 A 股代码变成可点击链接
+function linkifyCodes(html) {
+    return html.replace(/(\d{6})\.(SH|SZ)/g, '<span class="code-link" onclick="goCheck(\'$1.$2\')">$1.$2</span>');
+}
+
+/* ============ 卡点体检 ============ */
+let lastCheck = null;
+
+async function doCheck() {
+    let code = document.getElementById('checkCode').value.trim().toUpperCase();
+    if (!code) return;
+    document.getElementById('checkEmpty').style.display = 'none';
+    const box = document.getElementById('checkResult');
+    box.innerHTML = `<div class="py-12 text-center text-cyan-400">正在拉取真实价格并体检（约 5-10 秒）...</div>`;
+    try {
+        // 输入的不是标准代码 → 先按名称/前缀搜索，取第一个匹配
+        if (!/^\d{6}\.(SH|SZ)$/.test(code)) {
+            const sd = await apiFetch(`/api/search?keyword=${encodeURIComponent(code)}`);
+            if (sd.items && sd.items.length) {
+                code = sd.items[0].code;
+                document.getElementById('checkCode').value = code;
+            } else if (/^\d{6}$/.test(code)) {
+                // 裸 6 位数字：按代码段猜交易所
+                code = code + (code[0] === '6' ? '.SH' : '.SZ');
+                document.getElementById('checkCode').value = code;
+            } else {
+                box.innerHTML = `<div class="text-red-400 p-6">没找到「${code}」，换个名称或直接输代码试试</div>`;
+                return;
+            }
+        }
+        const d = await apiFetch(`/api/serenity/stock_check?code=${encodeURIComponent(code)}`);
+        if (d.error) { box.innerHTML = `<div class="text-red-400 p-6">${d.error}</div>`; return; }
+        lastCheck = d;
+        box.innerHTML = renderCheck(d);
+    } catch (e) {
+        box.innerHTML = `<div class="text-red-400 p-6">体检失败：${e.message}</div>`;
+    }
+}
+
+// 把量化结果翻译成大白话
+function plainTalk(d) {
+    const p = d.price, v = d.verdict;
+    const lines = [];
+    // 价格位置
+    if (p.range_pos_6mo_pct >= 85) lines.push(`现在 ¥${p.last}，几乎是半年来最贵的时候`);
+    else if (p.range_pos_6mo_pct <= 20) lines.push(`现在 ¥${p.last}，比半年最高点便宜了 ${Math.abs(p.pct_off_6mo_high).toFixed(0)}%，处在半年来的低位`);
+    else lines.push(`现在 ¥${p.last}，在半年价格区间的中间位置（比最高点低 ${Math.abs(p.pct_off_6mo_high).toFixed(0)}%）`);
+    // 近期走势
+    if (p.ret_1m_pct !== null) {
+        if (p.ret_1m_pct > 15) lines.push(`最近一个月大涨了 ${p.ret_1m_pct}%，现在追进去容易买在山顶`);
+        else if (p.ret_1m_pct < -10) lines.push(`最近一个月跌了 ${Math.abs(p.ret_1m_pct)}%，还在下跌路上，先别急着接`);
+        else lines.push(`最近一个月${p.ret_1m_pct >= 0 ? '涨' : '跌'}了 ${Math.abs(p.ret_1m_pct)}%，走势不算极端`);
+    }
+    // 估值
+    if (d.basic.pe) {
+        if (d.basic.pe > 60) lines.push(`市盈率 ${d.basic.pe} 倍，市场已经给了很高的期待，业绩稍不及预期就容易跌`);
+        else if (d.basic.pe < 20) lines.push(`市盈率 ${d.basic.pe} 倍，估值不算贵`);
+        else lines.push(`市盈率 ${d.basic.pe} 倍，估值中等`);
+    }
+    // 总结论（用二轴判定翻译）
+    let headline, emoji;
+    if (v.code === 'green') { emoji = '🟢'; headline = '可以研究，但别一把梭'; }
+    else if (v.code === 'red') { emoji = '🔴'; headline = '现在别碰'; }
+    else { emoji = '🟡'; headline = '先看看，别急'; }
+    return { emoji, headline, hint: v.hint, lines };
+}
+
+function renderCheck(d) {
+    const p = d.price, v = d.verdict;
+    const talk = plainTalk(d);
+    const vColor = {green:'bg-emerald-500/15 text-emerald-400 border-emerald-500/40',
+                    yellow:'bg-amber-500/15 text-amber-400 border-amber-500/40',
+                    red:'bg-rose-500/15 text-rose-400 border-rose-500/40'}[v.code];
+    const pos = Math.max(0, Math.min(100, p.range_pos_6mo_pct));
+
+    let flagsHtml = d.red_flags.length
+        ? d.red_flags.map(f => `<div class="text-xs ${f.level==='hard'?'text-rose-400':'text-amber-400'}">${f.level==='hard'?'⛔':'⚠️'} ${f.text}</div>`).join('')
+        : '<div class="text-xs text-emerald-400">✓ 未命中自动红旗（定性红旗仍需自查：增发稀释/单一客户/蹭热点）</div>';
+
+    const autoHtml = d.criteria_auto.map(c =>
+        `<div class="text-xs ${c.hit?'text-emerald-400':'text-slate-500'}">${c.text}</div>`).join('');
+    const manualHtml = d.criteria_manual.map(c =>
+        `<label class="flex items-start gap-2 text-xs text-slate-300 cursor-pointer">
+            <input type="checkbox" class="mt-0.5 crit-box" onchange="updateCritCount()"> ${c.text}</label>`).join('');
+
+    const flagPlain = d.red_flags.length
+        ? d.red_flags.map(f => `<div class="text-sm ${f.level==='hard'?'text-rose-300':'text-amber-300'} leading-relaxed">${f.level==='hard'?'⛔':'⚠️'} ${f.text}</div>`).join('')
+        : '';
+
+    return `
+    <div class="space-y-5">
+        <!-- 大白话结论卡 -->
+        <div class="border ${vColor} rounded-3xl p-7">
+            <div class="flex flex-wrap items-center gap-3 mb-1">
+                <span class="text-xl font-bold">${d.name}</span>
+                <span class="font-mono text-slate-400 text-sm">${d.code}</span>
+                <span class="text-xs text-slate-500">${d.industry||''}</span>
+            </div>
+            <div class="text-2xl font-black mt-3">${talk.emoji} ${talk.headline}</div>
+            <div class="text-xs text-slate-400 mt-1">${talk.hint}</div>
+            <div class="mt-4 space-y-1.5">
+                ${talk.lines.map(l=>`<div class="text-sm text-slate-200 leading-relaxed">· ${l}</div>`).join('')}
+            </div>
+            ${flagPlain ? `<div class="mt-4 pt-4 border-t border-white/10 space-y-1.5"><div class="text-xs font-bold text-slate-400 mb-1">要小心的地方</div>${flagPlain}</div>` : ''}
+            <div class="flex flex-wrap gap-3 mt-6">
+                <button onclick="addToWatch()" class="px-6 py-3 bg-cyan-400 text-black text-sm font-black rounded-2xl hover:bg-cyan-300">
+                    👁️ 帮我盯着这只（跌破 ¥${d.invalidation.stop_price} 提醒我离场）
+                </button>
+                <button onclick="goAnalyze('用大白话讲讲 ${d.name}（${d.code}，${d.industry||''}）：这家公司是干嘛的？在产业链里的位置重不重要？现在值不值得关注？最大的风险是什么？')"
+                        class="px-6 py-3 bg-purple-400/20 text-purple-300 border border-purple-400/40 text-sm font-bold rounded-2xl hover:bg-purple-400/30">
+                    💡 这公司是干嘛的？让 AI 讲讲
+                </button>
+            </div>
+        </div>
+
+        <!-- 专业细节（默认折叠） -->
+        <details class="pro border border-white/10 rounded-2xl p-5">
+        <summary>📊 查看专业细节（价格位置 / 判据打分 / 离场规则）▾</summary>
+        <div class="space-y-5">
+        <div class="border border-white/10 rounded-2xl p-5">
+            <div class="text-xs font-bold text-slate-400 mb-3">水位标尺（近 6 个月）· ${p.level} · ${p.stage}</div>
+            <div class="relative h-3 bg-gradient-to-r from-emerald-500/40 via-amber-500/40 to-rose-500/40 rounded-full">
+                <div class="absolute -top-1 w-1.5 h-5 bg-white rounded" style="left:${pos}%"></div>
+            </div>
+            <div class="flex justify-between text-[10px] text-slate-500 mt-2">
+                <span>低 ¥${p.low_6mo}</span>
+                <span class="text-white font-bold">现价 ¥${p.last}（区间 ${p.range_pos_6mo_pct}%）</span>
+                <span>高 ¥${p.high_6mo}</span>
+            </div>
+            <div class="flex gap-6 mt-3 text-xs text-slate-300">
+                <span>距高点 <b>${p.pct_off_6mo_high}%</b></span>
+                <span>1月 <b class="${p.ret_1m_pct>=0?'text-emerald-400':'text-rose-400'}">${p.ret_1m_pct}%</b></span>
+                <span>3月 <b class="${p.ret_3m_pct>=0?'text-emerald-400':'text-rose-400'}">${p.ret_3m_pct}%</b></span>
+                <span>SMA50 ${p.above_sma50?'上方 ✓':'下方 ✗'}</span>
+                ${d.basic.pe?`<span>PE ${d.basic.pe}</span>`:''}
+                ${d.basic.total_mv?`<span>市值 ${(d.basic.total_mv/10000).toFixed(0)} 亿</span>`:''}
+            </div>
+        </div>
+
+        <div class="grid md:grid-cols-2 gap-5">
+            <div class="border border-white/10 rounded-2xl p-5 space-y-2">
+                <div class="text-xs font-bold text-slate-400">红旗扫描（命中即降级）</div>
+                ${flagsHtml}
+            </div>
+            <div class="border border-white/10 rounded-2xl p-5 space-y-2">
+                <div class="text-xs font-bold text-slate-400">卡点判据 · 自动判定</div>
+                ${autoHtml}
+                <div class="text-xs font-bold text-slate-400 pt-2">定性判据（自己核实后勾选）<span id="critCount" class="text-cyan-400 ml-2"></span></div>
+                ${manualHtml}
+            </div>
+        </div>
+
+        <div class="border border-cyan-500/30 rounded-2xl p-5">
+            <div class="text-xs font-bold text-cyan-400 mb-2">离场规则（满足任一 = 承认判断错，无条件离场）</div>
+            ${d.invalidation.rules.map(r=>`<div class="text-xs text-slate-300">· ${r}</div>`).join('')}
+            <div class="text-[10px] text-slate-500 mt-2">${d.invalidation.note}</div>
+        </div>
+        </div>
+        </details>
+        <div class="text-[10px] text-slate-500">${d.disclaimer}</div>
+    </div>`;
+}
+
+function updateCritCount() {
+    const n = document.querySelectorAll('.crit-box:checked').length;
+    const total = document.querySelectorAll('.crit-box').length;
+    document.getElementById('critCount').textContent = `已命中 ${n}/${total}（命中越多信念越高）`;
+}
+
+/* ============ 观察池（localStorage） ============ */
+function getWatch() { return JSON.parse(localStorage.getItem('sq_watch') || '[]'); }
+function setWatch(w) { localStorage.setItem('sq_watch', JSON.stringify(w)); }
+
+function addToWatch() {
+    if (!lastCheck) return;
+    const critHit = document.querySelectorAll('.crit-box:checked').length;
+    const critTotal = document.querySelectorAll('.crit-box').length;
+    const w = getWatch().filter(x => x.code !== lastCheck.code);
+    w.push({ code: lastCheck.code, name: lastCheck.name,
+             entry: lastCheck.price.last, stop: lastCheck.invalidation.stop_price,
+             verdict: lastCheck.verdict.label, crit: `${critHit}/${critTotal}`,
+             added: new Date().toISOString().slice(0,10) });
+    setWatch(w);
+    updateWatchBadge();
+    toast(`✅ 已开始帮你盯 <b>${lastCheck.name}</b>：跌破 ¥${lastCheck.invalidation.stop_price} 会亮红灯提醒
+           <span class="code-link ml-2" onclick="switchTab('watch', tabBtn('观察池'))">去看看 →</span>`);
+}
+
+function updateWatchBadge() {
+    const n = getWatch().length;
+    const b = document.getElementById('watchBadge');
+    if (b) b.innerHTML = n ? `<span class="text-xs bg-cyan-400/20 text-cyan-400 px-2 py-0.5 rounded-full ml-1">${n}</span>` : '';
+}
+window.addEventListener('DOMContentLoaded', updateWatchBadge);
+
+function removeWatch(code) {
+    setWatch(getWatch().filter(x => x.code !== code));
+    updateWatchBadge();
+    refreshWatch();
+}
+
+async function refreshWatch() {
+    const w = getWatch();
+    const box = document.getElementById('watchResult');
+    if (!w.length) { box.innerHTML = '<div class="text-slate-500 text-sm">观察池为空。去「卡点体检」页体检一只股票后点「加入观察池」。</div>'; return; }
+    box.innerHTML = '<div class="py-8 text-center text-cyan-400">检查证伪条件中...</div>';
+    const items = w.map(x => `${x.code}:${x.entry}:${x.stop}`).join(',');
+    try {
+        const d = await apiFetch(`/api/serenity/watch_check?items=${encodeURIComponent(items)}`);
+        const byCode = {}; d.items.forEach(i => byCode[i.code] = i);
+        box.innerHTML = w.map(x => {
+            const r = byCode[x.code] || {};
+            if (r.error || r.last === undefined) return `<div class="border border-white/10 rounded-2xl p-4 mb-3 text-xs text-slate-500">${x.name} ${x.code} — 暂无数据</div>`;
+            const trig = r.invalidation_triggered;
+            return `
+            <div class="border ${trig?'border-rose-500/60':'border-white/10'} rounded-2xl p-5 mb-3 flex flex-wrap justify-between items-center gap-3">
+                <div>
+                    <div class="font-bold">${x.name} <span class="font-mono text-xs text-slate-400">${x.code}</span>
+                        ${trig?'<span class="ml-2 text-xs px-3 py-0.5 rounded-full bg-rose-500/20 text-rose-400 font-bold">⛔ 跌破提醒线，该考虑离场了</span>':'<span class="ml-2 text-xs px-3 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400">✓ 一切正常</span>'}
+                    </div>
+                    <div class="text-xs text-slate-400 mt-1">${x.added} 开始关注（当时 ¥${x.entry}）· 提醒线 ¥${x.stop}${x.verdict?' · 当时判定 '+x.verdict:''}</div>
+                </div>
+                <div class="text-right">
+                    <div class="text-lg font-bold">¥${r.last}</div>
+                    <div class="text-xs ${r.pnl_pct>=0?'text-emerald-400':'text-rose-400'}">${r.pnl_pct>=0?'+':''}${r.pnl_pct}%</div>
+                    <div class="flex gap-3 justify-end mt-1">
+                        <button onclick="goCheck('${x.code}')" class="text-[10px] text-cyan-400 hover:text-cyan-300">复检</button>
+                        <button onclick="removeWatch('${x.code}')" class="text-[10px] text-slate-500 hover:text-rose-400">移出</button>
+                    </div>
+                </div>
+            </div>`;
+        }).join('') + `<div class="text-[10px] text-slate-500 mt-2">检查时间 ${d.checked_at} · 数据存于本浏览器</div>`;
+    } catch (e) {
+        box.innerHTML = `<div class="text-red-400 p-6">检查失败：${e.message}</div>`;
+    }
+}
+
+/* ============ AI 深度报告（SSE 流式） ============ */
+async function doAnalyze() {
+    const q = document.getElementById('aiQuery').value.trim();
+    if (!q) return;
+    const market = document.getElementById('aiMarket').value;
+    const btn = document.getElementById('aiBtn');
+    const box = document.getElementById('aiResult');
+    btn.disabled = true; btn.textContent = '生成中...';
+    box.textContent = '';
+    let raw = '';
+    const esc = s => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    const mdRender = t => {
+        let h = esc(t)
+            .replace(/^### (.*)$/gm, '<h3>$1</h3>')
+            .replace(/^## (.*)$/gm, '<h2>$1</h2>')
+            .replace(/^# (.*)$/gm, '<h2>$1</h2>')
+            .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+            .replace(/^[-·•] (.*)$/gm, '<li>$1</li>')
+            .replace(/\n/g, '<br>');
+        return linkifyCodes(h);
+    };
+    try {
+        const res = await fetch(`/api/serenity/analyze?query=${encodeURIComponent(q)}&market=${encodeURIComponent(market)}`);
+        const reader = res.body.getReader();
+        const dec = new TextDecoder();
+        let buf = '';
+        while (true) {
+            const {done, value} = await reader.read();
+            if (done) break;
+            buf += dec.decode(value, {stream:true});
+            const parts = buf.split('\n\n');
+            buf = parts.pop();
+            for (const part of parts) {
+                if (!part.startsWith('data: ')) continue;
+                const msg = JSON.parse(part.slice(6));
+                if (msg.text) { raw += msg.text; box.innerHTML = mdRender(raw); }
+                if (msg.error) box.innerHTML += `<div class="text-red-400 mt-4">${msg.error}</div>`;
+            }
+        }
+    } catch (e) {
+        box.innerHTML = `<div class="text-red-400">生成失败：${e.message}（Vercel 免费版有函数时长限制，报告太长可能被截断）</div>`;
+    } finally {
+        btn.disabled = false; btn.textContent = '生成报告';
+    }
 }
 
 function updateHint() {
@@ -167,9 +615,11 @@ async function doScan() {
                 <div class="text-right">
                     <div class="text-xl font-bold">¥${stock.price}</div>
                     <div class="text-xs mt-1">评分 <span class="font-bold text-cyan-400">${stock.score}</span></div>
-                    
-                    <div class="mt-2 text-[10px] px-3 py-0.5 rounded-full inline-block ${riskClass}">
-                        ${rc.passed ? '风控通过' : '风控拦截'}
+                    <div class="mt-2 flex items-center gap-2 justify-end">
+                        <div class="text-[10px] px-3 py-0.5 rounded-full inline-block ${riskClass}">
+                            ${rc.passed ? '风控通过' : '风控拦截'}
+                        </div>
+                        <button onclick="goCheck('${stock.code}')" class="text-[10px] px-3 py-0.5 rounded-full bg-cyan-400/15 text-cyan-400 border border-cyan-400/40 hover:bg-cyan-400/30">🎯 卡点体检</button>
                     </div>
                 </div>
             </div>`;

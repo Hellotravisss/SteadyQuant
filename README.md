@@ -11,11 +11,24 @@
 
 **AI 角色边界**：研究员 / 程序员 / 审查员（绝不直接下单）
 
+## Serenity 供应链卡点模块（v5 新增）
+
+融合两个 GitHub skill 的方法论落地为可用功能：
+- [serenity-bottleneck-hunter](https://github.com/Mrjie7205/serenity-bottleneck-hunter)：水位标尺、二轴判定、证伪条件、价格纪律
+- [BestSerenitySkillFromAT](https://github.com/yux1azhengye/BestSerenitySkillFromAT)：九步工作流、9条卡点判据、红旗扫描、反确认偏误
+
+| 功能 | 说明 | 依赖 |
+|---|---|---|
+| 🎯 卡点体检 | 真实价格算水位/动量/stage + 红旗自动扫描 + 判据打分 + 二轴🟢🟡🔴判定 + 机器可读证伪条件 | 仅 Tushare |
+| 👁️ 观察池 | 入池记录入场价/止损线，每次打开自动检查证伪是否触发 | 仅 Tushare（数据存浏览器 localStorage） |
+| 🧠 AI 深度报告 | 主题→供应链逆向拆链→上游卡点候选→红队四问→证伪条件，流式输出 | 需 `ANTHROPIC_API_KEY` |
+
 ## 部署说明
 
 ### 1. 环境变量配置
 在 Vercel 项目设置中，请添加以下环境变量：
 - `TUSHARE_TOKEN`: 您的 Tushare API Token (当前已配置为 2100 积分账号)。
+- `ANTHROPIC_API_KEY`（可选）: 用于「AI 深度报告」功能；不配置时其余功能不受影响。
 
 ### 2. 部署步骤
 1. 将此文件夹内容推送到您的 GitHub 仓库。

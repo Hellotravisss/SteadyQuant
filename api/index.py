@@ -18,6 +18,13 @@ TUSHARE_TOKEN = os.getenv('TUSHARE_TOKEN')
 
 app = FastAPI()
 
+# Serenity 供应链卡点分析模块（融合两个 skill）
+try:
+    from .serenity import router as serenity_router
+except ImportError:
+    from serenity import router as serenity_router
+app.include_router(serenity_router)
+
 
 @app.get("/", response_class=HTMLResponse)
 def root():

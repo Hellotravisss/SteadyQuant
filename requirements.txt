@@ -3,3 +3,4 @@ requests
 python-dotenv
 uvicorn
 backtesting>=0.5.0
+anthropic
