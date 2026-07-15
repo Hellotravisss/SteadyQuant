@@ -550,6 +550,66 @@ def verify_tickers(codes: str):
     return {"items": results, "checked_at": datetime.now().strftime("%Y-%m-%d %H:%M")}
 
 
+@router.get("/api/serenity/history")
+def history(code: str, points: int = 60):
+    """返回近 N 个交易日收盘价（画走势图用）+ 市场识别结果"""
+    code = code.strip().upper()
+    if is_ashare(code):
+        end = datetime.now().strftime("%Y%m%d")
+        start = (datetime.now() - timedelta(days=int(points * 1.6) + 20)).strftime("%Y%m%d")
+        daily = _tushare("daily", {"ts_code": code, "start_date": start, "end_date": end},
+                         "trade_date,close", timeout=10)
+        if not daily or not daily.get("items"):
+            return {"error": "无数据"}
+        rows = sorted([(r[0], float(r[1])) for r in daily["items"] if r[1] is not None])
+        return {"code": code, "market": "A股", "cur": "¥",
+                "dates": [r[0] for r in rows[-points:]],
+                "closes": [round(r[1], 2) for r in rows[-points:]]}
+    else:
+        closes, meta = _yahoo_chart(code)
+        if not closes:
+            return {"error": "无数据"}
+        cur = (meta or {}).get("currency", "USD")
+        market = "加拿大" if code.endswith(".TO") or cur == "CAD" else "美股"
+        return {"code": code, "market": market, "cur": CUR_SYM.get(cur, "$"),
+                "dates": [], "closes": [round(c, 2) for c in closes[-points:]]}
+
+
+@router.get("/api/serenity/resolve")
+def resolve(q: str):
+    """输入名字/代码 → 识别市场并返回标准代码+名称（添加持仓时用）"""
+    q = q.strip().upper()
+    # 标准A股代码
+    if is_ashare(q):
+        info = _tushare("stock_basic", {"ts_code": q}, "ts_code,name")
+        if info and info.get("items"):
+            return {"ok": True, "code": q, "name": info["items"][0][1], "market": "A股", "cur": "¥"}
+        return {"ok": False}
+    # 纯6位数字 → 猜A股交易所
+    import re
+    if re.match(r"^\d{6}$", q):
+        for suf in (".SH", ".SZ") if q[0] == "6" else (".SZ", ".SH"):
+            info = _tushare("stock_basic", {"ts_code": q + suf}, "ts_code,name")
+            if info and info.get("items"):
+                return {"ok": True, "code": q + suf, "name": info["items"][0][1], "market": "A股", "cur": "¥"}
+    # 字母代码 → 美股/加股
+    if re.match(r"^[A-Z][A-Z0-9.\-]{0,9}$", q):
+        closes, meta = _yahoo_chart(q)
+        if closes and meta:
+            cur = meta.get("currency", "USD")
+            market = "加拿大" if q.endswith(".TO") or cur == "CAD" else "美股"
+            return {"ok": True, "code": q,
+                    "name": meta.get("shortName") or meta.get("longName") or q,
+                    "market": market, "cur": CUR_SYM.get(cur, "$")}
+    # 中文名 → A股搜索
+    res = _tushare("stock_basic", {"list_status": "L"}, "ts_code,name")
+    if res and res.get("items"):
+        for ts, name in res["items"]:
+            if q in name.upper() or name.upper() in q:
+                return {"ok": True, "code": ts, "name": name, "market": "A股", "cur": "¥"}
+    return {"ok": False}
+
+
 @router.get("/api/serenity/wish_check")
 def wish_check(items: str):
     """想买清单：items = code:target_price,... 检查是否到了想要的价"""

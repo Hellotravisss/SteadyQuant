@@ -53,10 +53,7 @@
                 <span class="text-xs text-slate-500 ml-2">省心量化</span>
             </div>
         </div>
-        <div class="text-right text-sm">
-            <div class="text-slate-400 text-xs">当前本金</div>
-            <div id="balance" class="font-bold text-cyan-400">¥2,000</div>
-        </div>
+        <div class="text-right text-sm" id="portfolioSummary"></div>
     </div>
 
     <!-- 三个主入口 -->
@@ -141,9 +138,41 @@
     <!-- ===================== 已经买了 ===================== -->
     <div id="panel-hold" class="panel">
         <div class="glass rounded-3xl p-8">
-            <div class="mb-2 text-2xl font-bold">📦 已经买了</div>
-            <div class="text-xs text-slate-400 mb-6">记下你的持仓，每次打开自动算盈亏、跟大盘比、盯止损——跌破提醒线亮红灯，提醒你该考虑卖了</div>
-            <div id="holdResult"><div class="text-slate-500 text-sm">还没记录持仓。去「买什么」查一只股，点「✅ 我已经买了」。</div></div>
+            <div class="flex flex-wrap justify-between items-start gap-4 mb-2">
+                <div class="text-2xl font-bold">📦 已经买了</div>
+                <button onclick="toggleAddForm()" class="px-5 py-2.5 bg-emerald-400 text-black text-sm font-black rounded-2xl hover:bg-emerald-300">➕ 添加持仓</button>
+            </div>
+            <div class="text-xs text-slate-400 mb-6">记下你的持仓，每次打开自动算盈亏、画走势、跟大盘比、盯止损——跌破提醒线亮红灯，提醒你该考虑卖了</div>
+
+            <!-- 添加持仓表单 -->
+            <div id="addForm" class="hidden border border-emerald-400/30 rounded-2xl p-6 mb-6">
+                <div class="text-sm font-bold mb-4">添加一笔持仓（A股/美股/加股自动识别）</div>
+                <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
+                    <div>
+                        <div class="text-[10px] text-slate-400 mb-1">股票名字或代码</div>
+                        <input id="afStock" class="w-full px-4 py-3 rounded-xl text-sm" placeholder="茅台 / NVDA / SHOP.TO">
+                    </div>
+                    <div>
+                        <div class="text-[10px] text-slate-400 mb-1">买入日期</div>
+                        <input id="afDate" type="date" class="w-full px-4 py-3 rounded-xl text-sm">
+                    </div>
+                    <div>
+                        <div class="text-[10px] text-slate-400 mb-1">买入价（每股）</div>
+                        <input id="afPrice" type="number" step="any" class="w-full px-4 py-3 rounded-xl text-sm" placeholder="如 1250.5">
+                    </div>
+                    <div>
+                        <div class="text-[10px] text-slate-400 mb-1">数量（股，可不填）</div>
+                        <input id="afQty" type="number" step="any" class="w-full px-4 py-3 rounded-xl text-sm" placeholder="如 100">
+                    </div>
+                </div>
+                <div class="flex gap-3 mt-4 items-center">
+                    <button onclick="submitAddForm()" id="afBtn" class="px-6 py-3 bg-emerald-400 text-black text-sm font-black rounded-xl hover:bg-emerald-300">确认添加</button>
+                    <button onclick="toggleAddForm()" class="px-4 py-3 text-slate-400 text-sm hover:text-white">取消</button>
+                    <span id="afMsg" class="text-xs text-slate-400"></span>
+                </div>
+            </div>
+
+            <div id="holdResult"><div class="text-slate-500 text-sm">还没记录持仓。点右上角「➕ 添加持仓」，或去「买什么」查一只股后点「✅ 我已经买了」。</div></div>
         </div>
     </div>
 
@@ -507,6 +536,16 @@ function updateBadges() {
 }
 window.addEventListener('DOMContentLoaded', updateBadges);
 
+function saveHolding({code, name, entry, qty, added, cur}) {
+    const stop = Math.round(entry * 0.85 * 100) / 100;
+    const w = getList('sq_hold').filter(x => x.code !== code);
+    w.push({ code, name, entry, qty: qty || null, stop, cur: cur || '¥',
+             added: added || new Date().toLocaleDateString('sv') });
+    setList('sq_hold', w);
+    updateBadges();
+    return stop;
+}
+
 function addToHold() {
     if (!lastCheck) return;
     const cur = lastCheck.price.cur;
@@ -514,15 +553,46 @@ function addToHold() {
     if (entryStr === null) return;
     const entry = parseFloat(entryStr);
     if (!entry || entry <= 0) { toast('⚠️ 价格没填对，没有记录'); return; }
-    const stop = Math.round(entry * 0.85 * 100) / 100;
-    const w = getList('sq_hold').filter(x => x.code !== lastCheck.code);
-    w.push({ code: lastCheck.code, name: lastCheck.name, entry, stop,
-             verdict: lastCheck.verdict.label,
-             added: new Date().toLocaleDateString('sv') });
-    setList('sq_hold', w);
-    updateBadges();
-    toast(`✅ 已记录持仓 <b>${lastCheck.name}</b>（成本 ${cur}${entry}）：跌破 ${cur}${stop} 会亮红灯提醒
+    const qtyStr = prompt(`买了多少股？（可不填，直接确定跳过）`, '');
+    const qty = qtyStr ? parseFloat(qtyStr) : null;
+    const stop = saveHolding({code: lastCheck.code, name: lastCheck.name, entry, qty, cur});
+    toast(`✅ 已记录持仓 <b>${lastCheck.name}</b>（成本 ${cur}${entry}${qty?' × '+qty+'股':''}）：跌破 ${cur}${stop} 会亮红灯提醒
            <span class="code-link ml-2" onclick="switchTab('hold', tabBtn('已经买了'))">去看看 →</span>`);
+}
+
+/* ── 添加持仓表单 ── */
+function toggleAddForm() {
+    const f = document.getElementById('addForm');
+    f.classList.toggle('hidden');
+    if (!f.classList.contains('hidden')) {
+        document.getElementById('afDate').value = new Date().toLocaleDateString('sv');
+        document.getElementById('afStock').focus();
+    }
+    document.getElementById('afMsg').textContent = '';
+}
+
+async function submitAddForm() {
+    const stock = document.getElementById('afStock').value.trim();
+    const date = document.getElementById('afDate').value;
+    const price = parseFloat(document.getElementById('afPrice').value);
+    const qty = parseFloat(document.getElementById('afQty').value) || null;
+    const msg = document.getElementById('afMsg');
+    const btn = document.getElementById('afBtn');
+    if (!stock) { msg.textContent = '⚠️ 请填股票名字或代码'; return; }
+    if (!price || price <= 0) { msg.textContent = '⚠️ 请填买入价'; return; }
+    btn.disabled = true; msg.textContent = '正在识别市场...';
+    try {
+        const r = await apiFetch(`/api/serenity/resolve?q=${encodeURIComponent(stock)}`);
+        if (!r.ok) { msg.textContent = `⚠️ 没认出「${stock}」。A股可输中文名，美股输代码（NVDA），加股加 .TO（SHOP.TO）`; btn.disabled = false; return; }
+        const stop = saveHolding({code: r.code, name: r.name, entry: price, qty, added: date, cur: r.cur});
+        msg.textContent = '';
+        toggleAddForm();
+        document.getElementById('afStock').value = ''; document.getElementById('afPrice').value = ''; document.getElementById('afQty').value = '';
+        toast(`✅ 已添加 <b>${r.name}</b>（${r.market}）成本 ${r.cur}${price}${qty?' × '+qty+'股':''}，止损提醒线 ${r.cur}${stop}`);
+        refreshHold();
+    } catch (e) {
+        msg.textContent = '添加失败：' + e.message;
+    } finally { btn.disabled = false; }
 }
 
 function addToWish() {
@@ -565,43 +635,101 @@ function wishToHold(code) {
     toast(`✅ ${item.name} 已从「想买」转入「已经买了」`);
 }
 
+const fmtMoney = n => n >= 10000 ? (n/10000).toFixed(2) + '万' : n.toFixed(0);
+
 async function refreshHold() {
     const w = getList('sq_hold');
     const box = document.getElementById('holdResult');
-    if (!w.length) { box.innerHTML = '<div class="text-slate-500 text-sm">还没记录持仓。去「买什么」查一只股，点「✅ 我已经买了」。</div>'; return; }
+    if (!w.length) {
+        box.innerHTML = '<div class="text-slate-500 text-sm">还没记录持仓。点右上角「➕ 添加持仓」，或去「买什么」查一只股后点「✅ 我已经买了」。</div>';
+        document.getElementById('portfolioSummary').innerHTML = '';
+        return;
+    }
     box.innerHTML = '<div class="py-8 text-center text-emerald-400">正在查最新价格、算盈亏...</div>';
     const items = w.map(x => `${x.code}:${x.entry}:${x.stop}:${x.added||''}`).join(',');
     try {
         const d = await apiFetch(`/api/serenity/watch_check?items=${encodeURIComponent(items)}`);
         const byCode = {}; d.items.forEach(i => byCode[i.code] = i);
+
+        // 汇总（分币种：不同货币不能直接相加）
+        const totals = {};
+        w.forEach(x => {
+            const r = byCode[x.code];
+            if (!r || r.last === undefined || !x.qty) return;
+            const c = r.cur || '¥';
+            totals[c] = totals[c] || {value: 0, cost: 0};
+            totals[c].value += r.last * x.qty;
+            totals[c].cost += x.entry * x.qty;
+        });
+        const sumHtml = Object.entries(totals).map(([c, t]) => {
+            const pnl = t.value - t.cost;
+            const pct = t.cost ? (pnl / t.cost * 100).toFixed(1) : 0;
+            return `<div class="text-xs"><span class="text-slate-400">市值</span> <b>${c}${fmtMoney(t.value)}</b>
+                    <span class="${pnl>=0?'text-emerald-400':'text-rose-400'} font-bold ml-1">${pnl>=0?'+':'-'}${fmtMoney(Math.abs(pnl))}（${pnl>=0?'+':''}${pct}%）</span></div>`;
+        }).join('');
+        document.getElementById('portfolioSummary').innerHTML = sumHtml
+            ? `<div class="text-slate-400 text-xs mb-0.5">我的持仓</div>${sumHtml}` : '';
+
         box.innerHTML = w.map(x => {
             const r = byCode[x.code] || {};
             if (r.error || r.last === undefined) return `<div class="border border-white/10 rounded-2xl p-4 mb-3 text-xs text-slate-500">${x.name} ${x.code} — 暂无数据</div>`;
             const trig = r.invalidation_triggered;
             const c = r.cur || '¥';
+            const pnlAmt = x.qty ? (r.last - x.entry) * x.qty : null;
             return `
-            <div class="border ${trig?'border-rose-500/60':'border-white/10'} rounded-2xl p-5 mb-3 flex flex-wrap justify-between items-center gap-3">
-                <div>
-                    <div class="font-bold">${x.name} <span class="font-mono text-xs text-slate-400">${x.code}</span>
-                        ${trig?'<span class="ml-2 text-xs px-3 py-0.5 rounded-full bg-rose-500/20 text-rose-400 font-bold">⛔ 跌破止损线，该考虑卖了</span>':'<span class="ml-2 text-xs px-3 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400">✓ 一切正常</span>'}
+            <div class="border ${trig?'border-rose-500/60':'border-white/10'} rounded-2xl p-5 mb-3">
+                <div class="flex flex-wrap justify-between items-center gap-3">
+                    <div class="min-w-[200px]">
+                        <div class="font-bold">${x.name} <span class="font-mono text-xs text-slate-400">${x.code}</span>
+                            ${trig?'<span class="ml-2 text-xs px-3 py-0.5 rounded-full bg-rose-500/20 text-rose-400 font-bold">⛔ 跌破止损线，该考虑卖了</span>':'<span class="ml-2 text-xs px-3 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400">✓ 一切正常</span>'}
+                        </div>
+                        <div class="text-xs text-slate-400 mt-1">${x.added} 买入 · 成本 ${c}${x.entry}${x.qty?' × '+x.qty+'股 = '+c+fmtMoney(x.entry*x.qty):''} · 止损线 ${c}${x.stop}</div>
+                        <div class="text-xs text-slate-500 mt-0.5">现状：${r.level} · ${r.stage}</div>
                     </div>
-                    <div class="text-xs text-slate-400 mt-1">${x.added} 买入，成本 ${c}${x.entry} · 止损线 ${c}${x.stop}</div>
-                </div>
-                <div class="text-right">
-                    <div class="text-lg font-bold">${c}${r.last}</div>
-                    <div class="text-sm font-bold ${r.pnl_pct>=0?'text-emerald-400':'text-rose-400'}">${r.pnl_pct>=0?'赚':'亏'} ${Math.abs(r.pnl_pct)}%</div>
-                    ${r.alpha_pct!==null&&r.alpha_pct!==undefined?`<div class="text-[10px] ${r.alpha_pct>=0?'text-emerald-400/80':'text-rose-400/80'}" title="同期${r.bench_name} ${r.hs300_pnl_pct}%">${r.alpha_pct>=0?'跑赢'+(r.bench_name||'大盘')+' '+r.alpha_pct:'跑输'+(r.bench_name||'大盘')+' '+Math.abs(r.alpha_pct)}%</div>`:''}
-                    <div class="flex gap-3 justify-end mt-1">
-                        <button onclick="goCheck('${x.code}')" class="text-[10px] text-cyan-400 hover:text-cyan-300">复检</button>
-                        <button onclick="removeFrom('sq_hold','${x.code}',refreshHold)" class="text-[10px] text-slate-500 hover:text-rose-400">已卖出/移除</button>
+                    <div class="flex-1 min-w-[160px] max-w-[280px] h-14"><canvas id="spark-${x.code.replace(/\./g,'_')}"></canvas></div>
+                    <div class="text-right">
+                        <div class="text-lg font-bold">${c}${r.last}</div>
+                        <div class="text-sm font-bold ${r.pnl_pct>=0?'text-emerald-400':'text-rose-400'}">${r.pnl_pct>=0?'赚':'亏'} ${Math.abs(r.pnl_pct)}%${pnlAmt!==null?`（${c}${fmtMoney(Math.abs(pnlAmt))}）`:''}</div>
+                        ${r.alpha_pct!==null&&r.alpha_pct!==undefined?`<div class="text-[10px] ${r.alpha_pct>=0?'text-emerald-400/80':'text-rose-400/80'}" title="同期${r.bench_name} ${r.hs300_pnl_pct}%">${r.alpha_pct>=0?'跑赢'+(r.bench_name||'大盘')+' '+r.alpha_pct:'跑输'+(r.bench_name||'大盘')+' '+Math.abs(r.alpha_pct)}%</div>`:''}
+                        <div class="flex gap-3 justify-end mt-1">
+                            <button onclick="goCheck('${x.code}')" class="text-[10px] text-cyan-400 hover:text-cyan-300">复检</button>
+                            <button onclick="removeFrom('sq_hold','${x.code}',refreshHold)" class="text-[10px] text-slate-500 hover:text-rose-400">已卖出/移除</button>
+                        </div>
                     </div>
                 </div>
             </div>`;
-        }).join('') + `<div class="text-[10px] text-slate-500 mt-2">检查时间 ${d.checked_at} · 数据存于本浏览器 · 「跑赢/跑输」= 和你所在市场的大盘指数比</div>`;
+        }).join('') + `<div class="text-[10px] text-slate-500 mt-2">检查时间 ${d.checked_at} · 走势为近 60 个交易日 · 数据存于本浏览器 · 「跑赢/跑输」= 和你所在市场的大盘指数比</div>`;
+
+        // 逐只画走势小图（横线 = 你的成本价）
+        w.forEach(async x => {
+            const r = byCode[x.code];
+            if (!r || r.last === undefined) return;
+            try {
+                const h = await apiFetch(`/api/serenity/history?code=${encodeURIComponent(x.code)}&points=60`);
+                if (h.error || !h.closes) return;
+                const el = document.getElementById(`spark-${x.code.replace(/\./g,'_')}`);
+                if (!el) return;
+                const up = h.closes[h.closes.length-1] >= x.entry;
+                new Chart(el, {
+                    type: 'line',
+                    data: { labels: h.closes.map((_,i)=>i), datasets: [
+                        { data: h.closes, borderColor: up?'#34d399':'#fb7185', borderWidth: 1.5,
+                          pointRadius: 0, tension: .3, fill: false },
+                        { data: h.closes.map(()=>x.entry), borderColor: 'rgba(148,163,184,.5)',
+                          borderWidth: 1, borderDash: [4,4], pointRadius: 0 },
+                    ]},
+                    options: { responsive: true, maintainAspectRatio: false, animation: false,
+                        plugins: { legend: {display:false}, tooltip: {enabled:false} },
+                        scales: { x: {display:false}, y: {display:false} } }
+                });
+            } catch(e) {}
+        });
     } catch (e) {
         box.innerHTML = `<div class="text-red-400 p-6">检查失败：${e.message}</div>`;
     }
 }
+// 打开网站就把持仓汇总带出来（有持仓才查）
+window.addEventListener('DOMContentLoaded', () => { if (getList('sq_hold').length) refreshHold(); });
 
 async function refreshWish() {
     const w = getList('sq_wish');
