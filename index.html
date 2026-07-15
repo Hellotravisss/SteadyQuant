@@ -639,6 +639,39 @@ async function refreshWish() {
     }
 }
 
+/* ============ 报告代码真实行情对账（skill：禁止凭记忆写代码） ============ */
+async function verifyTickers(reportText) {
+    const holder = document.getElementById('aiVerify');
+    if (!holder) return;
+    const codes = [...new Set([
+        ...(reportText.match(/\d{6}\.(SH|SZ)/g) || []),
+        ...(reportText.match(/\b[A-Z]{1,5}\.TO\b/g) || []),
+    ])].slice(0, 12);
+    if (!codes.length) return;
+    holder.innerHTML = '<div class="mt-8 text-xs text-slate-500">正在用真实行情核对报告里的代码...</div>';
+    try {
+        const d = await apiFetch(`/api/serenity/verify_tickers?codes=${encodeURIComponent(codes.join(','))}`);
+        const bad = d.items.filter(i => !i.ok);
+        holder.innerHTML = `
+        <div class="mt-8 border ${bad.length?'border-rose-500/40':'border-emerald-500/30'} rounded-2xl p-5">
+            <div class="text-sm font-bold ${bad.length?'text-rose-400':'text-emerald-400'} mb-1">
+                ${bad.length ? `⚠️ 代码核验：${bad.length} 个代码查无此股（AI 可能写错，别直接用！）` : '✅ 代码核验：报告里的代码都真实存在'}
+            </div>
+            <div class="text-[10px] text-slate-500 mb-3">下面是每个代码的真实名称和最新价——以这个为准，AI 正文里的价格可能过期</div>
+            <div class="grid md:grid-cols-2 gap-2">
+            ${d.items.map(i => i.ok
+                ? `<div class="text-xs text-slate-300 flex justify-between gap-3 bg-white/5 rounded-xl px-3 py-2">
+                     <span><span class="code-link" onclick="goCheck('${i.code}')">${i.code}</span> ${i.name}</span>
+                     <b>${i.cur}${i.last??'-'}</b></div>`
+                : `<div class="text-xs text-rose-300 bg-rose-500/10 rounded-xl px-3 py-2">✗ ${i.code} 查无此股，代码可能是 AI 编错的</div>`
+            ).join('')}
+            </div>
+        </div>`;
+    } catch (e) {
+        holder.innerHTML = '';
+    }
+}
+
 /* ============ 供应链图谱渲染 ============ */
 function renderChain(reportText) {
     const m = reportText.match(/```chain\s*([\s\S]*?)(```|$)/);
@@ -715,7 +748,7 @@ async function doAnalyze() {
     const btn = document.getElementById('aiBtn');
     const box = document.getElementById('aiResult');
     btn.disabled = true; btn.textContent = '生成中...';
-    box.innerHTML = '<div id="aiMain"></div><div id="aiChain"></div><div id="aiReview"></div>';
+    box.innerHTML = '<div id="aiMain"></div><div id="aiChain"></div><div id="aiVerify"></div><div id="aiReview"></div>';
     const main = document.getElementById('aiMain'), reviewBox = document.getElementById('aiReview');
     let raw = '', reviewRaw = '', reviewing = false;
     const esc = s => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
@@ -748,7 +781,8 @@ async function doAnalyze() {
                 if (msg.text) { raw += msg.text; main.innerHTML = mdRender(raw); }
                 if (msg.phase === 'review') {
                     reviewing = true;
-                    renderChain(raw);  // 主报告结束，尝试画供应链图谱
+                    renderChain(raw);   // 主报告结束，画供应链图谱
+                    verifyTickers(raw); // 并对 AI 提到的代码做真实行情对账
                     reviewBox.innerHTML = `<div class="mt-8 border border-amber-500/30 rounded-2xl p-5">
                         <div class="text-sm font-bold text-amber-400 mb-2">🔍 独立复核（另一个 AI 专门挑刺，帮你防止被忽悠）</div>
                         <div id="aiReviewText" class="text-sm text-slate-300 leading-relaxed"></div></div>`;

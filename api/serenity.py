@@ -496,9 +496,14 @@ def _stream_deepseek(system: str, user: str, max_tokens: int = 8000):
             continue
 
 
-def _stream_anthropic(system: str, user: str, max_tokens: int = 8000, effort: str = "medium"):
+def _stream_anthropic(system: str, user: str, max_tokens: int = 8000, effort: str = "medium",
+                      web_search: bool = False):
     import anthropic
     client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+    kwargs = {}
+    if web_search:
+        # skill 取数纪律：时效数据必须当场搜证。给 AI 联网能力核实公司状态/近况
+        kwargs["tools"] = [{"type": "web_search_20260209", "name": "web_search", "max_uses": 5}]
     with client.messages.stream(
         model="claude-opus-4-8",
         max_tokens=max_tokens,
@@ -506,16 +511,43 @@ def _stream_anthropic(system: str, user: str, max_tokens: int = 8000, effort: st
         output_config={"effort": effort},
         system=[{"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}],
         messages=[{"role": "user", "content": user}],
+        **kwargs,
     ) as stream:
         for text in stream.text_stream:
             yield text
 
 
-def _llm_stream(system, user, max_tokens=8000, effort="medium"):
-    """优先 DeepSeek（用户自备 key，便宜稳定），其次 Anthropic"""
+def _llm_stream(system, user, max_tokens=8000, effort="medium", web_search=False):
+    """优先 DeepSeek（用户自备 key，便宜稳定），其次 Anthropic（支持联网搜索）"""
     if DEEPSEEK_API_KEY:
         return _stream_deepseek(system, user, max_tokens)
-    return _stream_anthropic(system, user, max_tokens, effort)
+    return _stream_anthropic(system, user, max_tokens, effort, web_search=web_search)
+
+
+@router.get("/api/serenity/verify_tickers")
+def verify_tickers(codes: str):
+    """AI 报告代码对账（skill A++ 纪律：禁止凭记忆写 ticker，必须反查验证）
+    codes: 逗号分隔，最多 12 个。返回每个代码的真实名称+现价，查不到 = AI 可能编错"""
+    results = []
+    for code in list(dict.fromkeys(c.strip().upper() for c in codes.split(",") if c.strip()))[:12]:
+        if is_ashare(code):
+            info = _tushare("stock_basic", {"ts_code": code}, "ts_code,name")
+            if info and info.get("items"):
+                pa = price_analysis(code)
+                results.append({"code": code, "ok": True, "name": info["items"][0][1],
+                                "last": pa["last"] if pa else None, "cur": "¥"})
+            else:
+                results.append({"code": code, "ok": False})
+        else:
+            closes, meta = _yahoo_chart(code)
+            if closes and meta:
+                results.append({"code": code, "ok": True,
+                                "name": meta.get("shortName") or meta.get("longName") or code,
+                                "last": round(closes[-1], 2),
+                                "cur": CUR_SYM.get(meta.get("currency", "USD"), "$")})
+            else:
+                results.append({"code": code, "ok": False})
+    return {"items": results, "checked_at": datetime.now().strftime("%Y-%m-%d %H:%M")}
 
 
 @router.get("/api/serenity/wish_check")
@@ -554,7 +586,8 @@ def serenity_analyze(query: str, market: str = "A股"):
     def gen():
         try:
             report = []
-            for text in _llm_stream(SERENITY_SYSTEM, f"市场范围：{market}。请分析：{query}"):
+            for text in _llm_stream(SERENITY_SYSTEM, f"市场范围：{market}。请分析：{query}",
+                                    web_search=True):
                 report.append(text)
                 yield "data: " + json.dumps({"text": text}) + "\n\n"
 
