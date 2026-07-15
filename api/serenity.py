@@ -27,6 +27,31 @@ router = APIRouter()
 
 TUSHARE_TOKEN = os.getenv("TUSHARE_TOKEN")
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
+DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
+
+CUR_SYM = {"CNY": "¥", "USD": "$", "CAD": "C$"}
+
+
+def is_ashare(code: str) -> bool:
+    import re
+    return bool(re.match(r"^\d{6}\.(SH|SZ)$", code))
+
+
+# ─────────────────────────────────────────────
+# 海外行情（美股/加股）：Yahoo chart API，免 key
+# ─────────────────────────────────────────────
+def _yahoo_chart(symbol: str):
+    try:
+        res = requests.get(
+            f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}",
+            params={"range": "1y", "interval": "1d"},
+            headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
+        r = res.json()["chart"]["result"][0]
+        closes = [c for c in r["indicators"]["quote"][0]["close"] if c is not None]
+        meta = r.get("meta", {})
+        return closes, meta
+    except Exception:
+        return None, None
 
 
 def _tushare(api_name, params=None, fields="", timeout=8):
@@ -48,16 +73,25 @@ def _tushare(api_name, params=None, fields="", timeout=8):
 # 水位标尺（skill 硬规则：所有数字来自真实价格，禁止猜测）
 # ─────────────────────────────────────────────
 def price_analysis(code: str):
-    """拉近 ~6 个月日线，输出 skill 规定的 9 字段水位标尺"""
-    end = datetime.now().strftime("%Y%m%d")
-    start = (datetime.now() - timedelta(days=200)).strftime("%Y%m%d")
-    daily = _tushare("daily", {"ts_code": code, "start_date": start, "end_date": end},
-                     "trade_date,close", timeout=10)
-    if not daily or not daily.get("items") or len(daily["items"]) < 30:
+    """三市场统一入口：A股走 Tushare，美/加股走 Yahoo。输出 9 字段水位标尺 + 币种"""
+    if is_ashare(code):
+        end = datetime.now().strftime("%Y%m%d")
+        start = (datetime.now() - timedelta(days=200)).strftime("%Y%m%d")
+        daily = _tushare("daily", {"ts_code": code, "start_date": start, "end_date": end},
+                         "trade_date,close", timeout=10)
+        if not daily or not daily.get("items") or len(daily["items"]) < 30:
+            return None
+        rows = sorted([(r[0], float(r[1])) for r in daily["items"] if r[1] is not None])
+        closes = [c for _, c in rows]
+        currency = "CNY"
+    else:
+        closes, meta = _yahoo_chart(code)
+        if not closes or len(closes) < 30:
+            return None
+        closes = closes[-140:]  # 与A股约200天窗口对齐
+        currency = (meta or {}).get("currency", "USD")
+    if not closes:
         return None
-
-    rows = sorted([(r[0], float(r[1])) for r in daily["items"] if r[1] is not None])
-    closes = [c for _, c in rows]
     last = closes[-1]
     # 近6个月（约120交易日）
     win = closes[-120:]
@@ -99,6 +133,8 @@ def price_analysis(code: str):
 
     return {
         "last": round(last, 2),
+        "cur": CUR_SYM.get(currency, currency + " "),
+        "currency": currency,
         "high_6mo": round(hi, 2),
         "low_6mo": round(lo, 2),
         "range_pos_6mo_pct": round(range_pos, 1),
@@ -176,6 +212,15 @@ def two_axis_verdict(pa: dict, basic: dict):
     high_water = pa["range_pos_6mo_pct"] >= 70
     # 基本面轴的代理：PE 是否合理 + 3月相对动量（数据有限时降级为提示）
     pe = basic.get("pe")
+
+    # 海外标的常拿不到估值 → 只按价格位置给保守判定，明说要自查
+    if pe is None and not basic:
+        if high_water:
+            return {"code": "yellow", "label": "🟡 价格在高位",
+                    "hint": "已接近半年高点。没有估值数据，无法判断是「贵但对」还是「博傻」—— 先自查业绩增速能不能跟上涨幅"}
+        return {"code": "yellow", "label": "🟡 位置不贵，但要自查基本面",
+                "hint": "价格位置有吸引力，但海外标的暂无估值数据 —— 确认 PE/增速/现金流没问题再考虑"}
+
     fundamentals_ok = pe is not None and 0 < pe < 40
 
     if high_water and fundamentals_ok:
@@ -192,10 +237,11 @@ def two_axis_verdict(pa: dict, basic: dict):
 # ─────────────────────────────────────────────
 def invalidation_rules(pa: dict):
     stop = round(pa["last"] * 0.85, 2)
+    cur = pa.get("cur", "¥")
     return {
         "stop_price": stop,
         "rules": [
-            f"价格/stage（机器可检）：跌破 ¥{stop}（现价-15%）且 1 月动量转负 → 承认判断错，无条件离场",
+            f"价格/stage（机器可检）：跌破 {cur}{stop}（现价-15%）且 1 月动量转负 → 承认判断错，无条件离场",
             "基本面：下季度订单/营收未随主题增长（认证/放量逻辑证伪）",
             "估值：继续大涨但毛利/盈利未扩 → 纯博傻阶段，止盈离场",
         ],
@@ -209,7 +255,38 @@ def invalidation_rules(pa: dict):
 @router.get("/api/serenity/stock_check")
 def stock_check(code: str, principal: float = 2000.0):
     code = code.strip().upper()
-    # ticker 双向验证纪律的简化版：先确认代码真实存在
+
+    # ── 海外标的（美股直接输 AAPL，加股带 .TO 如 SHOP.TO）──
+    if not is_ashare(code):
+        closes, meta = _yahoo_chart(code)
+        if not closes:
+            return {"error": f"查不到 {code}。美股直接输代码（如 AAPL / NVDA），加拿大股加 .TO（如 SHOP.TO / RY.TO）"}
+        name = (meta or {}).get("shortName") or (meta or {}).get("longName") or code
+        market = "加拿大" if code.endswith(".TO") or (meta or {}).get("currency") == "CAD" else "美股"
+        pa = price_analysis(code)
+        if not pa:
+            return {"error": "价格数据不足，无法判定"}
+        basic = {}
+        flags = red_flag_scan(basic, pa)
+        verdict = two_axis_verdict(pa, basic)
+        if pa["stage"].startswith("falling") and verdict["code"] == "green":
+            verdict = {"code": "yellow", "label": "🟡 先等它跌完",
+                       "hint": "位置还行，但正在下跌途中 —— 等跌势企稳再考虑，别接飞刀"}
+        rc = risk_control(principal=principal, proposed_position=pa["last"] * 1,
+                          current_drawdown=0.0, strategy_age_days=999)
+        return {
+            "code": code, "name": name, "industry": market,
+            "price": pa, "basic": {},
+            "red_flags": flags,
+            "criteria_auto": [],
+            "criteria_manual": CRITERIA_QUALITATIVE,
+            "verdict": verdict,
+            "invalidation": invalidation_rules(pa),
+            "risk_check": rc,
+            "disclaimer": "仅供研究教育，非投资建议。海外标的估值/财务数据未接入，判定只基于价格位置，基本面需自查。",
+        }
+
+    # ── A股：ticker 双向验证纪律的简化版，先确认代码真实存在 ──
     info = _tushare("stock_basic", {"ts_code": code}, "ts_code,name,industry,list_date")
     if not info or not info.get("items"):
         return {"error": f"代码 {code} 不存在或无法验证（skill 纪律：禁止凭记忆写 ticker）"}
@@ -267,6 +344,22 @@ def stock_check(code: str, principal: float = 2000.0):
 # ─────────────────────────────────────────────
 # 观察池证伪检查
 # ─────────────────────────────────────────────
+def _yahoo_series(symbol: str):
+    """Yahoo 指数/个股日线 map: YYYYMMDD -> close"""
+    try:
+        res = requests.get(
+            f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}",
+            params={"range": "1y", "interval": "1d"},
+            headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
+        r = res.json()["chart"]["result"][0]
+        ts = r["timestamp"]
+        closes = r["indicators"]["quote"][0]["close"]
+        return {datetime.utcfromtimestamp(t).strftime("%Y%m%d"): c
+                for t, c in zip(ts, closes) if c is not None}
+    except Exception:
+        return None
+
+
 def _hs300_series(days=260):
     """沪深300 日线 map: YYYYMMDD -> close（skill 纪律：收益必须对照大盘才算 alpha）"""
     end = datetime.now().strftime("%Y%m%d")
@@ -280,10 +373,22 @@ def _hs300_series(days=260):
 
 @router.get("/api/serenity/watch_check")
 def watch_check(items: str):
-    """items: code:entry:stop[:added]，逐一检查证伪触发 + 对照沪深300算 alpha"""
-    hs = _hs300_series()
-    hs_dates = sorted(hs.keys()) if hs else []
-    hs_last = hs[hs_dates[-1]] if hs_dates else None
+    """items: code:entry:stop[:added]，检查证伪触发 + 对照各自市场大盘算 alpha
+    基准：A股→沪深300 / 美股→标普500 / 加股→多伦多综指"""
+    bench_cache = {}
+
+    def get_bench(code):
+        if is_ashare(code):
+            key = "hs300"
+        elif code.endswith(".TO"):
+            key = "^GSPTSE"
+        else:
+            key = "^GSPC"
+        if key not in bench_cache:
+            bench_cache[key] = _hs300_series() if key == "hs300" else _yahoo_series(key)
+        return bench_cache[key]
+
+    bench_name = {"hs300": "沪深300", "^GSPC": "标普500", "^GSPTSE": "多伦多综指"}
 
     results = []
     for it in items.split(","):
@@ -291,7 +396,7 @@ def watch_check(items: str):
         if len(parts) < 3:
             continue
         code, entry, stop = parts[0].upper(), float(parts[1]), float(parts[2])
-        added = parts[3].replace("-", "") if len(parts) > 3 else None
+        added = parts[3].replace("-", "") if len(parts) > 3 and parts[3] else None
         pa = price_analysis(code)
         if not pa:
             results.append({"code": code, "error": "无价格数据"})
@@ -300,19 +405,24 @@ def watch_check(items: str):
         pnl = (last / entry - 1) * 100
         triggered = last < stop and (pa["ret_1m_pct"] is not None and pa["ret_1m_pct"] < 0)
 
-        # alpha = 个股收益 − 沪深300同期收益（skill：牛市里啥都涨，raw return 看不出本事）
+        # alpha = 个股收益 − 对应市场大盘同期收益（skill：牛市里啥都涨，raw return 看不出本事）
         alpha = None
         idx_pnl = None
-        if hs and added and hs_last:
-            base_dates = [d for d in hs_dates if d >= added]
-            if base_dates:
-                idx_base = hs[base_dates[0]]
-                idx_pnl = (hs_last / idx_base - 1) * 100
+        bench = get_bench(code) if added else None
+        if bench:
+            b_dates = sorted(bench.keys())
+            base_dates = [d for d in b_dates if d >= added]
+            if base_dates and b_dates:
+                idx_base = bench[base_dates[0]]
+                idx_pnl = (bench[b_dates[-1]] / idx_base - 1) * 100
                 alpha = pnl - idx_pnl
 
+        bkey = "hs300" if is_ashare(code) else ("^GSPTSE" if code.endswith(".TO") else "^GSPC")
         results.append({
             "code": code, "entry": entry, "stop": stop, "last": last,
+            "cur": pa.get("cur", "¥"),
             "pnl_pct": round(pnl, 1),
+            "bench_name": bench_name[bkey],
             "hs300_pnl_pct": round(idx_pnl, 1) if idx_pnl is not None else None,
             "alpha_pct": round(alpha, 1) if alpha is not None else None,
             "invalidation_triggered": triggered,
@@ -361,47 +471,75 @@ REVIEWER_SYSTEM = """你是独立复核员，立场是挑刺反驳，不是背�
 不复述报告内容。没发现大问题就说"未发现硬伤"再给核实清单。"""
 
 
+def _stream_deepseek(system: str, user: str, max_tokens: int = 8000):
+    """DeepSeek（OpenAI 兼容接口）流式生成"""
+    res = requests.post(
+        "https://api.deepseek.com/chat/completions",
+        headers={"Authorization": f"Bearer {DEEPSEEK_API_KEY}",
+                 "Content-Type": "application/json"},
+        json={"model": "deepseek-chat", "stream": True, "max_tokens": max_tokens,
+              "messages": [{"role": "system", "content": system},
+                           {"role": "user", "content": user}]},
+        stream=True, timeout=300)
+    res.raise_for_status()
+    for line in res.iter_lines():
+        if not line:
+            continue
+        line = line.decode("utf-8")
+        if not line.startswith("data: ") or line == "data: [DONE]":
+            continue
+        try:
+            delta = json.loads(line[6:])["choices"][0]["delta"].get("content")
+            if delta:
+                yield delta
+        except Exception:
+            continue
+
+
+def _stream_anthropic(system: str, user: str, max_tokens: int = 8000, effort: str = "medium"):
+    import anthropic
+    client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+    with client.messages.stream(
+        model="claude-opus-4-8",
+        max_tokens=max_tokens,
+        thinking={"type": "adaptive"},
+        output_config={"effort": effort},
+        system=[{"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}],
+        messages=[{"role": "user", "content": user}],
+    ) as stream:
+        for text in stream.text_stream:
+            yield text
+
+
+def _llm_stream(system, user, max_tokens=8000, effort="medium"):
+    """优先 DeepSeek（用户自备 key，便宜稳定），其次 Anthropic"""
+    if DEEPSEEK_API_KEY:
+        return _stream_deepseek(system, user, max_tokens)
+    return _stream_anthropic(system, user, max_tokens, effort)
+
+
 @router.get("/api/serenity/analyze")
 def serenity_analyze(query: str, market: str = "A股"):
     """LLM 深度卡点分析，SSE 流式输出"""
-    if not ANTHROPIC_API_KEY:
+    if not (DEEPSEEK_API_KEY or ANTHROPIC_API_KEY):
         def no_key():
-            yield "data: " + json.dumps({"error": "未配置 ANTHROPIC_API_KEY。请在 Vercel 环境变量（或本地 .env）中添加后重试；个股体检功能不受影响。"}) + "\n\n"
+            yield "data: " + json.dumps({"error": "未配置 AI 密钥。请在 Vercel 环境变量中添加 DEEPSEEK_API_KEY（或 ANTHROPIC_API_KEY）后重新部署；「查一只股」和「我的关注」不受影响。"}) + "\n\n"
         return StreamingResponse(no_key(), media_type="text/event-stream")
 
     def gen():
         try:
-            import anthropic
-            client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
             report = []
-            with client.messages.stream(
-                model="claude-opus-4-8",
-                max_tokens=8000,
-                thinking={"type": "adaptive"},
-                output_config={"effort": "medium"},
-                system=[{"type": "text", "text": SERENITY_SYSTEM,
-                         "cache_control": {"type": "ephemeral"}}],
-                messages=[{"role": "user",
-                           "content": f"市场范围：{market}。请分析：{query}"}],
-            ) as stream:
-                for text in stream.text_stream:
-                    report.append(text)
-                    yield "data: " + json.dumps({"text": text}) + "\n\n"
+            for text in _llm_stream(SERENITY_SYSTEM, f"市场范围：{market}。请分析：{query}"):
+                report.append(text)
+                yield "data: " + json.dumps({"text": text}) + "\n\n"
 
             # ── 独立复核（skill Step 7：挑刺立场，不是背书）──
             yield "data: " + json.dumps({"phase": "review"}) + "\n\n"
             try:
-                with client.messages.stream(
-                    model="claude-opus-4-8",
-                    max_tokens=1800,
-                    thinking={"type": "adaptive"},
-                    output_config={"effort": "low"},
-                    system=REVIEWER_SYSTEM,
-                    messages=[{"role": "user",
-                               "content": f"用户的原始问题：{query}\n\n待复核的报告：\n{''.join(report)}"}],
-                ) as rstream:
-                    for text in rstream.text_stream:
-                        yield "data: " + json.dumps({"review": text}) + "\n\n"
+                for text in _llm_stream(REVIEWER_SYSTEM,
+                                        f"用户的原始问题：{query}\n\n待复核的报告：\n{''.join(report)}",
+                                        max_tokens=1800, effort="low"):
+                    yield "data: " + json.dumps({"review": text}) + "\n\n"
             except Exception as re:
                 yield "data: " + json.dumps({"review": f"（复核失败：{re}）"}) + "\n\n"
 

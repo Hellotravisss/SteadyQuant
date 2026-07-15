@@ -28,7 +28,12 @@
 ### 1. 环境变量配置
 在 Vercel 项目设置中，请添加以下环境变量：
 - `TUSHARE_TOKEN`: 您的 Tushare API Token (当前已配置为 2100 积分账号)。
-- `ANTHROPIC_API_KEY`（可选）: 用于「AI 深度报告」功能；不配置时其余功能不受影响。
+- `DEEPSEEK_API_KEY`（推荐）或 `ANTHROPIC_API_KEY`: 用于「帮我找股票」AI 功能，配一个即可（优先用 DeepSeek）；不配置时其余功能不受影响。
+
+### 三市场支持
+- **A股**：Tushare（名称搜索 + 估值 + 红旗全量）
+- **美股**：直接输代码（AAPL / NVDA），行情走 Yahoo 免 key；大盘对照标普500
+- **加拿大**：代码加 `.TO`（SHOP.TO / RY.TO）；大盘对照多伦多综指
 
 ### 2. 部署步骤
 1. 将此文件夹内容推送到您的 GitHub 仓库。

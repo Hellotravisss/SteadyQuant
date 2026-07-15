@@ -94,7 +94,7 @@
             <div class="flex gap-3 max-w-xl relative">
                 <div class="flex-1 relative">
                     <input id="checkCode" class="w-full px-5 py-4 rounded-2xl" autocomplete="off"
-                           placeholder="输入股票名称或代码，如 茅台 / 002371"
+                           placeholder="A股输名字（茅台）· 美股输代码（AAPL）· 加股加 .TO（SHOP.TO）"
                            oninput="suggest(this.value)" onkeydown="if(event.key==='Enter'){hideSuggest();doCheck();}">
                     <div id="suggestBox" class="absolute left-0 right-0 top-full mt-1 z-20 rounded-2xl overflow-hidden hidden" style="background:#0f1a2e;border:1px solid rgba(255,255,255,.15)"></div>
                 </div>
@@ -105,7 +105,9 @@
                 <span class="ex-chip" onclick="goCheck('002371.SZ')">北方华创</span>
                 <span class="ex-chip" onclick="goCheck('600519.SH')">贵州茅台</span>
                 <span class="ex-chip" onclick="goCheck('688008.SH')">澜起科技</span>
-                ，或先去「🧠 AI 深度报告」让 AI 沿主题挖候选，报告里的代码可直接点进来体检。
+                <span class="ex-chip" onclick="goCheck('NVDA')">英伟达(美)</span>
+                <span class="ex-chip" onclick="goCheck('SHOP.TO')">Shopify(加)</span>
+                ，或先去「💡 帮我找股票」让 AI 沿主题挖候选，报告里的代码可直接点进来。
             </div>
             <div id="checkResult" class="mt-8"></div>
         </div>
@@ -121,7 +123,8 @@
                 <select id="aiMarket" class="px-4 py-4 rounded-2xl">
                     <option value="A股">A股</option>
                     <option value="美股">美股</option>
-                    <option value="全球">全球</option>
+                    <option value="加拿大">加拿大</option>
+                    <option value="A股+美股+加拿大">三市场都看</option>
                 </select>
                 <button id="aiBtn" onclick="doAnalyze()" class="px-8 py-4 bg-purple-400 text-black font-black rounded-2xl hover:bg-purple-300">生成报告</button>
             </div>
@@ -312,8 +315,10 @@ async function doCheck() {
     const box = document.getElementById('checkResult');
     box.innerHTML = `<div class="py-12 text-center text-cyan-400">正在拉取真实价格并体检（约 5-10 秒）...</div>`;
     try {
-        // 输入的不是标准代码 → 先按名称/前缀搜索，取第一个匹配
-        if (!/^\d{6}\.(SH|SZ)$/.test(code)) {
+        // 纯字母代码 = 美股/加股（AAPL / SHOP.TO），直接查，不走A股搜索
+        const overseas = /^[A-Z][A-Z0-9.\-]{0,9}$/.test(code) && !/^\d{6}\.(SH|SZ)$/.test(code);
+        // 输入的不是标准代码也不是海外代码 → 先按名称/前缀搜索A股，取第一个匹配
+        if (!overseas && !/^\d{6}\.(SH|SZ)$/.test(code)) {
             const sd = await apiFetch(`/api/search?keyword=${encodeURIComponent(code)}`);
             if (sd.items && sd.items.length) {
                 code = sd.items[0].code;
@@ -341,9 +346,9 @@ function plainTalk(d) {
     const p = d.price, v = d.verdict;
     const lines = [];
     // 价格位置
-    if (p.range_pos_6mo_pct >= 85) lines.push(`现在 ¥${p.last}，几乎是半年来最贵的时候`);
-    else if (p.range_pos_6mo_pct <= 20) lines.push(`现在 ¥${p.last}，比半年最高点便宜了 ${Math.abs(p.pct_off_6mo_high).toFixed(0)}%，处在半年来的低位`);
-    else lines.push(`现在 ¥${p.last}，在半年价格区间的中间位置（比最高点低 ${Math.abs(p.pct_off_6mo_high).toFixed(0)}%）`);
+    if (p.range_pos_6mo_pct >= 85) lines.push(`现在 ${p.cur}${p.last}，几乎是半年来最贵的时候`);
+    else if (p.range_pos_6mo_pct <= 20) lines.push(`现在 ${p.cur}${p.last}，比半年最高点便宜了 ${Math.abs(p.pct_off_6mo_high).toFixed(0)}%，处在半年来的低位`);
+    else lines.push(`现在 ${p.cur}${p.last}，在半年价格区间的中间位置（比最高点低 ${Math.abs(p.pct_off_6mo_high).toFixed(0)}%）`);
     // 近期走势
     if (p.ret_1m_pct !== null) {
         if (p.ret_1m_pct > 15) lines.push(`最近一个月大涨了 ${p.ret_1m_pct}%，现在追进去容易买在山顶`);
@@ -403,7 +408,7 @@ function renderCheck(d) {
             ${flagPlain ? `<div class="mt-4 pt-4 border-t border-white/10 space-y-1.5"><div class="text-xs font-bold text-slate-400 mb-1">要小心的地方</div>${flagPlain}</div>` : ''}
             <div class="flex flex-wrap gap-3 mt-6">
                 <button onclick="addToWatch()" class="px-6 py-3 bg-cyan-400 text-black text-sm font-black rounded-2xl hover:bg-cyan-300">
-                    👁️ 帮我盯着这只（跌破 ¥${d.invalidation.stop_price} 提醒我离场）
+                    👁️ 帮我盯着这只（跌破 ${p.cur}${d.invalidation.stop_price} 提醒我离场）
                 </button>
                 <button onclick="goAnalyze('用大白话讲讲 ${d.name}（${d.code}，${d.industry||''}）：这家公司是干嘛的？在产业链里的位置重不重要？现在值不值得关注？最大的风险是什么？')"
                         class="px-6 py-3 bg-purple-400/20 text-purple-300 border border-purple-400/40 text-sm font-bold rounded-2xl hover:bg-purple-400/30">
@@ -422,9 +427,9 @@ function renderCheck(d) {
                 <div class="absolute -top-1 w-1.5 h-5 bg-white rounded" style="left:${pos}%"></div>
             </div>
             <div class="flex justify-between text-[10px] text-slate-500 mt-2">
-                <span>低 ¥${p.low_6mo}</span>
-                <span class="text-white font-bold">现价 ¥${p.last}（区间 ${p.range_pos_6mo_pct}%）</span>
-                <span>高 ¥${p.high_6mo}</span>
+                <span>低 ${p.cur}${p.low_6mo}</span>
+                <span class="text-white font-bold">现价 ${p.cur}${p.last}（区间 ${p.range_pos_6mo_pct}%）</span>
+                <span>高 ${p.cur}${p.high_6mo}</span>
             </div>
             <div class="flex gap-6 mt-3 text-xs text-slate-300">
                 <span>距高点 <b>${p.pct_off_6mo_high}%</b></span>
@@ -481,7 +486,7 @@ function addToWatch() {
              added: new Date().toISOString().slice(0,10) });
     setWatch(w);
     updateWatchBadge();
-    toast(`✅ 已开始帮你盯 <b>${lastCheck.name}</b>：跌破 ¥${lastCheck.invalidation.stop_price} 会亮红灯提醒
+    toast(`✅ 已开始帮你盯 <b>${lastCheck.name}</b>：跌破 ${lastCheck.price.cur}${lastCheck.invalidation.stop_price} 会亮红灯提醒
            <span class="code-link ml-2" onclick="switchTab('watch', tabBtn('观察池'))">去看看 →</span>`);
 }
 
@@ -517,12 +522,12 @@ async function refreshWatch() {
                     <div class="font-bold">${x.name} <span class="font-mono text-xs text-slate-400">${x.code}</span>
                         ${trig?'<span class="ml-2 text-xs px-3 py-0.5 rounded-full bg-rose-500/20 text-rose-400 font-bold">⛔ 跌破提醒线，该考虑离场了</span>':'<span class="ml-2 text-xs px-3 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400">✓ 一切正常</span>'}
                     </div>
-                    <div class="text-xs text-slate-400 mt-1">${x.added} 开始关注（当时 ¥${x.entry}）· 提醒线 ¥${x.stop}${x.verdict?' · 当时判定 '+x.verdict:''}</div>
+                    <div class="text-xs text-slate-400 mt-1">${x.added} 开始关注（当时 ${r.cur||"¥"}${x.entry}）· 提醒线 ${r.cur||"¥"}${x.stop}${x.verdict?' · 当时判定 '+x.verdict:''}</div>
                 </div>
                 <div class="text-right">
-                    <div class="text-lg font-bold">¥${r.last}</div>
+                    <div class="text-lg font-bold">${r.cur||"¥"}${r.last}</div>
                     <div class="text-xs ${r.pnl_pct>=0?'text-emerald-400':'text-rose-400'}">${r.pnl_pct>=0?'+':''}${r.pnl_pct}%</div>
-                    ${r.alpha_pct!==null&&r.alpha_pct!==undefined?`<div class="text-[10px] ${r.alpha_pct>=0?'text-emerald-400/80':'text-rose-400/80'}" title="同期沪深300 ${r.hs300_pnl_pct}%">${r.alpha_pct>=0?'跑赢大盘 '+r.alpha_pct:'跑输大盘 '+Math.abs(r.alpha_pct)}%</div>`:''}
+                    ${r.alpha_pct!==null&&r.alpha_pct!==undefined?`<div class="text-[10px] ${r.alpha_pct>=0?'text-emerald-400/80':'text-rose-400/80'}" title="同期沪深300 ${r.hs300_pnl_pct}%">${r.alpha_pct>=0?'跑赢'+(r.bench_name||'大盘')+' '+r.alpha_pct:'跑输'+(r.bench_name||'大盘')+' '+Math.abs(r.alpha_pct)}%</div>`:''}
                     <div class="flex gap-3 justify-end mt-1">
                         <button onclick="goCheck('${x.code}')" class="text-[10px] text-cyan-400 hover:text-cyan-300">复检</button>
                         <button onclick="removeWatch('${x.code}')" class="text-[10px] text-slate-500 hover:text-rose-400">移出</button>
