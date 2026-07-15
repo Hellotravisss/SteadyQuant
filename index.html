@@ -503,7 +503,7 @@ async function refreshWatch() {
     const box = document.getElementById('watchResult');
     if (!w.length) { box.innerHTML = '<div class="text-slate-500 text-sm">观察池为空。去「卡点体检」页体检一只股票后点「加入观察池」。</div>'; return; }
     box.innerHTML = '<div class="py-8 text-center text-cyan-400">检查证伪条件中...</div>';
-    const items = w.map(x => `${x.code}:${x.entry}:${x.stop}`).join(',');
+    const items = w.map(x => `${x.code}:${x.entry}:${x.stop}:${x.added||''}`).join(',');
     try {
         const d = await apiFetch(`/api/serenity/watch_check?items=${encodeURIComponent(items)}`);
         const byCode = {}; d.items.forEach(i => byCode[i.code] = i);
@@ -522,6 +522,7 @@ async function refreshWatch() {
                 <div class="text-right">
                     <div class="text-lg font-bold">¥${r.last}</div>
                     <div class="text-xs ${r.pnl_pct>=0?'text-emerald-400':'text-rose-400'}">${r.pnl_pct>=0?'+':''}${r.pnl_pct}%</div>
+                    ${r.alpha_pct!==null&&r.alpha_pct!==undefined?`<div class="text-[10px] ${r.alpha_pct>=0?'text-emerald-400/80':'text-rose-400/80'}" title="同期沪深300 ${r.hs300_pnl_pct}%">${r.alpha_pct>=0?'跑赢大盘 '+r.alpha_pct:'跑输大盘 '+Math.abs(r.alpha_pct)}%</div>`:''}
                     <div class="flex gap-3 justify-end mt-1">
                         <button onclick="goCheck('${x.code}')" class="text-[10px] text-cyan-400 hover:text-cyan-300">复检</button>
                         <button onclick="removeWatch('${x.code}')" class="text-[10px] text-slate-500 hover:text-rose-400">移出</button>
@@ -534,6 +535,74 @@ async function refreshWatch() {
     }
 }
 
+/* ============ 供应链图谱渲染 ============ */
+function renderChain(reportText) {
+    const m = reportText.match(/```chain\s*([\s\S]*?)(```|$)/);
+    const holder = document.getElementById('aiChain');
+    if (!m || !holder) return;
+    let data;
+    try { data = JSON.parse(m[1].trim()); } catch(e) { return; }
+    if (!data.layers || !data.layers.length) return;
+
+    // 统计出入度找卡点（skill 规则：入度≥2出度≤1=漏斗卡点；入度≥2出度≥2=枢纽卡点）
+    const indeg = {}, outdeg = {};
+    (data.edges||[]).forEach(([from,to]) => {
+        outdeg[from] = (outdeg[from]||0)+1;
+        indeg[to] = (indeg[to]||0)+1;
+    });
+    // 卡点 = 被多个下游依赖的供货方：供货给≥2家（出度）才算；同时自己也依赖多方=枢纽
+    const nodeType = n => {
+        const i = indeg[n]||0, o = outdeg[n]||0;
+        if (o>=2 && i<=1) return 'funnel';
+        if (o>=2 && i>=2) return 'hub';
+        return '';
+    };
+
+    let html = `<div class="mt-8 border border-white/10 rounded-2xl p-6 relative" id="chainWrap">
+        <div class="text-sm font-bold text-slate-300 mb-1">🗺️ 产业链地图（自动标出最难绕开的环节）</div>
+        <div class="text-[10px] text-slate-500 mb-4">🟡 金框 = 多方依赖、难以绕开的候选卡点 · 越往下越上游</div>
+        <svg id="chainSvg" class="absolute inset-0 w-full h-full pointer-events-none" style="z-index:0"></svg>
+        <div class="relative" style="z-index:1">`;
+    data.layers.forEach(layer => {
+        html += `<div class="flex items-center gap-3 mb-4 flex-wrap">
+            <div class="text-[10px] text-slate-500 w-16 shrink-0 text-right">${layer.name}</div>`;
+        (layer.nodes||[]).forEach(n => {
+            const t = nodeType(n);
+            const cls = t==='funnel' ? 'border-amber-400 text-amber-300 bg-amber-400/10'
+                      : t==='hub' ? 'border-rose-400 text-rose-300 bg-rose-400/10'
+                      : 'border-white/20 text-slate-300 bg-white/5';
+            html += `<div class="chain-node px-3 py-1.5 rounded-xl border text-xs ${cls}" data-node="${n.replace(/"/g,'')}">${t?'⭐ ':''}${linkifyCodes(n)}</div>`;
+        });
+        html += `</div>`;
+    });
+    html += `</div></div>`;
+    holder.innerHTML = html;
+
+    // 画连线
+    requestAnimationFrame(() => {
+        const wrap = document.getElementById('chainWrap');
+        const svg = document.getElementById('chainSvg');
+        if (!wrap || !svg) return;
+        const wrect = wrap.getBoundingClientRect();
+        const pos = {};
+        wrap.querySelectorAll('.chain-node').forEach(el => {
+            const r = el.getBoundingClientRect();
+            pos[el.dataset.node] = { x: r.left - wrect.left + r.width/2,
+                                     top: r.top - wrect.top, bottom: r.bottom - wrect.top };
+        });
+        let lines = '';
+        (data.edges||[]).forEach(([from,to]) => {
+            const a = pos[from], b = pos[to];
+            if (!a || !b) return;
+            const y1 = a.top < b.top ? a.bottom : a.top;
+            const y2 = a.top < b.top ? b.top : b.bottom;
+            lines += `<path d="M${a.x},${y1} C${a.x},${(y1+y2)/2} ${b.x},${(y1+y2)/2} ${b.x},${y2}"
+                        stroke="rgba(34,211,238,.25)" stroke-width="1.5" fill="none"/>`;
+        });
+        svg.innerHTML = lines;
+    });
+}
+
 /* ============ AI 深度报告（SSE 流式） ============ */
 async function doAnalyze() {
     const q = document.getElementById('aiQuery').value.trim();
@@ -542,10 +611,13 @@ async function doAnalyze() {
     const btn = document.getElementById('aiBtn');
     const box = document.getElementById('aiResult');
     btn.disabled = true; btn.textContent = '生成中...';
-    box.textContent = '';
-    let raw = '';
+    box.innerHTML = '<div id="aiMain"></div><div id="aiChain"></div><div id="aiReview"></div>';
+    const main = document.getElementById('aiMain'), reviewBox = document.getElementById('aiReview');
+    let raw = '', reviewRaw = '', reviewing = false;
     const esc = s => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    const CHAIN_RE = /```chain\s*([\s\S]*?)(```|$)/;
     const mdRender = t => {
+        t = t.replace(CHAIN_RE, '');  // 图谱数据块不显示为文字
         let h = esc(t)
             .replace(/^### (.*)$/gm, '<h3>$1</h3>')
             .replace(/^## (.*)$/gm, '<h2>$1</h2>')
@@ -569,7 +641,17 @@ async function doAnalyze() {
             for (const part of parts) {
                 if (!part.startsWith('data: ')) continue;
                 const msg = JSON.parse(part.slice(6));
-                if (msg.text) { raw += msg.text; box.innerHTML = mdRender(raw); }
+                if (msg.text) { raw += msg.text; main.innerHTML = mdRender(raw); }
+                if (msg.phase === 'review') {
+                    reviewing = true;
+                    renderChain(raw);  // 主报告结束，尝试画供应链图谱
+                    reviewBox.innerHTML = `<div class="mt-8 border border-amber-500/30 rounded-2xl p-5">
+                        <div class="text-sm font-bold text-amber-400 mb-2">🔍 独立复核（另一个 AI 专门挑刺，帮你防止被忽悠）</div>
+                        <div id="aiReviewText" class="text-sm text-slate-300 leading-relaxed"></div></div>`;
+                }
+                if (msg.review) { reviewRaw += msg.review;
+                    const rt = document.getElementById('aiReviewText');
+                    if (rt) rt.innerHTML = mdRender(reviewRaw); }
                 if (msg.error) box.innerHTML += `<div class="text-red-400 mt-4">${msg.error}</div>`;
             }
         }

@@ -267,24 +267,54 @@ def stock_check(code: str, principal: float = 2000.0):
 # ─────────────────────────────────────────────
 # 观察池证伪检查
 # ─────────────────────────────────────────────
+def _hs300_series(days=260):
+    """沪深300 日线 map: YYYYMMDD -> close（skill 纪律：收益必须对照大盘才算 alpha）"""
+    end = datetime.now().strftime("%Y%m%d")
+    start = (datetime.now() - timedelta(days=days)).strftime("%Y%m%d")
+    idx = _tushare("index_daily", {"ts_code": "000300.SH", "start_date": start, "end_date": end},
+                   "trade_date,close", timeout=8)
+    if not idx or not idx.get("items"):
+        return None
+    return dict(sorted((r[0], float(r[1])) for r in idx["items"] if r[1]))
+
+
 @router.get("/api/serenity/watch_check")
 def watch_check(items: str):
-    """items: code:entry:stop,code:entry:stop  逐一检查证伪是否触发"""
+    """items: code:entry:stop[:added]，逐一检查证伪触发 + 对照沪深300算 alpha"""
+    hs = _hs300_series()
+    hs_dates = sorted(hs.keys()) if hs else []
+    hs_last = hs[hs_dates[-1]] if hs_dates else None
+
     results = []
     for it in items.split(","):
         parts = it.strip().split(":")
         if len(parts) < 3:
             continue
         code, entry, stop = parts[0].upper(), float(parts[1]), float(parts[2])
+        added = parts[3].replace("-", "") if len(parts) > 3 else None
         pa = price_analysis(code)
         if not pa:
             results.append({"code": code, "error": "无价格数据"})
             continue
         last = pa["last"]
+        pnl = (last / entry - 1) * 100
         triggered = last < stop and (pa["ret_1m_pct"] is not None and pa["ret_1m_pct"] < 0)
+
+        # alpha = 个股收益 − 沪深300同期收益（skill：牛市里啥都涨，raw return 看不出本事）
+        alpha = None
+        idx_pnl = None
+        if hs and added and hs_last:
+            base_dates = [d for d in hs_dates if d >= added]
+            if base_dates:
+                idx_base = hs[base_dates[0]]
+                idx_pnl = (hs_last / idx_base - 1) * 100
+                alpha = pnl - idx_pnl
+
         results.append({
             "code": code, "entry": entry, "stop": stop, "last": last,
-            "pnl_pct": round((last / entry - 1) * 100, 1),
+            "pnl_pct": round(pnl, 1),
+            "hs300_pnl_pct": round(idx_pnl, 1) if idx_pnl is not None else None,
+            "alpha_pct": round(alpha, 1) if alpha is not None else None,
             "invalidation_triggered": triggered,
             "level": pa["level"], "stage": pa["stage"],
             "ret_1m_pct": pa["ret_1m_pct"],
@@ -309,9 +339,26 @@ SERENITY_SYSTEM = """你是一位供应链卡点投资分析师，使用 Serenit
 
 【中文表达】写给中文母语读者。投资圈通用术语保留（PE/capex/backlog/TAM），首次出现给一句中文解释。禁止英式句法和生造词。加粗克制。
 
+【估值纪律】给估值必须分 bear/base/bull 三档区间并绑死假设（对标谁/几倍/哪年）。可比公司质量高用相对估值（PE/EV/S/PEG 对标 gap），无好对标退化用份额跨层法（份额=营收/TAM，TAM 需说明来源）。精度降级铁律：关键假设里有[推断]/[推测]，就禁止给精确百分比，只给数量级和方向；无可信对标就直说"区间太宽，不给假精确"。禁止抄分析师目标价当标尺。
+
 【输出结构】30秒看懂（大白话）→ 供应链拆解（哪层可能是卡点，为什么）→ 候选名单（每只：是什么/卡点逻辑/命中判据/红旗/反向研究/三档判定🟢🟡🔴/证伪条件）→ 落地结论 → 免责声明。A股候选给 6 位代码+交易所后缀。
 
+【供应链图谱】报告最末尾必须附一个机器可读图谱块，格式严格如下（单独一行开始）：
+```chain
+{"layers":[{"name":"下游应用","nodes":["特斯拉","比亚迪 002594.SZ"]},{"name":"中游系统","nodes":[...]},{"name":"中游器件","nodes":[...]},{"name":"上游设备","nodes":[...]},{"name":"上游材料","nodes":[...]}],"edges":[["上游节点名","下游节点名"],...]}
+```
+节点名与正文一致（有代码带代码），edges 方向为供货方→采购方，每层 2-4 个节点。
+
 【铁律】仅供研究教育，非投资建议，不给具体仓位和买卖指令。按框架不成立就直说不成立。"""
+
+
+REVIEWER_SYSTEM = """你是独立复核员，立场是挑刺反驳，不是背书。对这份供应链卡点投研报告快速复核，输出必须简短（300字内）、大白话：
+
+1. 【裁决】通过 / 有问题需注意（一句话）
+2. 【最可疑的 2-3 处】：编造嫌疑的数字（没标注来源或时效的具体价格/市值/份额）、逻辑硬伤（判据命中没依据、结论与事实不符）、迎合用户倾向的地方
+3. 【读者动手前必须自己核实的清单】：列 3 条以内最关键的待核实项
+
+不复述报告内容。没发现大问题就说"未发现硬伤"再给核实清单。"""
 
 
 @router.get("/api/serenity/analyze")
@@ -326,6 +373,7 @@ def serenity_analyze(query: str, market: str = "A股"):
         try:
             import anthropic
             client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+            report = []
             with client.messages.stream(
                 model="claude-opus-4-8",
                 max_tokens=8000,
@@ -337,7 +385,26 @@ def serenity_analyze(query: str, market: str = "A股"):
                            "content": f"市场范围：{market}。请分析：{query}"}],
             ) as stream:
                 for text in stream.text_stream:
+                    report.append(text)
                     yield "data: " + json.dumps({"text": text}) + "\n\n"
+
+            # ── 独立复核（skill Step 7：挑刺立场，不是背书）──
+            yield "data: " + json.dumps({"phase": "review"}) + "\n\n"
+            try:
+                with client.messages.stream(
+                    model="claude-opus-4-8",
+                    max_tokens=1800,
+                    thinking={"type": "adaptive"},
+                    output_config={"effort": "low"},
+                    system=REVIEWER_SYSTEM,
+                    messages=[{"role": "user",
+                               "content": f"用户的原始问题：{query}\n\n待复核的报告：\n{''.join(report)}"}],
+                ) as rstream:
+                    for text in rstream.text_stream:
+                        yield "data: " + json.dumps({"review": text}) + "\n\n"
+            except Exception as re:
+                yield "data: " + json.dumps({"review": f"（复核失败：{re}）"}) + "\n\n"
+
             yield "data: " + json.dumps({"done": True}) + "\n\n"
         except Exception as e:
             yield "data: " + json.dumps({"error": str(e)}) + "\n\n"
