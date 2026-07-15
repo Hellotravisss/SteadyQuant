@@ -62,19 +62,19 @@
     <!-- 三个主入口 -->
     <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
         <button onclick="switchTab('check',this)" class="main-btn active">
-            <div class="text-2xl">🔍</div>
-            <div class="font-black text-lg mt-1">查一只股</div>
-            <div class="text-xs text-slate-400 mt-1">输入名字，给你一句大白话结论</div>
+            <div class="text-2xl">🛒</div>
+            <div class="font-black text-lg mt-1">买什么</div>
+            <div class="text-xs text-slate-400 mt-1">查一只股能不能碰，或让 AI 帮你找</div>
         </button>
-        <button onclick="switchTab('ai',this)" class="main-btn">
-            <div class="text-2xl">💡</div>
-            <div class="font-black text-lg mt-1">帮我找股票</div>
-            <div class="text-xs text-slate-400 mt-1">说个方向，AI 挖别人没注意的机会</div>
+        <button onclick="switchTab('hold',this)" class="main-btn">
+            <div class="text-2xl">📦</div>
+            <div class="font-black text-lg mt-1">已经买了 <span id="holdBadge"></span></div>
+            <div class="text-xs text-slate-400 mt-1">盈亏一目了然，该卖的时候亮红灯</div>
         </button>
-        <button onclick="switchTab('watch',this)" class="main-btn">
-            <div class="text-2xl">👁️</div>
-            <div class="font-black text-lg mt-1">我的关注 <span id="watchBadge"></span></div>
-            <div class="text-xs text-slate-400 mt-1">自动帮你盯着，该走的时候提醒你</div>
+        <button onclick="switchTab('wish',this)" class="main-btn">
+            <div class="text-2xl">🌟</div>
+            <div class="font-black text-lg mt-1">想买什么 <span id="wishBadge"></span></div>
+            <div class="text-xs text-slate-400 mt-1">看中但嫌贵的，跌到你要的价提醒你</div>
         </button>
     </div>
     <div class="text-right mb-6">
@@ -111,12 +111,10 @@
             </div>
             <div id="checkResult" class="mt-8"></div>
         </div>
-    </div>
 
-    <!-- ===================== AI 深度报告 ===================== -->
-    <div id="panel-ai" class="panel">
-        <div class="glass rounded-3xl p-8">
-            <div class="mb-2 text-2xl font-bold">帮我找股票</div>
+        <!-- 同页第二块：AI 帮我找 -->
+        <div class="glass rounded-3xl p-8 mt-6" id="aiSection">
+            <div class="mb-2 text-2xl font-bold">还没有目标？让 AI 帮你找</div>
             <div class="text-xs text-slate-400 mb-6">告诉我你看好什么方向（比如"机器人"），AI 会顺着产业链往上游找那些还没被大家炒起来的公司，并把风险一起讲清楚</div>
             <div class="flex gap-3 flex-wrap">
                 <input id="aiQuery" class="flex-1 min-w-[280px] px-5 py-4 rounded-2xl" placeholder="你看好什么方向？比如：机器人 / 芯片国产替代 / AI 算力" onkeydown="if(event.key==='Enter')doAnalyze()">
@@ -140,12 +138,21 @@
         </div>
     </div>
 
-    <!-- ===================== 观察池 ===================== -->
-    <div id="panel-watch" class="panel">
+    <!-- ===================== 已经买了 ===================== -->
+    <div id="panel-hold" class="panel">
         <div class="glass rounded-3xl p-8">
-            <div class="mb-2 text-2xl font-bold">我的关注</div>
-            <div class="text-xs text-slate-400 mb-6">你关注的股票都在这。每次打开自动查最新价格：跌破提醒线会亮红灯，提醒你该走了——不用天天盯盘</div>
-            <div id="watchResult"><div class="text-slate-500 text-sm">还没有关注任何股票。去「查一只股」查一只，然后点「帮我盯着」。</div></div>
+            <div class="mb-2 text-2xl font-bold">📦 已经买了</div>
+            <div class="text-xs text-slate-400 mb-6">记下你的持仓，每次打开自动算盈亏、跟大盘比、盯止损——跌破提醒线亮红灯，提醒你该考虑卖了</div>
+            <div id="holdResult"><div class="text-slate-500 text-sm">还没记录持仓。去「买什么」查一只股，点「✅ 我已经买了」。</div></div>
+        </div>
+    </div>
+
+    <!-- ===================== 想买什么 ===================== -->
+    <div id="panel-wish" class="panel">
+        <div class="glass rounded-3xl p-8">
+            <div class="mb-2 text-2xl font-bold">🌟 想买什么</div>
+            <div class="text-xs text-slate-400 mb-6">看中但觉得贵的股票放这。设一个你愿意买的价，跌到了就亮绿灯提醒你——不用天天刷行情等回调</div>
+            <div id="wishResult"><div class="text-slate-500 text-sm">清单是空的。去「买什么」查一只股，点「🌟 想买，等便宜点」。</div></div>
         </div>
     </div>
 
@@ -233,7 +240,8 @@ function switchTab(tab, el) {
     document.querySelectorAll('.tab-btn, .main-btn').forEach(b => b.classList.remove('active'));
     document.getElementById('panel-' + tab).classList.add('active');
     if (el) (el.closest('.main-btn') || el).classList.add('active');
-    if (tab === 'watch') refreshWatch();
+    if (tab === 'hold') refreshHold();
+    if (tab === 'wish') refreshWish();
 }
 
 /* ============ 通用：toast / 联想搜索 / 跨页跳转 ============ */
@@ -283,7 +291,8 @@ async function apiFetch(url) {
 }
 
 function tabBtn(name) {
-    const alias = {'卡点体检':'查一只股', 'AI 深度报告':'帮我找股票', '观察池':'我的关注'};
+    const alias = {'卡点体检':'买什么', '查一只股':'买什么', 'AI 深度报告':'买什么',
+                   '帮我找股票':'买什么', '观察池':'已经买了', '我的关注':'已经买了'};
     name = alias[name] || name;
     return [...document.querySelectorAll('.tab-btn, .main-btn')].find(b => b.textContent.includes(name));
 }
@@ -294,10 +303,11 @@ function goCheck(code) {
     doCheck();
     window.scrollTo({top: 0, behavior: 'smooth'});
 }
-// 从任何地方跳到 AI 页并直接生成
+// 从任何地方跳到 AI 区块并直接生成（AI 在「买什么」页下半部分）
 function goAnalyze(q) {
-    switchTab('ai', tabBtn('AI 深度报告'));
+    switchTab('check', tabBtn('买什么'));
     document.getElementById('aiQuery').value = q;
+    document.getElementById('aiSection').scrollIntoView({behavior:'smooth'});
     doAnalyze();
 }
 // 把文本里的 A 股代码变成可点击链接
@@ -407,8 +417,11 @@ function renderCheck(d) {
             </div>
             ${flagPlain ? `<div class="mt-4 pt-4 border-t border-white/10 space-y-1.5"><div class="text-xs font-bold text-slate-400 mb-1">要小心的地方</div>${flagPlain}</div>` : ''}
             <div class="flex flex-wrap gap-3 mt-6">
-                <button onclick="addToWatch()" class="px-6 py-3 bg-cyan-400 text-black text-sm font-black rounded-2xl hover:bg-cyan-300">
-                    👁️ 帮我盯着这只（跌破 ${p.cur}${d.invalidation.stop_price} 提醒我离场）
+                <button onclick="addToHold()" class="px-6 py-3 bg-emerald-400 text-black text-sm font-black rounded-2xl hover:bg-emerald-300">
+                    ✅ 我已经买了（帮我盯盈亏和止损）
+                </button>
+                <button onclick="addToWish()" class="px-6 py-3 bg-cyan-400 text-black text-sm font-black rounded-2xl hover:bg-cyan-300">
+                    🌟 想买，等便宜点（到价提醒我）
                 </button>
                 <button onclick="goAnalyze('用大白话讲讲 ${d.name}（${d.code}，${d.industry||''}）：这家公司是干嘛的？在产业链里的位置重不重要？现在值不值得关注？最大的风险是什么？')"
                         class="px-6 py-3 bg-purple-400/20 text-purple-300 border border-purple-400/40 text-sm font-bold rounded-2xl hover:bg-purple-400/30">
@@ -471,43 +484,92 @@ function updateCritCount() {
     document.getElementById('critCount').textContent = `已命中 ${n}/${total}（命中越多信念越高）`;
 }
 
-/* ============ 观察池（localStorage） ============ */
-function getWatch() { return JSON.parse(localStorage.getItem('sq_watch') || '[]'); }
-function setWatch(w) { localStorage.setItem('sq_watch', JSON.stringify(w)); }
+/* ============ 已经买了 / 想买什么（localStorage 两套清单） ============ */
+function getList(key) { return JSON.parse(localStorage.getItem(key) || '[]'); }
+function setList(key, v) { localStorage.setItem(key, JSON.stringify(v)); }
 
-function addToWatch() {
+// 旧版观察池数据自动迁移到「已经买了」
+(function migrate() {
+    const old = localStorage.getItem('sq_watch');
+    if (old && !localStorage.getItem('sq_hold')) {
+        localStorage.setItem('sq_hold', old);
+        localStorage.removeItem('sq_watch');
+    }
+})();
+
+function updateBadges() {
+    const set = (id, n, color) => {
+        const b = document.getElementById(id);
+        if (b) b.innerHTML = n ? `<span class="text-xs bg-${color}-400/20 text-${color}-400 px-2 py-0.5 rounded-full ml-1">${n}</span>` : '';
+    };
+    set('holdBadge', getList('sq_hold').length, 'emerald');
+    set('wishBadge', getList('sq_wish').length, 'cyan');
+}
+window.addEventListener('DOMContentLoaded', updateBadges);
+
+function addToHold() {
     if (!lastCheck) return;
-    const critHit = document.querySelectorAll('.crit-box:checked').length;
-    const critTotal = document.querySelectorAll('.crit-box').length;
-    const w = getWatch().filter(x => x.code !== lastCheck.code);
-    w.push({ code: lastCheck.code, name: lastCheck.name,
-             entry: lastCheck.price.last, stop: lastCheck.invalidation.stop_price,
-             verdict: lastCheck.verdict.label, crit: `${critHit}/${critTotal}`,
-             added: new Date().toISOString().slice(0,10) });
-    setWatch(w);
-    updateWatchBadge();
-    toast(`✅ 已开始帮你盯 <b>${lastCheck.name}</b>：跌破 ${lastCheck.price.cur}${lastCheck.invalidation.stop_price} 会亮红灯提醒
-           <span class="code-link ml-2" onclick="switchTab('watch', tabBtn('观察池'))">去看看 →</span>`);
+    const cur = lastCheck.price.cur;
+    const entryStr = prompt(`你买 ${lastCheck.name} 的成本价是多少？（${cur}）`, lastCheck.price.last);
+    if (entryStr === null) return;
+    const entry = parseFloat(entryStr);
+    if (!entry || entry <= 0) { toast('⚠️ 价格没填对，没有记录'); return; }
+    const stop = Math.round(entry * 0.85 * 100) / 100;
+    const w = getList('sq_hold').filter(x => x.code !== lastCheck.code);
+    w.push({ code: lastCheck.code, name: lastCheck.name, entry, stop,
+             verdict: lastCheck.verdict.label,
+             added: new Date().toLocaleDateString('sv') });
+    setList('sq_hold', w);
+    updateBadges();
+    toast(`✅ 已记录持仓 <b>${lastCheck.name}</b>（成本 ${cur}${entry}）：跌破 ${cur}${stop} 会亮红灯提醒
+           <span class="code-link ml-2" onclick="switchTab('hold', tabBtn('已经买了'))">去看看 →</span>`);
 }
 
-function updateWatchBadge() {
-    const n = getWatch().length;
-    const b = document.getElementById('watchBadge');
-    if (b) b.innerHTML = n ? `<span class="text-xs bg-cyan-400/20 text-cyan-400 px-2 py-0.5 rounded-full ml-1">${n}</span>` : '';
+function addToWish() {
+    if (!lastCheck) return;
+    const cur = lastCheck.price.cur;
+    const suggest = Math.round(lastCheck.price.last * 0.9 * 100) / 100;
+    const tStr = prompt(`${lastCheck.name} 现在 ${cur}${lastCheck.price.last}。跌到多少你愿意买？（${cur}）`, suggest);
+    if (tStr === null) return;
+    const target = parseFloat(tStr);
+    if (!target || target <= 0) { toast('⚠️ 价格没填对，没有记录'); return; }
+    const w = getList('sq_wish').filter(x => x.code !== lastCheck.code);
+    w.push({ code: lastCheck.code, name: lastCheck.name, target,
+             priceWhenAdded: lastCheck.price.last,
+             added: new Date().toLocaleDateString('sv') });
+    setList('sq_wish', w);
+    updateBadges();
+    toast(`🌟 <b>${lastCheck.name}</b> 已进想买清单：跌到 ${cur}${target} 会亮绿灯提醒
+           <span class="code-link ml-2" onclick="switchTab('wish', tabBtn('想买什么'))">去看看 →</span>`);
 }
-window.addEventListener('DOMContentLoaded', updateWatchBadge);
 
-function removeWatch(code) {
-    setWatch(getWatch().filter(x => x.code !== code));
-    updateWatchBadge();
-    refreshWatch();
+function removeFrom(key, code, refresh) {
+    setList(key, getList(key).filter(x => x.code !== code));
+    updateBadges(); refresh();
 }
 
-async function refreshWatch() {
-    const w = getWatch();
-    const box = document.getElementById('watchResult');
-    if (!w.length) { box.innerHTML = '<div class="text-slate-500 text-sm">观察池为空。去「卡点体检」页体检一只股票后点「加入观察池」。</div>'; return; }
-    box.innerHTML = '<div class="py-8 text-center text-cyan-400">检查证伪条件中...</div>';
+// 想买清单 → 已买（到价买入后一键转）
+function wishToHold(code) {
+    const item = getList('sq_wish').find(x => x.code === code);
+    if (!item) return;
+    const entryStr = prompt(`买入 ${item.name} 的成本价？`, item.target);
+    if (entryStr === null) return;
+    const entry = parseFloat(entryStr);
+    if (!entry || entry <= 0) return;
+    const h = getList('sq_hold').filter(x => x.code !== code);
+    h.push({ code: item.code, name: item.name, entry,
+             stop: Math.round(entry * 0.85 * 100) / 100,
+             added: new Date().toLocaleDateString('sv') });
+    setList('sq_hold', h);
+    removeFrom('sq_wish', code, refreshWish);
+    toast(`✅ ${item.name} 已从「想买」转入「已经买了」`);
+}
+
+async function refreshHold() {
+    const w = getList('sq_hold');
+    const box = document.getElementById('holdResult');
+    if (!w.length) { box.innerHTML = '<div class="text-slate-500 text-sm">还没记录持仓。去「买什么」查一只股，点「✅ 我已经买了」。</div>'; return; }
+    box.innerHTML = '<div class="py-8 text-center text-emerald-400">正在查最新价格、算盈亏...</div>';
     const items = w.map(x => `${x.code}:${x.entry}:${x.stop}:${x.added||''}`).join(',');
     try {
         const d = await apiFetch(`/api/serenity/watch_check?items=${encodeURIComponent(items)}`);
@@ -516,21 +578,58 @@ async function refreshWatch() {
             const r = byCode[x.code] || {};
             if (r.error || r.last === undefined) return `<div class="border border-white/10 rounded-2xl p-4 mb-3 text-xs text-slate-500">${x.name} ${x.code} — 暂无数据</div>`;
             const trig = r.invalidation_triggered;
+            const c = r.cur || '¥';
             return `
             <div class="border ${trig?'border-rose-500/60':'border-white/10'} rounded-2xl p-5 mb-3 flex flex-wrap justify-between items-center gap-3">
                 <div>
                     <div class="font-bold">${x.name} <span class="font-mono text-xs text-slate-400">${x.code}</span>
-                        ${trig?'<span class="ml-2 text-xs px-3 py-0.5 rounded-full bg-rose-500/20 text-rose-400 font-bold">⛔ 跌破提醒线，该考虑离场了</span>':'<span class="ml-2 text-xs px-3 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400">✓ 一切正常</span>'}
+                        ${trig?'<span class="ml-2 text-xs px-3 py-0.5 rounded-full bg-rose-500/20 text-rose-400 font-bold">⛔ 跌破止损线，该考虑卖了</span>':'<span class="ml-2 text-xs px-3 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400">✓ 一切正常</span>'}
                     </div>
-                    <div class="text-xs text-slate-400 mt-1">${x.added} 开始关注（当时 ${r.cur||"¥"}${x.entry}）· 提醒线 ${r.cur||"¥"}${x.stop}${x.verdict?' · 当时判定 '+x.verdict:''}</div>
+                    <div class="text-xs text-slate-400 mt-1">${x.added} 买入，成本 ${c}${x.entry} · 止损线 ${c}${x.stop}</div>
                 </div>
                 <div class="text-right">
-                    <div class="text-lg font-bold">${r.cur||"¥"}${r.last}</div>
-                    <div class="text-xs ${r.pnl_pct>=0?'text-emerald-400':'text-rose-400'}">${r.pnl_pct>=0?'+':''}${r.pnl_pct}%</div>
-                    ${r.alpha_pct!==null&&r.alpha_pct!==undefined?`<div class="text-[10px] ${r.alpha_pct>=0?'text-emerald-400/80':'text-rose-400/80'}" title="同期沪深300 ${r.hs300_pnl_pct}%">${r.alpha_pct>=0?'跑赢'+(r.bench_name||'大盘')+' '+r.alpha_pct:'跑输'+(r.bench_name||'大盘')+' '+Math.abs(r.alpha_pct)}%</div>`:''}
+                    <div class="text-lg font-bold">${c}${r.last}</div>
+                    <div class="text-sm font-bold ${r.pnl_pct>=0?'text-emerald-400':'text-rose-400'}">${r.pnl_pct>=0?'赚':'亏'} ${Math.abs(r.pnl_pct)}%</div>
+                    ${r.alpha_pct!==null&&r.alpha_pct!==undefined?`<div class="text-[10px] ${r.alpha_pct>=0?'text-emerald-400/80':'text-rose-400/80'}" title="同期${r.bench_name} ${r.hs300_pnl_pct}%">${r.alpha_pct>=0?'跑赢'+(r.bench_name||'大盘')+' '+r.alpha_pct:'跑输'+(r.bench_name||'大盘')+' '+Math.abs(r.alpha_pct)}%</div>`:''}
                     <div class="flex gap-3 justify-end mt-1">
                         <button onclick="goCheck('${x.code}')" class="text-[10px] text-cyan-400 hover:text-cyan-300">复检</button>
-                        <button onclick="removeWatch('${x.code}')" class="text-[10px] text-slate-500 hover:text-rose-400">移出</button>
+                        <button onclick="removeFrom('sq_hold','${x.code}',refreshHold)" class="text-[10px] text-slate-500 hover:text-rose-400">已卖出/移除</button>
+                    </div>
+                </div>
+            </div>`;
+        }).join('') + `<div class="text-[10px] text-slate-500 mt-2">检查时间 ${d.checked_at} · 数据存于本浏览器 · 「跑赢/跑输」= 和你所在市场的大盘指数比</div>`;
+    } catch (e) {
+        box.innerHTML = `<div class="text-red-400 p-6">检查失败：${e.message}</div>`;
+    }
+}
+
+async function refreshWish() {
+    const w = getList('sq_wish');
+    const box = document.getElementById('wishResult');
+    if (!w.length) { box.innerHTML = '<div class="text-slate-500 text-sm">清单是空的。去「买什么」查一只股，点「🌟 想买，等便宜点」。</div>'; return; }
+    box.innerHTML = '<div class="py-8 text-center text-cyan-400">正在看有没有跌到你要的价...</div>';
+    const items = w.map(x => `${x.code}:${x.target}`).join(',');
+    try {
+        const d = await apiFetch(`/api/serenity/wish_check?items=${encodeURIComponent(items)}`);
+        const byCode = {}; d.items.forEach(i => byCode[i.code] = i);
+        box.innerHTML = w.map(x => {
+            const r = byCode[x.code] || {};
+            if (r.error || r.last === undefined) return `<div class="border border-white/10 rounded-2xl p-4 mb-3 text-xs text-slate-500">${x.name} ${x.code} — 暂无数据</div>`;
+            const c = r.cur || '¥';
+            return `
+            <div class="border ${r.hit?'border-emerald-500/60':'border-white/10'} rounded-2xl p-5 mb-3 flex flex-wrap justify-between items-center gap-3">
+                <div>
+                    <div class="font-bold">${x.name} <span class="font-mono text-xs text-slate-400">${x.code}</span>
+                        ${r.hit?'<span class="ml-2 text-xs px-3 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 font-bold">🟢 到你要的价了！先复检再决定</span>':`<span class="ml-2 text-xs px-3 py-0.5 rounded-full bg-white/5 text-slate-400">还差 ${r.gap_pct}% 跌到目标</span>`}
+                    </div>
+                    <div class="text-xs text-slate-400 mt-1">${x.added} 加入（当时 ${c}${x.priceWhenAdded||'-'}）· 目标价 ${c}${x.target}</div>
+                </div>
+                <div class="text-right">
+                    <div class="text-lg font-bold">${c}${r.last}</div>
+                    <div class="flex gap-3 justify-end mt-1">
+                        <button onclick="goCheck('${x.code}')" class="text-[10px] text-cyan-400 hover:text-cyan-300">复检</button>
+                        <button onclick="wishToHold('${x.code}')" class="text-[10px] text-emerald-400 hover:text-emerald-300">我买了</button>
+                        <button onclick="removeFrom('sq_wish','${x.code}',refreshWish)" class="text-[10px] text-slate-500 hover:text-rose-400">不想买了</button>
                     </div>
                 </div>
             </div>`;

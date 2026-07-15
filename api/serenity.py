@@ -518,6 +518,31 @@ def _llm_stream(system, user, max_tokens=8000, effort="medium"):
     return _stream_anthropic(system, user, max_tokens, effort)
 
 
+@router.get("/api/serenity/wish_check")
+def wish_check(items: str):
+    """想买清单：items = code:target_price,... 检查是否到了想要的价"""
+    results = []
+    for it in items.split(","):
+        parts = it.strip().split(":")
+        if len(parts) < 2:
+            continue
+        code, target = parts[0].upper(), float(parts[1])
+        pa = price_analysis(code)
+        if not pa:
+            results.append({"code": code, "error": "无价格数据"})
+            continue
+        last = pa["last"]
+        results.append({
+            "code": code, "target": target, "last": last,
+            "cur": pa.get("cur", "¥"),
+            "hit": last <= target,
+            "gap_pct": round((last / target - 1) * 100, 1),  # 还差多少跌到目标价
+            "level": pa["level"], "stage": pa["stage"],
+            "ret_1m_pct": pa["ret_1m_pct"],
+        })
+    return {"items": results, "checked_at": datetime.now().strftime("%Y-%m-%d %H:%M")}
+
+
 @router.get("/api/serenity/analyze")
 def serenity_analyze(query: str, market: str = "A股"):
     """LLM 深度卡点分析，SSE 流式输出"""
