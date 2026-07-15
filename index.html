@@ -605,7 +605,7 @@ function addToWish() {
     if (!target || target <= 0) { toast('⚠️ 价格没填对，没有记录'); return; }
     const w = getList('sq_wish').filter(x => x.code !== lastCheck.code);
     w.push({ code: lastCheck.code, name: lastCheck.name, target,
-             priceWhenAdded: lastCheck.price.last,
+             priceWhenAdded: lastCheck.price.last, cur,
              added: new Date().toLocaleDateString('sv') });
     setList('sq_wish', w);
     updateBadges();
@@ -626,11 +626,9 @@ function wishToHold(code) {
     if (entryStr === null) return;
     const entry = parseFloat(entryStr);
     if (!entry || entry <= 0) return;
-    const h = getList('sq_hold').filter(x => x.code !== code);
-    h.push({ code: item.code, name: item.name, entry,
-             stop: Math.round(entry * 0.85 * 100) / 100,
-             added: new Date().toLocaleDateString('sv') });
-    setList('sq_hold', h);
+    const qtyStr = prompt(`买了多少股？（可不填，直接确定跳过）`, '');
+    const qty = qtyStr ? parseFloat(qtyStr) : null;
+    saveHolding({ code: item.code, name: item.name, entry, qty, cur: item.cur });
     removeFrom('sq_wish', code, refreshWish);
     toast(`✅ ${item.name} 已从「想买」转入「已经买了」`);
 }

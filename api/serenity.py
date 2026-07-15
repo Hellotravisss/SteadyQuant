@@ -213,13 +213,13 @@ def two_axis_verdict(pa: dict, basic: dict):
     # 基本面轴的代理：PE 是否合理 + 3月相对动量（数据有限时降级为提示）
     pe = basic.get("pe")
 
-    # 海外标的常拿不到估值 → 只按价格位置给保守判定，明说要自查
+    # 拿不到估值数据（海外标的 / 数据源临时故障）→ 只按价格位置给保守判定，明说要自查
     if pe is None and not basic:
         if high_water:
             return {"code": "yellow", "label": "🟡 价格在高位",
-                    "hint": "已接近半年高点。没有估值数据，无法判断是「贵但对」还是「博傻」—— 先自查业绩增速能不能跟上涨幅"}
+                    "hint": "已接近半年高点。暂无估值数据，无法判断是「贵但对」还是「博傻」—— 先自查业绩增速能不能跟上涨幅"}
         return {"code": "yellow", "label": "🟡 位置不贵，但要自查基本面",
-                "hint": "价格位置有吸引力，但海外标的暂无估值数据 —— 确认 PE/增速/现金流没问题再考虑"}
+                "hint": "价格位置有吸引力，但暂无估值数据 —— 确认 PE/增速/现金流没问题再考虑"}
 
     fundamentals_ok = pe is not None and 0 < pe < 40
 
@@ -601,13 +601,27 @@ def resolve(q: str):
             return {"ok": True, "code": q,
                     "name": meta.get("shortName") or meta.get("longName") or q,
                     "market": market, "cur": CUR_SYM.get(cur, "$")}
-    # 中文名 → A股搜索
+    # 中文名 → A股搜索（列表缓存 1 小时，避免每次拉全量）
+    items = _stock_list()
+    for ts, name in items:
+        if q in name.upper():
+            return {"ok": True, "code": ts, "name": name, "market": "A股", "cur": "¥"}
+    return {"ok": False}
+
+
+_stock_cache = {"data": None, "ts": 0}
+
+def _stock_list():
+    import time
+    now = time.time()
+    if _stock_cache["data"] and now - _stock_cache["ts"] < 3600:
+        return _stock_cache["data"]
     res = _tushare("stock_basic", {"list_status": "L"}, "ts_code,name")
     if res and res.get("items"):
-        for ts, name in res["items"]:
-            if q in name.upper() or name.upper() in q:
-                return {"ok": True, "code": ts, "name": name, "market": "A股", "cur": "¥"}
-    return {"ok": False}
+        _stock_cache["data"] = res["items"]
+        _stock_cache["ts"] = now
+        return res["items"]
+    return _stock_cache["data"] or []
 
 
 @router.get("/api/serenity/wish_check")
