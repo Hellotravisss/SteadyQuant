@@ -1,3 +1,7 @@
+node_modules/
 .env
+.env.local
+.vercel
 __pycache__/
-*.pyc
+.wrangler/
+.dev.vars

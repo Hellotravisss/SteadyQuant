@@ -29,7 +29,7 @@ app.include_router(serenity_router)
 @app.get("/", response_class=HTMLResponse)
 def root():
     try:
-        with open("index.html", "r", encoding="utf-8") as f:
+        with open("public/index.html", "r", encoding="utf-8") as f:
             return f.read()
     except Exception as e:
         return f"<h1>SteadyQuant</h1><p>{str(e)}</p>"
