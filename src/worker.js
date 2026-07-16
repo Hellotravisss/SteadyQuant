@@ -65,6 +65,48 @@ async function yahooChart(symbol) {
   }
 }
 
+/* ── A股日线：腾讯实时源优先（免key/免积分/盘中实时），Tushare 兜底 ──
+   借鉴 Vibe-Trading 的 FALLBACK_CHAINS：a_share = [tencent, ..., tushare] */
+async function tencentDaily(code) {
+  try {
+    const sym = (code.endsWith(".SH") ? "sh" : "sz") + code.slice(0, 6);
+    const end = new Date().toISOString().slice(0, 10);
+    const res = await fetch(
+      `https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=${sym},day,,${end},320,qfq`,
+      { headers: { Referer: "https://web.ifzq.gtimg.cn/", "User-Agent": "Mozilla/5.0" },
+        signal: AbortSignal.timeout(8000) }
+    );
+    const d = (await res.json()).data?.[sym];
+    const rows = d?.qfqday || d?.day;
+    if (!rows?.length) return null;
+    const out = { dates: [], closes: [] };
+    for (const r of rows) {
+      const c = parseFloat(r[2]);
+      if (!isNaN(c)) { out.dates.push(String(r[0]).replace(/-/g, "")); out.closes.push(c); }
+    }
+    return out.closes.length >= 30 ? out : null;
+  } catch { return null; }
+}
+
+async function tushareDaily(env, code) {
+  const daily = await tushare(env, "daily",
+    { ts_code: code, start_date: daysAgo(480), end_date: fmtDate(new Date()) }, "trade_date,close");
+  if (!daily?.items || daily.items.length < 30) return null;
+  const rows = daily.items.filter((r) => r[1] != null).sort((a, b) => (a[0] < b[0] ? -1 : 1));
+  return { dates: rows.map((r) => r[0]), closes: rows.map((r) => Number(r[1])) };
+}
+
+/** 统一日线序列：A股走 腾讯→Tushare 回退链，海外走 Yahoo。返回 {dates, closes, currency} */
+async function dailySeries(env, code) {
+  if (isAshare(code)) {
+    const s = (await tencentDaily(code)) || (await tushareDaily(env, code));
+    return s ? { ...s, currency: "CNY" } : null;
+  }
+  const y = await yahooChart(code);
+  if (!y || y.closes.length < 30) return null;
+  return { dates: y.dates.slice(-320), closes: y.closes.slice(-320), currency: y.meta.currency || "USD" };
+}
+
 // A股全量列表缓存（isolate 级，1小时）
 let stockCache = { data: null, ts: 0 };
 async function stockList(env) {
@@ -126,16 +168,9 @@ function computePA(closes, currency) {
 }
 
 async function priceAnalysis(env, code) {
-  if (isAshare(code)) {
-    const daily = await tushare(env, "daily",
-      { ts_code: code, start_date: daysAgo(200), end_date: fmtDate(new Date()) }, "trade_date,close");
-    if (!daily?.items || daily.items.length < 30) return null;
-    const rows = daily.items.filter((r) => r[1] != null).sort((a, b) => (a[0] < b[0] ? -1 : 1));
-    return computePA(rows.map((r) => Number(r[1])), "CNY");
-  }
-  const y = await yahooChart(code);
-  if (!y || y.closes.length < 30) return null;
-  return computePA(y.closes.slice(-140), y.meta.currency || "USD");
+  const s = await dailySeries(env, code);
+  if (!s) return null;
+  return computePA(s.closes.slice(-140), s.currency);
 }
 
 /* ───────── 红旗 / 判据 / 判定 / 证伪 / 风控 ───────── */
@@ -311,6 +346,13 @@ async function stockCheck(env, code, principal = 2000) {
 }
 
 async function hs300Series(env) {
+  // 沪深300 同样走 腾讯→Tushare 回退
+  const t = await tencentDaily("000300.SH");
+  if (t) {
+    const map = {};
+    t.dates.forEach((d, i) => (map[d] = t.closes[i]));
+    return map;
+  }
   const idx = await tushare(env, "index_daily",
     { ts_code: "000300.SH", start_date: daysAgo(260), end_date: fmtDate(new Date()) }, "trade_date,close");
   if (!idx?.items) return null;
@@ -345,11 +387,30 @@ async function watchCheck(env, items) {
     const code = parts[0].toUpperCase();
     const entry = parseFloat(parts[1]), stop = parseFloat(parts[2]);
     const added = parts[3] ? parts[3].replace(/-/g, "") : null;
-    const pa = await priceAnalysis(env, code);
+    const series = await dailySeries(env, code);
+    const pa = series ? computePA(series.closes.slice(-140), series.currency) : null;
     if (!pa) { results.push({ code, error: "无价格数据" }); continue; }
     const last = pa.last;
     const pnl = (last / entry - 1) * 100;
     const triggered = last < stop && pa.ret_1m_pct !== null && pa.ret_1m_pct < 0;
+
+    // 纪律对照（Vibe-Trading Shadow Account 的简化版）：
+    // 找出加入后第一次收盘跌破止损线的那天——如果那天按纪律卖了，现在会怎样
+    let shadow = null;
+    if (added) {
+      for (let i = 0; i < series.dates.length; i++) {
+        if (series.dates[i] > added && series.closes[i] < stop) {
+          const sellPx = series.closes[i];
+          const discPnl = (sellPx / entry - 1) * 100;
+          shadow = {
+            cross_date: series.dates[i],
+            discipline_pnl_pct: Math.round(discPnl * 10) / 10,
+            saved_pct: Math.round((discPnl - pnl) * 10) / 10, // >0 = 守纪律能少亏这么多
+          };
+          break;
+        }
+      }
+    }
 
     let alpha = null, idxPnl = null;
     if (added) {
@@ -370,6 +431,7 @@ async function watchCheck(env, items) {
       hs300_pnl_pct: r1(idxPnl), alpha_pct: r1(alpha),
       invalidation_triggered: triggered, level: pa.level, stage: pa.stage,
       ret_1m_pct: pa.ret_1m_pct,
+      shadow,
     });
   }
   return { items: results, checked_at: nowStr() };
@@ -395,24 +457,13 @@ async function wishCheck(env, items) {
 
 async function history(env, code, points = 60) {
   code = code.trim().toUpperCase();
-  if (isAshare(code)) {
-    const daily = await tushare(env, "daily",
-      { ts_code: code, start_date: daysAgo(Math.round(points * 1.6) + 20), end_date: fmtDate(new Date()) },
-      "trade_date,close");
-    if (!daily?.items) return { error: "无数据" };
-    const rows = daily.items.filter((r) => r[1] != null).sort((a, b) => (a[0] < b[0] ? -1 : 1)).slice(-points);
-    return { code, market: "A股", cur: "¥",
-      dates: rows.map((r) => r[0]),
-      closes: rows.map((r) => Math.round(Number(r[1]) * 100) / 100) };
-  }
-  const y = await yahooChart(code);
-  if (!y) return { error: "无数据" };
-  const cur = y.meta.currency || "USD";
-  return { code,
-    market: code.endsWith(".TO") || cur === "CAD" ? "加拿大" : "美股",
-    cur: CUR_SYM[cur] || "$",
-    dates: y.dates.slice(-points),
-    closes: y.closes.slice(-points).map((c) => Math.round(c * 100) / 100) };
+  const s = await dailySeries(env, code);
+  if (!s) return { error: "无数据" };
+  const market = isAshare(code) ? "A股"
+    : code.endsWith(".TO") || s.currency === "CAD" ? "加拿大" : "美股";
+  return { code, market, cur: CUR_SYM[s.currency] || "$",
+    dates: s.dates.slice(-points),
+    closes: s.closes.slice(-points).map((c) => Math.round(c * 100) / 100) };
 }
 
 async function resolve(env, q) {

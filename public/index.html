@@ -720,12 +720,38 @@ async function refreshHold() {
         document.getElementById('portfolioSummary').innerHTML = sumHtml
             ? `<div class="text-[#8A8578] text-xs mb-0.5">我的持仓</div>${sumHtml}` : '';
 
-        box.innerHTML = w.map(x => {
+        // ③ 战绩统计（借鉴 Vibe-Trading metrics：胜率/平均盈亏/跑赢大盘次数）
+        const scored = w.map(x => byCode[x.code]).filter(r => r && r.pnl_pct !== undefined);
+        let recordHtml = '';
+        if (scored.length >= 2) {
+            const wins = scored.filter(r => r.pnl_pct > 0), losses = scored.filter(r => r.pnl_pct <= 0);
+            const avg = a => a.length ? (a.reduce((s,r)=>s+r.pnl_pct,0)/a.length).toFixed(1) : null;
+            const alphaScored = scored.filter(r => r.alpha_pct !== null && r.alpha_pct !== undefined);
+            const alphaWins = alphaScored.filter(r => r.alpha_pct > 0).length;
+            recordHtml = `<div class="border border-[#E4DAC7] rounded-2xl px-5 py-3 mb-4 flex flex-wrap gap-x-6 gap-y-1 items-center" style="background:var(--paper-2)">
+                <span class="eyebrow">track record</span>
+                <span class="text-xs text-[#4A463C]"><b>${wins.length}胜${losses.length}负</b></span>
+                ${avg(wins)!==null?`<span class="text-xs text-[#2f9e53]">平均赚 +${avg(wins)}%</span>`:''}
+                ${avg(losses)!==null?`<span class="text-xs text-[#E5484D]">平均亏 ${avg(losses)}%</span>`:''}
+                ${alphaScored.length?`<span class="text-xs text-[#4A463C]">跑赢大盘 ${alphaWins}/${alphaScored.length} 只</span>`:''}
+                <span class="text-[10px] text-[#8A8578]">牛市里都涨，只有跑赢大盘才算选股本事</span>
+            </div>`;
+        }
+
+        box.innerHTML = recordHtml + w.map(x => {
             const r = byCode[x.code] || {};
             if (r.error || r.last === undefined) return `<div class="border border-[#E4DAC7] rounded-2xl p-4 mb-3 text-xs text-[#8A8578]">${x.name} ${x.code} — 暂无数据</div>`;
             const trig = r.invalidation_triggered;
             const c = r.cur || '¥';
             const pnlAmt = x.qty ? (r.last - x.entry) * x.qty : null;
+            // ② 纪律对照（影子账户）：曾跌破止损线的持仓，展示"如果那天卖了"
+            const sh = r.shadow;
+            const shadowHtml = sh ? (() => {
+                const dt = `${sh.cross_date.slice(4,6)}/${sh.cross_date.slice(6,8)}`;
+                return sh.saved_pct > 0
+                    ? `<div class="text-[11px] mt-1.5 px-3 py-1.5 rounded-xl bg-[#E5484D]/8 text-[#C23237]">纪律对照：${dt} 收盘曾跌破止损线，那天卖出是 ${sh.discipline_pnl_pct}%，比现在少亏 ${sh.saved_pct}% —— 下次红灯亮了别犹豫</div>`
+                    : `<div class="text-[11px] mt-1.5 px-3 py-1.5 rounded-xl bg-[#F7F1E7] text-[#4A463C]">纪律对照：${dt} 曾跌破止损线，这次扛回来了（比纪律卖出多赚 ${Math.abs(sh.saved_pct)}%）—— 但别把幸运当能力</div>`;
+            })() : '';
             return `
             <div class="border ${trig?'border-[#E5484D]/70':'border-[#E4DAC7]'} rounded-2xl p-5 mb-3">
                 <div class="flex flex-wrap justify-between items-center gap-3">
@@ -735,6 +761,7 @@ async function refreshHold() {
                         </div>
                         <div class="text-xs text-[#8A8578] mt-1">${x.added} 买入 · 成本 ${c}${x.entry}${x.qty?' × '+x.qty+'股 = '+c+fmtMoney(x.entry*x.qty):''} · 止损线 ${c}${x.stop}</div>
                         <div class="text-xs text-[#8A8578] mt-0.5">现状：${r.level} · ${r.stage}</div>
+                        ${shadowHtml}
                     </div>
                     <div class="flex-1 min-w-[160px] max-w-[280px] h-14"><canvas id="spark-${x.code.replace(/\./g,'_')}"></canvas></div>
                     <div class="text-right">
