@@ -7,6 +7,8 @@ import Anthropic from "@anthropic-ai/sdk";
 
 const CUR_SYM = { CNY: "¥", USD: "$", CAD: "C$" };
 const isAshare = (c) => /^\d{6}\.(SH|SZ)$/.test(c);
+// 常见币简写白名单（避免 UNI/LINK 等股票代码被币抢先识别）
+const CRYPTO_SHORTHAND = new Set(["BTC","ETH","SOL","DOGE","XRP","BNB","ADA","LTC","DOT","AVAX","SHIB","TRX","MATIC","PEPE"]);
 const json = (obj, status = 200) =>
   new Response(JSON.stringify(obj), {
     status,
@@ -280,23 +282,46 @@ async function stockCheck(env, code, principal = 2000) {
   code = code.trim().toUpperCase();
 
   if (!isAshare(code)) {
-    const y = await yahooChart(code);
-    if (!y) return { error: `查不到 ${code}。美股直接输代码（如 AAPL / NVDA），加拿大股加 .TO（如 SHOP.TO / RY.TO）` };
+    // 常见币简写（BTC / ETH / SOL…）自动补全成 Yahoo 币对；其余一律先按股票查
+    let y = null;
+    if (CRYPTO_SHORTHAND.has(code)) {
+      const c = await yahooChart(code + "-USD");
+      if (c?.meta?.instrumentType === "CRYPTOCURRENCY") { y = c; code = code + "-USD"; }
+    }
+    if (!y) y = await yahooChart(code);
+    if (!y) return { error: `查不到 ${code}。美股直接输代码（如 AAPL / NVDA），加拿大股加 .TO（如 SHOP.TO），加密货币输 BTC / ETH 或 BTC-USD` };
+    const isCrypto = y.meta.instrumentType === "CRYPTOCURRENCY";
     const name = y.meta.shortName || y.meta.longName || code;
-    const market = code.endsWith(".TO") || y.meta.currency === "CAD" ? "加拿大" : "美股";
+    const market = isCrypto ? "加密货币"
+      : code.endsWith(".TO") || y.meta.currency === "CAD" ? "加拿大" : "美股";
     const pa = computePA(y.closes.slice(-140), y.meta.currency || "USD");
     if (!pa) return { error: "价格数据不足，无法判定" };
-    const basic = {};
-    const flags = redFlagScan(basic, pa);
-    let verdict = twoAxisVerdict(pa, basic);
-    if (pa.stage.startsWith("falling") && verdict.code === "green")
-      verdict = { code: "yellow", label: "🟡 先等它跌完", hint: "位置还行，但正在下跌途中 —— 等跌势企稳再考虑，别接飞刀" };
+    // 海外/币的 basic 为空是"没接数据"而非"真亏损"，去掉误导性的 PE 缺失红旗
+    const flags = redFlagScan({}, pa).filter((f) => !f.text.startsWith("PE 为负/缺失"));
+    let verdict;
+    if (isCrypto) {
+      flags.unshift({ level: "warn", text: "加密货币 7×24 交易、无涨跌停、波动远大于股票 —— 止损线可能一夜被击穿，仓位务必比股票更小" });
+      const high = pa.range_pos_6mo_pct >= 70;
+      if (pa.stage.startsWith("falling"))
+        verdict = { code: "yellow", label: "🟡 先等它跌完", hint: "正在下跌途中 —— 币圈的飞刀比股票更锋利，等跌势企稳再考虑" };
+      else if (high)
+        verdict = { code: "yellow", label: "🟡 价格在高位", hint: "已接近半年高点。币没有估值锚，追高完全靠情绪接力 —— 想清楚谁会用更高的价接你的货" };
+      else
+        verdict = { code: "yellow", label: "🟡 位置不贵，但币没有底", hint: "价格位置有吸引力，但加密货币没有盈利/分红托底，「便宜」不构成买入理由 —— 只用亏光也不心疼的钱参与" };
+    } else {
+      verdict = twoAxisVerdict(pa, {});
+      if (pa.stage.startsWith("falling") && verdict.code === "green")
+        verdict = { code: "yellow", label: "🟡 先等它跌完", hint: "位置还行，但正在下跌途中 —— 等跌势企稳再考虑，别接飞刀" };
+    }
     return {
       code, name, industry: market, price: pa, basic: {},
-      red_flags: flags, criteria_auto: [], criteria_manual: CRITERIA_QUALITATIVE,
+      red_flags: flags, criteria_auto: [],
+      criteria_manual: isCrypto ? [] : CRITERIA_QUALITATIVE,
       verdict, invalidation: invalidationRules(pa),
       risk_check: riskControl(principal, pa.last),
-      disclaimer: "仅供研究教育，非投资建议。海外标的估值/财务数据未接入，判定只基于价格位置，基本面需自查。",
+      disclaimer: isCrypto
+        ? "仅供研究教育，非投资建议。加密货币无基本面数据，判定只基于价格位置；波动与归零风险远高于股票。"
+        : "仅供研究教育，非投资建议。海外标的估值/财务数据未接入，判定只基于价格位置，基本面需自查。",
     };
   }
 
@@ -371,8 +396,11 @@ async function yahooSeries(symbol) {
 
 async function watchCheck(env, items) {
   const benchCache = {};
-  const benchName = { hs300: "沪深300", "^GSPC": "标普500", "^GSPTSE": "多伦多综指" };
-  const benchKey = (code) => (isAshare(code) ? "hs300" : code.endsWith(".TO") ? "^GSPTSE" : "^GSPC");
+  const benchName = { hs300: "沪深300", "^GSPC": "标普500", "^GSPTSE": "多伦多综指", "BTC-USD": "比特币" };
+  const benchKey = (code) =>
+    isAshare(code) ? "hs300"
+    : /-(USD|USDT|USDC)$/.test(code) ? "BTC-USD"
+    : code.endsWith(".TO") ? "^GSPTSE" : "^GSPC";
   const getBench = async (code) => {
     const key = benchKey(code);
     if (!(key in benchCache))
@@ -460,6 +488,7 @@ async function history(env, code, points = 60) {
   const s = await dailySeries(env, code);
   if (!s) return { error: "无数据" };
   const market = isAshare(code) ? "A股"
+    : /-(USD|USDT|USDC)$/.test(code) ? "加密货币"
     : code.endsWith(".TO") || s.currency === "CAD" ? "加拿大" : "美股";
   return { code, market, cur: CUR_SYM[s.currency] || "$",
     dates: s.dates.slice(-points),
@@ -483,11 +512,19 @@ async function resolve(env, q) {
     }
   }
   if (/^[A-Z][A-Z0-9.\-]{0,9}$/.test(q)) {
+    // 常见币简写先试加密货币对（输 BTC 自动识别为 BTC-USD）
+    if (CRYPTO_SHORTHAND.has(q)) {
+      const c = await yahooChart(q + "-USD");
+      if (c?.meta?.instrumentType === "CRYPTOCURRENCY")
+        return { ok: true, code: q + "-USD", name: c.meta.shortName || q + "-USD",
+          market: "加密货币", cur: "$" };
+    }
     const y = await yahooChart(q);
     if (y) {
       const cur = y.meta.currency || "USD";
+      const isCrypto = y.meta.instrumentType === "CRYPTOCURRENCY";
       return { ok: true, code: q, name: y.meta.shortName || y.meta.longName || q,
-        market: q.endsWith(".TO") || cur === "CAD" ? "加拿大" : "美股",
+        market: isCrypto ? "加密货币" : q.endsWith(".TO") || cur === "CAD" ? "加拿大" : "美股",
         cur: CUR_SYM[cur] || "$" };
     }
   }

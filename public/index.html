@@ -12,13 +12,27 @@
         /* ══ Low Battery Studio design language — DESIGN-LANGUAGE.md §1–3 tokens ══ */
         :root{--paper:#F7F1E7;--paper-2:#FBF6EE;--cloud:#fff;--ink:#17150F;--ink-70:#4A463C;
         --dim:#8A8578;--line:#E4DAC7;--red1:#E5484D;--red-deep:#C23237;--charge:#3FB55B;
-        --night:#141210;--r-card:20px;
+        --night:#141210;--r-card:20px;--shadow-a:.12;--shadow-b:.3;--shadow-c:.08;
+        --chain-line:rgba(23,21,15,.28);--toast-bg:#141210;--toast-fg:#F7F1E7;--noise-op:.35;
+        color-scheme:light;
         --font-display:'Cabinet Grotesk','General Sans',system-ui,sans-serif;
         --font-body:'General Sans',system-ui,sans-serif;
         --font-mono:'JetBrains Mono',ui-monospace,monospace}
-        body{background:var(--paper);color:var(--ink);font-family:var(--font-body);line-height:1.6;position:relative}
+        /* 夜间模式：跟随系统 prefers-color-scheme，或手动/定时切换写入 data-theme。
+           电量计永远 1% 红——夜间只换底色，不碰品牌红。 */
+        html[data-theme="dark"]{--paper:#171512;--paper-2:#1D1A16;--cloud:#221F1A;--ink:#F3EEE3;
+        --ink-70:#C9C2B2;--dim:#8F8879;--line:#37332A;--red1:#FF6166;--red-deep:#B8353A;
+        --charge:#4ECB79;--night:#0D0C0A;--chain-line:rgba(243,238,227,.22);
+        --toast-bg:#F3EEE3;--toast-fg:#17150F;--noise-op:.5;color-scheme:dark}
+        @media (prefers-color-scheme: dark){
+          html:not([data-theme="light"]):not([data-theme="dark"]){--paper:#171512;--paper-2:#1D1A16;--cloud:#221F1A;--ink:#F3EEE3;
+          --ink-70:#C9C2B2;--dim:#8F8879;--line:#37332A;--red1:#FF6166;--red-deep:#B8353A;
+          --charge:#4ECB79;--night:#0D0C0A;--chain-line:rgba(243,238,227,.22);
+          --toast-bg:#F3EEE3;--toast-fg:#17150F;--noise-op:.5;color-scheme:dark}
+        }
+        body{background:var(--paper);color:var(--ink);font-family:var(--font-body);line-height:1.6;position:relative;transition:background .3s,color .3s}
         /* 纸面颗粒（feTurbulence 噪点，极低透明度） */
-        body::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:60;opacity:.35;
+        body::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:60;opacity:var(--noise-op);
           background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3CfeColorMatrix values='0 0 0 0 0.09 0 0 0 0 0.08 0 0 0 0 0.06 0 0 0 0.05 0'/%3E%3C/filter%3E%3Crect width='120' height='120' filter='url(%23n)'/%3E%3C/svg%3E")}
         /* 标题=display 小写；正文=body；mono 只给系统语言 */
         .font-black,.font-extrabold,.font-bold.text-2xl,.text-2xl.font-bold{font-family:var(--font-display)}
@@ -45,7 +59,7 @@
         .panel{display:none}
         .panel.active{display:block}
         .stock-card{transition:all .2s}
-        .stock-card:hover{box-shadow:0 18px 34px rgba(23,21,15,.12);transform:translateY(-2px)}
+        .stock-card:hover{box-shadow:0 18px 34px rgba(0,0,0,var(--shadow-a));transform:translateY(-2px)}
         input,select{background:var(--cloud)!important;border:1px solid var(--line)!important;color:var(--ink)!important;border-radius:14px!important}
         input:focus,select:focus{border-color:var(--ink)!important;outline:none!important}
         input::placeholder{color:var(--dim)!important}
@@ -54,7 +68,7 @@
         /* 三个主入口卡 */
         .main-btn{text-align:left;padding:20px 24px;border-radius:var(--r-card);border:1px solid var(--line);
           background:var(--cloud);transition:transform .25s cubic-bezier(.34,1.56,.64,1),box-shadow .25s;font-family:var(--font-body)}
-        .main-btn:hover{transform:translateY(-3px);box-shadow:0 18px 34px rgba(23,21,15,.12)}
+        .main-btn:hover{transform:translateY(-3px);box-shadow:0 18px 34px rgba(0,0,0,var(--shadow-a))}
         .main-btn.active{border-color:var(--red1);box-shadow:0 3px 0 var(--red-deep)}
         details.pro summary{cursor:pointer;font-size:12px;color:var(--dim);list-style:none;font-family:var(--font-mono)}
         details.pro summary:hover{color:var(--ink-70)}
@@ -66,8 +80,8 @@
         .suggest-item{padding:10px 18px;font-size:13px;cursor:pointer}
         .suggest-item:hover{background:var(--paper-2)}
         #toast{position:fixed;bottom:28px;left:50%;transform:translateX(-50%);z-index:70;
-          background:var(--night);color:var(--paper);padding:14px 24px;border-radius:30px;font-size:13px;
-          display:none;box-shadow:0 18px 34px rgba(23,21,15,.3);font-family:var(--font-mono)}
+          background:var(--toast-bg);color:var(--toast-fg);padding:14px 24px;border-radius:30px;font-size:13px;
+          display:none;box-shadow:0 18px 34px rgba(0,0,0,var(--shadow-b));font-family:var(--font-mono)}
         #toast .code-link{color:#ff9d9f;border-bottom-color:rgba(255,157,159,.5)}
         .ai-md h3{font-weight:800;font-size:15px;color:var(--ink);margin:18px 0 6px;font-family:var(--font-display)}
         .ai-md h2{font-weight:800;font-size:17px;color:var(--ink);margin:22px 0 8px;font-family:var(--font-display)}
@@ -80,12 +94,47 @@
         #battery{position:fixed;right:18px;bottom:18px;z-index:65;display:flex;align-items:center;gap:8px;
           background:var(--cloud);border:1px solid var(--line);border-radius:30px;padding:8px 14px;
           font-family:var(--font-mono);font-size:11px;letter-spacing:.08em;color:var(--dim);
-          box-shadow:0 6px 18px rgba(23,21,15,.08)}
+          box-shadow:0 6px 18px rgba(0,0,0,var(--shadow-c))}
         #battery .shell{width:22px;height:11px;border:1.5px solid var(--ink);border-radius:3px;position:relative}
         #battery .shell::after{content:"";position:absolute;right:-4px;top:2.5px;width:2.5px;height:4px;background:var(--ink);border-radius:1px}
         #battery .juice{position:absolute;left:1.5px;top:1.5px;bottom:1.5px;width:12%;background:var(--red1);border-radius:1px;transition:width .6s}
         @media (prefers-reduced-motion: reduce){*{animation:none!important;transition:none!important}}
+        #themeBtn{position:fixed;right:18px;bottom:66px;z-index:65;background:var(--cloud);border:1px solid var(--line);
+          border-radius:30px;padding:7px 14px;font-family:var(--font-mono);font-size:11px;letter-spacing:.06em;
+          color:var(--dim);cursor:pointer;box-shadow:0 6px 18px rgba(0,0,0,var(--shadow-c));transition:transform .2s,color .2s}
+        #themeBtn:hover{color:var(--ink);transform:translateY(-2px)}
     </style>
+    <script>
+        /* 主题：默认跟随系统 prefers-color-scheme（macOS/iOS 自身的"自动"日落切换会带着我们一起切）；
+           不支持该媒体查询的极少数浏览器，按时间兜底（19:00–7:00 = 夜间）；
+           用户点击可手动覆盖，记忆在 localStorage，三态循环 auto → dark → light → auto。
+           这段内联脚本必须在 <style> 之后、body 渲染之前同步执行，避免"先亮后暗"的闪烁。 */
+        window.LBSTheme = (function(){
+          const KEY = 'sq_theme';
+          const root = document.documentElement;
+          const mq = window.matchMedia ? matchMedia('(prefers-color-scheme: dark)') : null;
+          const systemAware = !!(mq && mq.media && mq.media.indexOf('prefers-color-scheme') !== -1);
+          function timeIsNight(){ const h = new Date().getHours(); return h >= 19 || h < 7; }
+          function apply(){
+            const stored = localStorage.getItem(KEY); // 'light' | 'dark' | null(=auto)
+            if (stored === 'light' || stored === 'dark') root.setAttribute('data-theme', stored);
+            else if (systemAware) root.removeAttribute('data-theme'); // 交给 CSS 的 prefers-color-scheme
+            else root.setAttribute('data-theme', timeIsNight() ? 'dark' : 'light'); // 老浏览器兜底
+            const btn = document.getElementById('themeBtn');
+            if (btn) btn.textContent = stored || 'auto';
+          }
+          function cycle(){
+            const stored = localStorage.getItem(KEY);
+            const next = stored === null ? 'dark' : stored === 'dark' ? 'light' : null;
+            if (next === null) localStorage.removeItem(KEY); else localStorage.setItem(KEY, next);
+            apply();
+          }
+          apply();
+          if (mq && mq.addEventListener) mq.addEventListener('change', apply);
+          if (!systemAware) setInterval(apply, 600000); // 老浏览器每10分钟按时间重判一次
+          return { apply, cycle };
+        })();
+    </script>
 </head>
 <body>
 <div class="sysbar">simple quant for people running on 1% — real prices · plain verdicts</div>
@@ -139,9 +188,9 @@
             <div class="flex gap-3 max-w-xl relative">
                 <div class="flex-1 relative">
                     <input id="checkCode" class="w-full px-5 py-4 rounded-2xl" autocomplete="off"
-                           placeholder="A股输名字（茅台）· 美股输代码（AAPL）· 加股加 .TO（SHOP.TO）"
+                           placeholder="A股输名字（茅台）· 美股代码（AAPL）· 加股加 .TO · 币输 BTC / ETH"
                            oninput="suggest(this.value)" onkeydown="if(event.key==='Enter'){hideSuggest();doCheck();}">
-                    <div id="suggestBox" class="absolute left-0 right-0 top-full mt-1 z-20 rounded-2xl overflow-hidden hidden" style="background:#fff;border:1px solid #E4DAC7;box-shadow:0 18px 34px rgba(23,21,15,.12)"></div>
+                    <div id="suggestBox" class="absolute left-0 right-0 top-full mt-1 z-20 rounded-2xl overflow-hidden hidden" style="background:var(--cloud);border:1px solid var(--line);box-shadow:0 18px 34px rgba(0,0,0,var(--shadow-a))"></div>
                 </div>
                 <button onclick="doCheck()" class="px-8 py-4 btn-red">体检</button>
             </div>
@@ -152,6 +201,7 @@
                 <span class="ex-chip" onclick="goCheck('688008.SH')">澜起科技</span>
                 <span class="ex-chip" onclick="goCheck('NVDA')">英伟达(美)</span>
                 <span class="ex-chip" onclick="goCheck('SHOP.TO')">Shopify(加)</span>
+                <span class="ex-chip" onclick="goCheck('BTC')">比特币(币)</span>
                 ，或先去「帮我找股票」让 AI 沿主题挖候选，报告里的代码可直接点进来。
             </div>
             <div id="checkResult" class="mt-8"></div>
@@ -168,7 +218,8 @@
                     <option value="A股">A股</option>
                     <option value="美股">美股</option>
                     <option value="加拿大">加拿大</option>
-                    <option value="A股+美股+加拿大">三市场都看</option>
+                    <option value="加密货币">加密货币</option>
+                    <option value="A股+美股+加拿大">全市场都看</option>
                 </select>
                 <button id="aiBtn" onclick="doAnalyze()" class="px-8 py-4 btn-red">生成报告</button>
             </div>
@@ -635,7 +686,7 @@ async function submitAddForm() {
     btn.disabled = true; msg.textContent = '正在识别市场...';
     try {
         const r = await apiFetch(`/api/serenity/resolve?q=${encodeURIComponent(stock)}`);
-        if (!r.ok) { msg.textContent = `⚠️ 没认出「${stock}」。A股可输中文名，美股输代码（NVDA），加股加 .TO（SHOP.TO）`; btn.disabled = false; return; }
+        if (!r.ok) { msg.textContent = `⚠️ 没认出「${stock}」。A股可输中文名，美股输代码（NVDA），加股加 .TO，币输 BTC / ETH`; btn.disabled = false; return; }
         const stop = saveHolding({code: r.code, name: r.name, entry: price, qty, added: date, cur: r.cur});
         msg.textContent = '';
         toggleAddForm();
@@ -792,7 +843,7 @@ async function refreshHold() {
                     data: { labels: h.closes.map((_,i)=>i), datasets: [
                         { data: h.closes, borderColor: up?'#3FB55B':'#E5484D', borderWidth: 1.5,
                           pointRadius: 0, tension: .3, fill: false },
-                        { data: h.closes.map(()=>x.entry), borderColor: 'rgba(23,21,15,.28)',
+                        { data: h.closes.map(()=>x.entry), borderColor: getComputedStyle(document.documentElement).getPropertyValue('--chain-line').trim() || 'rgba(23,21,15,.28)',
                           borderWidth: 1, borderDash: [4,4], pointRadius: 0 },
                     ]},
                     options: { responsive: true, maintainAspectRatio: false, animation: false,
@@ -939,7 +990,7 @@ function renderChain(reportText) {
             const y1 = a.top < b.top ? a.bottom : a.top;
             const y2 = a.top < b.top ? b.top : b.bottom;
             lines += `<path d="M${a.x},${y1} C${a.x},${(y1+y2)/2} ${b.x},${(y1+y2)/2} ${b.x},${y2}"
-                        stroke="rgba(23,21,15,.18)" stroke-width="1.5" fill="none"/>`;
+                        stroke="var(--chain-line)" stroke-width="1.5" fill="none"/>`;
         });
         svg.innerHTML = lines;
     });
@@ -1103,6 +1154,7 @@ window.onload = () => {
 </script>
 <div class="text-center py-8 sysbar" style="border-bottom:none;border-top:1px solid var(--line);margin-top:32px">© 2026 low battery studio — still at 1%. 仅供研究教育，非投资建议</div>
 <div id="battery"><span class="shell"><span class="juice" id="juice"></span></span><span id="battPct">1%</span><span id="battLabel">power saving mode</span></div>
+<button id="themeBtn" onclick="LBSTheme.cycle()" title="点击切换：auto(跟随系统/时间) → dark → light">auto</button>
 <script>
 // 电量计偶尔"挣扎"到 2% 又掉回 1%（永不充满 — 品牌铁律）
 (function(){
@@ -1113,6 +1165,7 @@ window.onload = () => {
     setTimeout(() => { pct.textContent = '1%'; label.textContent = 'power saving mode'; juice.style.width = '12%'; }, 1800);
   }, 24000);
 })();
+LBSTheme.apply(); // 按钮此时已挂载，把当前状态文字同步进去
 </script>
 </body>
 </html>
