@@ -401,23 +401,26 @@ async function watchCheck(env, items) {
     isAshare(code) ? "hs300"
     : /-(USD|USDT|USDC)$/.test(code) ? "BTC-USD"
     : code.endsWith(".TO") ? "^GSPTSE" : "^GSPC";
-  const getBench = async (code) => {
+  // 基准指数用 Promise 缓存，避免并行时同一指数重复拉取
+  const getBench = (code) => {
     const key = benchKey(code);
     if (!(key in benchCache))
-      benchCache[key] = key === "hs300" ? await hs300Series(env) : await yahooSeries(key);
+      benchCache[key] = key === "hs300" ? hs300Series(env) : yahooSeries(key);
     return benchCache[key];
   };
 
-  const results = [];
-  for (const it of items.split(",")) {
-    const parts = it.trim().split(":");
-    if (parts.length < 3) continue;
+  // 每只持仓独立检查，全部并行（5只 3.5s → ~1.5s）
+  const parsed = items.split(",")
+    .map((it) => it.trim().split(":"))
+    .filter((p) => p.length >= 3);
+
+  const results = await Promise.all(parsed.map(async (parts) => {
     const code = parts[0].toUpperCase();
     const entry = parseFloat(parts[1]), stop = parseFloat(parts[2]);
     const added = parts[3] ? parts[3].replace(/-/g, "") : null;
     const series = await dailySeries(env, code);
     const pa = series ? computePA(series.closes.slice(-140), series.currency) : null;
-    if (!pa) { results.push({ code, error: "无价格数据" }); continue; }
+    if (!pa) return { code, error: "无价格数据" };
     const last = pa.last;
     const pnl = (last / entry - 1) * 100;
     const triggered = last < stop && pa.ret_1m_pct !== null && pa.ret_1m_pct < 0;
@@ -453,33 +456,31 @@ async function watchCheck(env, items) {
       }
     }
     const r1 = (x) => (x == null ? null : Math.round(x * 10) / 10);
-    results.push({
+    return {
       code, entry, stop, last, cur: pa.cur || "¥",
       pnl_pct: r1(pnl), bench_name: benchName[benchKey(code)],
       hs300_pnl_pct: r1(idxPnl), alpha_pct: r1(alpha),
       invalidation_triggered: triggered, level: pa.level, stage: pa.stage,
       ret_1m_pct: pa.ret_1m_pct,
       shadow,
-    });
-  }
+    };
+  }));
   return { items: results, checked_at: nowStr() };
 }
 
 async function wishCheck(env, items) {
-  const results = [];
-  for (const it of items.split(",")) {
-    const parts = it.trim().split(":");
-    if (parts.length < 2) continue;
+  const parsed = items.split(",").map((it) => it.trim().split(":")).filter((p) => p.length >= 2);
+  const results = await Promise.all(parsed.map(async (parts) => {
     const code = parts[0].toUpperCase(), target = parseFloat(parts[1]);
     const pa = await priceAnalysis(env, code);
-    if (!pa) { results.push({ code, error: "无价格数据" }); continue; }
-    results.push({
+    if (!pa) return { code, error: "无价格数据" };
+    return {
       code, target, last: pa.last, cur: pa.cur || "¥",
       hit: pa.last <= target,
       gap_pct: Math.round((pa.last / target - 1) * 1000) / 10,
       level: pa.level, stage: pa.stage, ret_1m_pct: pa.ret_1m_pct,
-    });
-  }
+    };
+  }));
   return { items: results, checked_at: nowStr() };
 }
 
@@ -537,23 +538,22 @@ async function resolve(env, q) {
 
 async function verifyTickers(env, codes) {
   const uniq = [...new Set(codes.split(",").map((c) => c.trim().toUpperCase()).filter(Boolean))].slice(0, 12);
-  const results = [];
-  for (const code of uniq) {
+  const results = await Promise.all(uniq.map(async (code) => {
     if (isAshare(code)) {
       const info = await tushare(env, "stock_basic", { ts_code: code }, "ts_code,name");
       if (info?.items?.length) {
         const pa = await priceAnalysis(env, code);
-        results.push({ code, ok: true, name: info.items[0][1], last: pa?.last ?? null, cur: "¥" });
-      } else results.push({ code, ok: false });
-    } else {
-      const y = await yahooChart(code);
-      if (y) results.push({ code, ok: true,
-        name: y.meta.shortName || y.meta.longName || code,
-        last: Math.round(y.closes[y.closes.length - 1] * 100) / 100,
-        cur: CUR_SYM[y.meta.currency || "USD"] || "$" });
-      else results.push({ code, ok: false });
+        return { code, ok: true, name: info.items[0][1], last: pa?.last ?? null, cur: "¥" };
+      }
+      return { code, ok: false };
     }
-  }
+    const y = await yahooChart(code);
+    if (y) return { code, ok: true,
+      name: y.meta.shortName || y.meta.longName || code,
+      last: Math.round(y.closes[y.closes.length - 1] * 100) / 100,
+      cur: CUR_SYM[y.meta.currency || "USD"] || "$" };
+    return { code, ok: false };
+  }));
   return { items: results, checked_at: nowStr() };
 }
 

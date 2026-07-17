@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- steadyquant · low battery studio：永远 1% 的电量计 + 一根往上走的小 K 线 -->
+  <rect width="512" height="512" rx="112" fill="#F7F1E7"/>
+  <!-- 电池壳 -->
+  <rect x="96" y="176" width="288" height="160" rx="36" fill="none" stroke="#17150F" stroke-width="26"/>
+  <rect x="398" y="222" width="34" height="68" rx="12" fill="#17150F"/>
+  <!-- 1% 红电量 -->
+  <rect x="126" y="206" width="44" height="100" rx="14" fill="#E5484D"/>
+  <!-- 电池壳里的迷你 K 线（省心量化） -->
+  <polyline points="200,296 236,268 264,282 306,232 344,248" fill="none"
+            stroke="#17150F" stroke-width="18" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="344" cy="248" r="16" fill="#E5484D"/>
+</svg>

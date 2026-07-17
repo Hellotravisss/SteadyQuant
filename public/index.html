@@ -6,8 +6,16 @@
     <title>SteadyQuant · 省心量化</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <link href="https://api.fontshare.com/v2/css?f[]=cabinet-grotesk@800,700,500&f[]=general-sans@400,500,600&display=swap" rel="stylesheet">
-    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <meta name="description" content="给普通人用的看股工具：查一只股能不能碰、盯持仓止损、等想买的价。A股/美股/加股/加密货币，真实行情，大白话结论。仅供研究教育，非投资建议。">
+    <meta name="theme-color" content="#F7F1E7" media="(prefers-color-scheme: light)">
+    <meta name="theme-color" content="#171512" media="(prefers-color-scheme: dark)">
+    <link rel="icon" href="/icon.svg" type="image/svg+xml">
+    <link rel="apple-touch-icon" href="/icon.svg">
+    <link rel="manifest" href="/manifest.json">
+    <!-- 字体非阻塞加载：media=print 骗过渲染阻塞，onload 后启用；
+         大陆访问 Google Fonts / Fontshare 失败时页面照常秒开，回退系统字体 -->
+    <link href="https://api.fontshare.com/v2/css?f[]=cabinet-grotesk@800,700,500&f[]=general-sans@400,500,600&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
     <style>
         /* ══ Low Battery Studio design language — DESIGN-LANGUAGE.md §1–3 tokens ══ */
         :root{--paper:#F7F1E7;--paper-2:#FBF6EE;--cloud:#fff;--ink:#17150F;--ink-70:#4A463C;
