@@ -1,7 +1,7 @@
-node_modules/
+.dev.vars
 .env
 .env.local
 .vercel
-__pycache__/
 .wrangler/
-.dev.vars
+__pycache__/
+node_modules/

@@ -145,45 +145,82 @@
     </script>
 </head>
 <body>
-<div class="sysbar">simple quant for people running on 1% — real prices · plain verdicts</div>
+<div class="sysbar" data-i18n="sysbar">simple quant for people running on 1% — real prices · plain verdicts</div>
 <div class="p-6 max-w-7xl mx-auto">
 
     <!-- Header -->
-    <div class="flex justify-between items-center mb-8 mt-2">
+    <div class="flex justify-between items-center mb-8 mt-2 gap-4 flex-wrap">
         <div class="flex items-center gap-3">
             <div class="w-9 h-9 bg-[#E5484D] rounded-xl flex items-center justify-center text-white font-black text-2xl" style="box-shadow:0 3px 0 var(--red-deep)">s</div>
             <div>
                 <span class="text-2xl font-extrabold tracking-tight lc">steadyquant</span>
-                <span class="text-xs text-[#8A8578] ml-2" style="font-family:var(--font-mono)">省心量化</span>
+                <span class="text-xs text-[#8A8578] ml-2" style="font-family:var(--font-mono)" data-i18n="tagline">省心量化</span>
             </div>
         </div>
-        <div class="text-right text-sm" id="portfolioSummary"></div>
+        <div class="flex items-center gap-4">
+            <div class="text-right text-sm" id="portfolioSummary"></div>
+            <button onclick="toggleLang()" id="langBtn" class="text-[11px] px-3 py-1.5 rounded-full"
+                    style="font-family:var(--font-mono);border:1px solid var(--line);color:var(--dim)">EN</button>
+            <button onclick="openLogin()" id="accountBtn" class="text-[11px] px-3 py-1.5 rounded-full"
+                    style="font-family:var(--font-mono);border:1px solid var(--line);color:var(--dim)">sign in</button>
+        </div>
+    </div>
+
+    <!-- 登录弹窗 -->
+    <div id="loginModal" class="hidden" style="position:fixed;inset:0;z-index:80;background:rgba(23,21,15,.55);display:none;align-items:center;justify-content:center;padding:20px">
+        <div class="glass rounded-3xl p-8" style="max-width:400px;width:100%" onclick="event.stopPropagation()">
+            <div class="eyebrow mb-1">account</div>
+            <div class="text-2xl font-bold mb-1" data-i18n="loginTitle">登录后数据跟着你走</div>
+            <div class="text-xs text-[#8A8578] mb-6" data-i18n="loginSub">手机、电脑、平板自动同步持仓和想买清单。只需要一个邮箱，不用设密码。</div>
+
+            <div id="loginStep1">
+                <div class="text-[10px] text-[#8A8578] mb-1" data-i18n="emailLabel">邮箱</div>
+                <input id="loginEmail" type="email" autocomplete="email" class="w-full px-4 py-3 rounded-xl text-sm mb-3"
+                       placeholder="you@example.com" onkeydown="if(event.key==='Enter')sendLoginCode()">
+                <button onclick="sendLoginCode()" id="loginSendBtn" class="w-full py-3 btn-red text-sm" data-i18n="sendCode">发送验证码</button>
+            </div>
+
+            <div id="loginStep2" class="hidden">
+                <div class="text-[10px] text-[#8A8578] mb-1"><span data-i18n="codeLabel">验证码</span> · <span id="loginEmailEcho" class="text-[#4A463C]"></span></div>
+                <input id="loginCode" inputmode="numeric" maxlength="6" autocomplete="one-time-code"
+                       class="w-full px-4 py-3 rounded-xl mb-3" style="font-family:var(--font-mono);font-size:22px;letter-spacing:.3em;text-align:center"
+                       placeholder="······" onkeydown="if(event.key==='Enter')submitLoginCode()">
+                <button onclick="submitLoginCode()" id="loginVerifyBtn" class="w-full py-3 btn-red text-sm" data-i18n="verifyCode">登录</button>
+                <button onclick="backToEmail()" class="w-full py-2 mt-2 text-xs text-[#8A8578]" data-i18n="changeEmail">换个邮箱</button>
+            </div>
+
+            <div id="loginMsg" class="text-xs mt-3 text-[#8A8578]"></div>
+            <button onclick="closeLogin()" class="w-full py-2 mt-4 text-xs text-[#8A8578]" data-i18n="later">以后再说</button>
+            <div class="text-[10px] text-[#8A8578] mt-4 pt-4" style="border-top:1px solid var(--line)" data-i18n="loginNote">
+                不登录也能用，数据存在这台设备的浏览器里。登录只是为了多设备同步。
+            </div>
+        </div>
     </div>
 
     <!-- 三个主入口 -->
     <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-        <button onclick="switchTab('check',this)" class="main-btn active">
+        <button onclick="switchTab('check',this)" class="main-btn active" data-nav="check">
             <div class="eyebrow">buy</div>
-            <div class="font-black text-lg mt-1">买什么</div>
-            <div class="text-xs text-[#8A8578] mt-1">查一只股能不能碰，或让 AI 帮你找</div>
+            <div class="font-black text-lg mt-1" data-i18n="navBuy">买什么</div>
+            <div class="text-xs text-[#8A8578] mt-1" data-i18n="navBuySub">查一只股能不能碰，或让 AI 帮你找</div>
         </button>
-        <button onclick="switchTab('hold',this)" class="main-btn">
+        <button onclick="switchTab('hold',this)" class="main-btn" data-nav="hold">
             <div class="eyebrow">holdings</div>
-            <div class="font-black text-lg mt-1">已经买了 <span id="holdBadge"></span></div>
-            <div class="text-xs text-[#8A8578] mt-1">盈亏一目了然，该卖的时候亮红灯</div>
+            <div class="font-black text-lg mt-1"><span data-i18n="navHold">已经买了</span> <span id="holdBadge"></span></div>
+            <div class="text-xs text-[#8A8578] mt-1" data-i18n="navHoldSub">盈亏一目了然，该卖的时候亮红灯</div>
         </button>
-        <button onclick="switchTab('wish',this)" class="main-btn">
+        <button onclick="switchTab('wish',this)" class="main-btn" data-nav="wish">
             <div class="eyebrow">wishlist</div>
-            <div class="font-black text-lg mt-1">想买什么 <span id="wishBadge"></span></div>
-            <div class="text-xs text-[#8A8578] mt-1">看中但嫌贵的，跌到你要的价提醒你</div>
+            <div class="font-black text-lg mt-1"><span data-i18n="navWish">想买什么</span> <span id="wishBadge"></span></div>
+            <div class="text-xs text-[#8A8578] mt-1" data-i18n="navWishSub">看中但嫌贵的，跌到你要的价提醒你</div>
         </button>
     </div>
     <div class="text-right mb-6">
-        <span class="text-[11px] text-[#8A8578] cursor-pointer hover:text-[#4A463C]" onclick="document.getElementById('advTools').classList.toggle('hidden')">// 高级工具 ▾</span>
+        <span class="text-[11px] text-[#8A8578] cursor-pointer hover:text-[#4A463C]" onclick="document.getElementById('advTools').classList.toggle('hidden')" data-i18n="advTools">// 高级工具 ▾</span>
         <div id="advTools" class="hidden inline-flex gap-4 ml-3">
-            <span class="text-[11px] text-[#8A8578] cursor-pointer hover:text-[#E5484D] tab-btn" style="padding:0;border:none" onclick="switchTab('scan',this)">一键选股</span>
-            <span class="text-[11px] text-[#8A8578] cursor-pointer hover:text-[#E5484D] tab-btn" style="padding:0;border:none" onclick="switchTab('riskreview',this)">风险审查</span>
-            <span class="text-[11px] text-[#8A8578] cursor-pointer hover:text-[#E5484D] tab-btn" style="padding:0;border:none" onclick="switchTab('portfolio',this)">组合回测</span>
+            <span class="text-[11px] text-[#8A8578] cursor-pointer hover:text-[#E5484D] tab-btn" style="padding:0;border:none" onclick="switchTab('scan',this)" data-i18n="advScan">一键选股</span>
+            <span class="text-[11px] text-[#8A8578] cursor-pointer hover:text-[#E5484D] tab-btn" style="padding:0;border:none" onclick="switchTab('riskreview',this)" data-i18n="advRisk">风险审查</span>
+            <span class="text-[11px] text-[#8A8578] cursor-pointer hover:text-[#E5484D] tab-btn" style="padding:0;border:none" onclick="switchTab('portfolio',this)" data-i18n="advBt">组合回测</span>
         </div>
     </div>
 
@@ -191,26 +228,26 @@
     <div id="panel-check" class="panel active">
         <div class="glass rounded-3xl p-8">
             <div class="eyebrow mb-1">stock check</div>
-            <div class="mb-2 text-2xl font-bold">查一只股：现在能不能碰？</div>
-            <div class="text-xs text-[#8A8578] mb-6">输入股票名字或代码，用真实行情帮你判断：价格贵不贵、有没有坑、什么时候该走</div>
+            <div class="mb-2 text-2xl font-bold" data-i18n="checkTitle">查一只股：现在能不能碰？</div>
+            <div class="text-xs text-[#8A8578] mb-6" data-i18n="checkSub">输入股票名字或代码，用真实行情帮你判断：价格贵不贵、有没有坑、什么时候该走</div>
             <div class="flex gap-3 max-w-xl relative">
                 <div class="flex-1 relative">
                     <input id="checkCode" class="w-full px-5 py-4 rounded-2xl" autocomplete="off"
-                           placeholder="A股输名字（茅台）· 美股代码（AAPL）· 加股加 .TO · 币输 BTC / ETH"
+                           placeholder="A股输名字（茅台）· 美股代码（AAPL）· 加股加 .TO · 币输 BTC / ETH" data-i18n-ph="checkPh"
                            oninput="suggest(this.value)" onkeydown="if(event.key==='Enter'){hideSuggest();doCheck();}">
                     <div id="suggestBox" class="absolute left-0 right-0 top-full mt-1 z-20 rounded-2xl overflow-hidden hidden" style="background:var(--cloud);border:1px solid var(--line);box-shadow:0 18px 34px rgba(0,0,0,var(--shadow-a))"></div>
                 </div>
-                <button onclick="doCheck()" class="px-8 py-4 btn-red">体检</button>
+                <button onclick="doCheck()" class="px-8 py-4 btn-red" data-i18n="checkBtn">体检</button>
             </div>
             <div id="checkEmpty" class="mt-6 text-xs text-[#8A8578]">
-                不知道查谁？试试：
-                <span class="ex-chip" onclick="goCheck('002371.SZ')">北方华创</span>
-                <span class="ex-chip" onclick="goCheck('600519.SH')">贵州茅台</span>
-                <span class="ex-chip" onclick="goCheck('688008.SH')">澜起科技</span>
-                <span class="ex-chip" onclick="goCheck('NVDA')">英伟达(美)</span>
-                <span class="ex-chip" onclick="goCheck('SHOP.TO')">Shopify(加)</span>
-                <span class="ex-chip" onclick="goCheck('BTC')">比特币(币)</span>
-                ，或先去「帮我找股票」让 AI 沿主题挖候选，报告里的代码可直接点进来。
+                <span data-i18n="tryThese">不知道查谁？试试：</span>
+                <span class="ex-chip" onclick="goCheck('002371.SZ')" data-i18n="exNaura">北方华创</span>
+                <span class="ex-chip" onclick="goCheck('600519.SH')" data-i18n="exMoutai">贵州茅台</span>
+                <span class="ex-chip" onclick="goCheck('688008.SH')" data-i18n="exMontage">澜起科技</span>
+                <span class="ex-chip" onclick="goCheck('NVDA')" data-i18n="exNvda">英伟达(美)</span>
+                <span class="ex-chip" onclick="goCheck('SHOP.TO')" data-i18n="exShop">Shopify(加)</span>
+                <span class="ex-chip" onclick="goCheck('BTC')" data-i18n="exBtc">比特币(币)</span>
+                <span data-i18n="orAi">，或先去「帮我找股票」让 AI 沿主题挖候选，报告里的代码可直接点进来。</span>
             </div>
             <div id="checkResult" class="mt-8"></div>
         </div>
@@ -218,27 +255,27 @@
         <!-- 同页第二块：AI 帮我找 -->
         <div class="glass rounded-3xl p-8 mt-6" id="aiSection">
             <div class="eyebrow mb-1">ai scout</div>
-            <div class="mb-2 text-2xl font-bold">还没有目标？让 AI 帮你找</div>
-            <div class="text-xs text-[#8A8578] mb-6">告诉我你看好什么方向（比如"机器人"），AI 会顺着产业链往上游找那些还没被大家炒起来的公司，并把风险一起讲清楚</div>
+            <div class="mb-2 text-2xl font-bold" data-i18n="aiTitle">还没有目标？让 AI 帮你找</div>
+            <div class="text-xs text-[#8A8578] mb-6" data-i18n="aiSub">告诉我你看好什么方向（比如"机器人"），AI 会顺着产业链往上游找那些还没被大家炒起来的公司，并把风险一起讲清楚</div>
             <div class="flex gap-3 flex-wrap">
-                <input id="aiQuery" class="flex-1 min-w-[280px] px-5 py-4 rounded-2xl" placeholder="你看好什么方向？比如：机器人 / 芯片国产替代 / AI 算力" onkeydown="if(event.key==='Enter')doAnalyze()">
+                <input id="aiQuery" class="flex-1 min-w-[280px] px-5 py-4 rounded-2xl" placeholder="你看好什么方向？比如：机器人 / 芯片国产替代 / AI 算力" data-i18n-ph="aiPh" onkeydown="if(event.key==='Enter')doAnalyze()">
                 <select id="aiMarket" class="px-4 py-4 rounded-2xl">
-                    <option value="A股">A股</option>
-                    <option value="美股">美股</option>
-                    <option value="加拿大">加拿大</option>
-                    <option value="加密货币">加密货币</option>
-                    <option value="A股+美股+加拿大">全市场都看</option>
+                    <option value="A股" data-i18n="mktA">A股</option>
+                    <option value="美股" data-i18n="mktUS">美股</option>
+                    <option value="加拿大" data-i18n="mktCA">加拿大</option>
+                    <option value="加密货币" data-i18n="mktCrypto">加密货币</option>
+                    <option value="A股+美股+加拿大+加密货币" data-i18n="mktAll">全市场都看</option>
                 </select>
-                <button id="aiBtn" onclick="doAnalyze()" class="px-8 py-4 btn-red">生成报告</button>
+                <button id="aiBtn" onclick="doAnalyze()" class="px-8 py-4 btn-red" data-i18n="aiBtn">生成报告</button>
             </div>
             <div class="text-xs text-[#8A8578] mt-3">
-                试试这些主题：
-                <span class="ex-chip" onclick="goAnalyze('AI 服务器液冷散热，A股沿这条链谁是被忽视的上游卡点？')">AI 液冷</span>
-                <span class="ex-chip" onclick="goAnalyze('人形机器人产业链，上游哪些环节是真瓶颈？')">人形机器人</span>
-                <span class="ex-chip" onclick="goAnalyze('HBM 存储产业链的国产替代，卡点在哪一层？')">HBM 国产替代</span>
-                <span class="ex-chip" onclick="goAnalyze('数据中心电力与电网设备，谁是产能售罄的卡点？')">数据中心电力</span>
+                <span data-i18n="aiTryThese">试试这些主题：</span>
+                <span class="ex-chip" onclick="goAnalyze('AI 服务器液冷散热，A股沿这条链谁是被忽视的上游卡点？')" data-i18n="exAiCool">AI 液冷</span>
+                <span class="ex-chip" onclick="goAnalyze('人形机器人产业链，上游哪些环节是真瓶颈？')" data-i18n="exRobot">人形机器人</span>
+                <span class="ex-chip" onclick="goAnalyze('HBM 存储产业链的国产替代，卡点在哪一层？')" data-i18n="exHbm">HBM 国产替代</span>
+                <span class="ex-chip" onclick="goAnalyze('数据中心电力与电网设备，谁是产能售罄的卡点？')" data-i18n="exPower">数据中心电力</span>
             </div>
-            <div class="text-[10px] text-[#8A8578] mt-2">⚠️ AI 无实时数据，报告中价格/市值类数字仅供参考需自行核实 · 仅供研究教育，非投资建议 · 报告中出现的 <span class="code-link">股票代码</span> 可直接点击跳转体检</div>
+            <div class="text-[10px] text-[#8A8578] mt-2"><span data-i18n="aiWarn">⚠️ AI 无实时数据，报告中价格/市值类数字仅供参考需自行核实 · 仅供研究教育，非投资建议 · 报告中出现的</span> <span class="code-link" data-i18n="tickerWord">股票代码</span> <span data-i18n="aiWarn2">可直接点击跳转体检</span></div>
             <div id="aiResult" class="ai-md mt-8 text-sm leading-relaxed text-[#4A463C]"></div>
         </div>
     </div>
@@ -247,40 +284,53 @@
     <div id="panel-hold" class="panel">
         <div class="glass rounded-3xl p-8">
             <div class="flex flex-wrap justify-between items-start gap-4 mb-2">
-                <div><div class="eyebrow mb-1">holdings</div><div class="text-2xl font-bold">已经买了</div></div>
-                <button onclick="toggleAddForm()" class="px-5 py-2.5 btn-red text-sm">+ 添加持仓</button>
+                <div><div class="eyebrow mb-1">holdings</div><div class="text-2xl font-bold" data-i18n="holdTitle">已经买了</div></div>
+                <button onclick="toggleAddForm()" class="px-5 py-2.5 btn-red text-sm" data-i18n="addHold">+ 添加持仓</button>
             </div>
-            <div class="text-xs text-[#8A8578] mb-6">记下你的持仓，每次打开自动算盈亏、画走势、跟大盘比、盯止损——跌破提醒线亮红灯，提醒你该考虑卖了</div>
+            <div class="text-xs text-[#8A8578] mb-6" data-i18n="holdSub">记下你的持仓，每次打开自动算盈亏、画走势、跟大盘比、盯止损——跌破提醒线亮红灯，提醒你该考虑卖了</div>
 
             <!-- 添加持仓表单 -->
             <div id="addForm" class="hidden border border-[#3FB55B]/40 rounded-2xl p-6 mb-6">
-                <div class="text-sm font-bold mb-4">添加一笔持仓（A股/美股/加股自动识别）</div>
-                <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
+                <div class="text-sm font-bold mb-4" data-i18n="addFormTitle">添加一笔持仓（A股/美股/加股/币 自动识别）</div>
+                <div class="grid grid-cols-1 md:grid-cols-5 gap-3">
                     <div>
-                        <div class="text-[10px] text-[#8A8578] mb-1">股票名字或代码</div>
-                        <input id="afStock" class="w-full px-4 py-3 rounded-xl text-sm" placeholder="茅台 / NVDA / SHOP.TO">
+                        <div class="text-[10px] text-[#8A8578] mb-1" data-i18n="afStock">股票名字或代码</div>
+                        <input id="afStock" class="w-full px-4 py-3 rounded-xl text-sm" placeholder="茅台 / NVDA / SHOP.TO / BTC"
+                               data-i18n-ph="afStockPh" onblur="previewCur()">
                     </div>
                     <div>
-                        <div class="text-[10px] text-[#8A8578] mb-1">买入日期</div>
+                        <div class="text-[10px] text-[#8A8578] mb-1" data-i18n="afDate">买入日期</div>
                         <input id="afDate" type="date" class="w-full px-4 py-3 rounded-xl text-sm">
                     </div>
                     <div>
-                        <div class="text-[10px] text-[#8A8578] mb-1">买入价（每股）</div>
-                        <input id="afPrice" type="number" step="any" class="w-full px-4 py-3 rounded-xl text-sm" placeholder="如 1250.5">
+                        <div class="text-[10px] text-[#8A8578] mb-1" data-i18n="afPrice">买入价（每股）</div>
+                        <input id="afPrice" type="number" step="any" class="w-full px-4 py-3 rounded-xl text-sm" placeholder="1250.5">
                     </div>
                     <div>
-                        <div class="text-[10px] text-[#8A8578] mb-1">数量（股，可不填）</div>
-                        <input id="afQty" type="number" step="any" class="w-full px-4 py-3 rounded-xl text-sm" placeholder="如 100">
+                        <div class="text-[10px] text-[#8A8578] mb-1" data-i18n="afCur">你付的币种</div>
+                        <select id="afCur" class="w-full px-4 py-3 rounded-xl text-sm">
+                            <option value="" data-i18n="afCurAuto">自动（按标的所在市场）</option>
+                            <option value="CAD" data-i18n="curCAD">CAD 加币</option>
+                            <option value="USD" data-i18n="curUSD">USD 美元</option>
+                            <option value="CNY" data-i18n="curCNY">CNY 人民币</option>
+                        </select>
+                    </div>
+                    <div>
+                        <div class="text-[10px] text-[#8A8578] mb-1" data-i18n="afQty">数量（股，可不填）</div>
+                        <input id="afQty" type="number" step="any" class="w-full px-4 py-3 rounded-xl text-sm" placeholder="100">
                     </div>
                 </div>
-                <div class="flex gap-3 mt-4 items-center">
-                    <button onclick="submitAddForm()" id="afBtn" class="px-6 py-3 btn-red text-sm">确认添加</button>
-                    <button onclick="toggleAddForm()" class="px-4 py-3 text-[#8A8578] text-sm hover:text-white">取消</button>
+                <div class="text-[10px] text-[#8A8578] mt-2" data-i18n="afCurHint">
+                    💡 用加币买美股（如 Wealthsimple）就选 CAD，填券商显示的加币成本价——盈亏会按加币算，跟你的账单对得上。
+                </div>
+                <div class="flex gap-3 mt-4 items-center flex-wrap">
+                    <button onclick="submitAddForm()" id="afBtn" class="px-6 py-3 btn-red text-sm" data-i18n="afSubmit">确认添加</button>
+                    <button onclick="toggleAddForm()" class="px-4 py-3 text-[#8A8578] text-sm" data-i18n="cancel">取消</button>
                     <span id="afMsg" class="text-xs text-[#8A8578]"></span>
                 </div>
             </div>
 
-            <div id="holdResult"><div class="text-center py-8"><img src="/hero-mascot.png" alt="" style="width:130px;margin:0 auto 14px;opacity:.9"><div class="eyebrow" style="display:inline-block">holdings running on 0%</div><div class="text-sm text-[#4A463C] mt-2">还没记录持仓。点右上角「+ 添加持仓」，或去「买什么」查一只股后点「我已经买了」。</div></div></div>
+            <div id="holdResult"><div class="text-center py-8"><img src="/hero-mascot.png" alt="" style="width:130px;margin:0 auto 14px;opacity:.9"><div class="eyebrow" style="display:inline-block">holdings running on 0%</div><div class="text-sm text-[#4A463C] mt-2" data-i18n="holdEmpty">还没记录持仓。点右上角「+ 添加持仓」，或去「买什么」查一只股后点「我已经买了」。</div></div></div>
         </div>
     </div>
 
@@ -288,9 +338,9 @@
     <div id="panel-wish" class="panel">
         <div class="glass rounded-3xl p-8">
             <div class="eyebrow mb-1">wishlist</div>
-            <div class="mb-2 text-2xl font-bold">想买什么</div>
-            <div class="text-xs text-[#8A8578] mb-6">看中但觉得贵的股票放这。设一个你愿意买的价，跌到了就亮绿灯提醒你——不用天天刷行情等回调</div>
-            <div id="wishResult"><div class="text-[#8A8578] text-sm">wishlist running on 0%… 还没有想买的。去「买什么」查一只股，点「想买，等便宜点」。</div></div>
+            <div class="mb-2 text-2xl font-bold" data-i18n="wishTitle">想买什么</div>
+            <div class="text-xs text-[#8A8578] mb-6" data-i18n="wishSub">看中但觉得贵的股票放这。设一个你愿意买的价，跌到了就亮绿灯提醒你——不用天天刷行情等回调</div>
+            <div id="wishResult"><div class="text-[#8A8578] text-sm" data-i18n="wishEmpty">wishlist running on 0%… 还没有想买的。去「买什么」查一只股，点「想买，等便宜点」。</div></div>
         </div>
     </div>
 
@@ -373,6 +423,383 @@
 </div>
 
 <script>
+/* ============ 语言 ============ */
+const I18N = {
+  zh: {
+    tagline: "省心量化",
+    sysbar: "simple quant for people running on 1% — real prices · plain verdicts",
+    // 三入口
+    navBuy: "买什么", navBuySub: "查一只股能不能碰，或让 AI 帮你找",
+    navHold: "已经买了", navHoldSub: "盈亏一目了然，该卖的时候亮红灯",
+    navWish: "想买什么", navWishSub: "看中但嫌贵的，跌到你要的价提醒你",
+    advTools: "// 高级工具 ▾", advScan: "一键选股", advRisk: "风险审查", advBt: "组合回测",
+    // 体检
+    checkTitle: "查一只股：现在能不能碰？",
+    checkSub: "输入股票名字或代码，用真实行情帮你判断：价格贵不贵、有没有坑、什么时候该走",
+    checkPh: "A股输名字（茅台）· 美股代码（AAPL）· 加股加 .TO · 币输 BTC / ETH",
+    checkBtn: "体检", checking: "正在拉取真实价格并体检（约 5-10 秒）…",
+    tryThese: "不知道查谁？试试：", orAi: "，或先去「帮我找股票」让 AI 沿主题挖候选，报告里的代码可直接点进来。",
+    // AI
+    aiTitle: "还没有目标？让 AI 帮你找",
+    aiSub: '告诉我你看好什么方向（比如"机器人"），AI 会顺着产业链往上游找那些还没被大家炒起来的公司，并把风险一起讲清楚',
+    aiPh: "你看好什么方向？比如：机器人 / 芯片国产替代 / AI 算力",
+    aiBtn: "生成报告", aiBtnBusy: "生成中…", aiTryThese: "试试这些主题：",
+    aiWarn: "⚠️ AI 无实时数据，报告中价格/市值类数字仅供参考需自行核实 · 仅供研究教育，非投资建议 · 报告中出现的",
+    aiWarn2: "可直接点击跳转体检", tickerWord: "股票代码",
+    exNaura: "北方华创", exMoutai: "贵州茅台", exMontage: "澜起科技",
+    exNvda: "英伟达(美)", exShop: "Shopify(加)", exBtc: "比特币(币)",
+    exAiCool: "AI 液冷", exRobot: "人形机器人", exHbm: "HBM 国产替代", exPower: "数据中心电力",
+    mktA: "A股", mktUS: "美股", mktCA: "加拿大", mktCrypto: "加密货币", mktAll: "全市场都看",
+    curCAD: "CAD 加币", curUSD: "USD 美元", curCNY: "CNY 人民币",
+    aiReviewTitle: "🔍 独立复核（另一个 AI 专门挑刺，帮你防止被忽悠）",
+    // 持仓
+    holdTitle: "已经买了", addHold: "+ 添加持仓",
+    holdSub: "记下你的持仓，每次打开自动算盈亏、画走势、跟大盘比、盯止损——跌破提醒线亮红灯，提醒你该考虑卖了",
+    holdEmpty: "还没记录持仓。点右上角「+ 添加持仓」，或去「买什么」查一只股后点「我已经买了」。",
+    holdLoading: "正在查最新价格、算盈亏…",
+    addFormTitle: "添加一笔持仓（A股/美股/加股/币 自动识别）",
+    afStock: "股票名字或代码", afStockPh: "茅台 / NVDA / SHOP.TO / BTC",
+    afDate: "买入日期", afPrice: "买入价（每股）", afCur: "你付的币种", afQty: "数量（股，可不填）",
+    afCurHint: "💡 用加币买美股（如 Wealthsimple）就选 CAD，填券商显示的加币成本价——盈亏会按加币算，跟你的账单对得上。",
+    afSubmit: "确认添加", afAdding: "识别中…", cancel: "取消",
+    afNeed: "⚠️ 至少填股票和买入价",
+    afBadPrice: "⚠️ 买入价填的不对",
+    afNotFound: (s) => `⚠️ 没认出「${s}」。A股可输中文名，美股输代码（NVDA），加股加 .TO，币输 BTC / ETH`,
+    afCurAuto: "自动（按标的所在市场）",
+    // 想买
+    wishTitle: "想买什么",
+    wishSub: "看中但觉得贵的股票放这。设一个你愿意买的价，跌到了就亮绿灯提醒你——不用天天刷行情等回调",
+    wishEmpty: "wishlist running on 0%… 还没有想买的。去「买什么」查一只股，点「想买，等便宜点」。",
+    wishLoading: "正在看有没有跌到你要的价…",
+    // 卡片
+    ok: "✓ 一切正常", stopHit: "⛔ 跌破止损线，该考虑卖了",
+    wishHit: "🟢 到你要的价了！先复检再决定", wishGap: (g) => `还差 ${g}% 跌到目标`,
+    boughtOn: (d, c, e) => `${d} 买入，成本 ${c}${e}`, stopLine: (c, s) => `止损线 ${c}${s}`,
+    profit: "赚", loss: "亏", recheck: "复检", sold: "已卖出/移除", iBought: "我买了", noWant: "不想买了",
+    noData: "暂无数据",
+    beat: (b, v) => `跑赢${b} ${v}%`, lag: (b, v) => `跑输${b} ${v}%`,
+    checkedAt: (t) => `检查时间 ${t}`, savedLocal: "数据存在这台设备", savedCloud: "已同步到云端",
+    trendNote: "走势为近 60 个交易日", benchNote: "「跑赢/跑输」= 和你所在市场的大盘指数比",
+    fxNote: (fx, qc, ql) => `按汇率 ${fx} 折算（原价 ${qc}${ql}）`,
+    myHold: "我的持仓", mktValue: "市值",
+    addedOn: (d, c, p) => `${d} 加入（当时 ${c}${p}）`, target: (c, t) => `目标价 ${c}${t}`,
+    // 体检结果
+    verdictGreen: "可以研究，但别一把梭", verdictYellow: "先看看，别急", verdictRed: "现在别碰",
+    watchOut: "要小心的地方", iBoughtIt: "✅ 我已经买了（帮我盯盈亏和止损）",
+    wantIt: "🌟 想买，等便宜点（到价提醒我）", whatIsIt: "💡 这公司是干嘛的？让 AI 讲讲",
+    proDetails: "📊 查看专业细节（价格位置 / 判据打分 / 离场规则）▾",
+    waterLine: (l, s) => `水位标尺（近 6 个月）· ${l} · ${s}`,
+    offHigh: "距高点", m1: "1月", m3: "3月", sma: "SMA50", above: "上方 ✓", below: "下方 ✗",
+    mcap: "市值", flagsTitle: "红旗扫描（命中即降级）",
+    noFlags: "✓ 未命中自动红旗（定性红旗仍需自查：增发稀释/单一客户/蹭热点）",
+    critAuto: "卡点判据 · 自动判定", critManual: "定性判据（自己核实后勾选）",
+    critCount: (n, t) => `已命中 ${n}/${t}（命中越多信念越高）`,
+    exitRules: "离场规则（满足任一 = 承认判断错，无条件离场）",
+    // 大白话
+    ptTop: (c, l) => `现在 ${c}${l}，几乎是半年来最贵的时候`,
+    ptLow: (c, l, o) => `现在 ${c}${l}，比半年最高点便宜了 ${o}%，处在半年来的低位`,
+    ptMid: (c, l, o) => `现在 ${c}${l}，在半年价格区间的中间位置（比最高点低 ${o}%）`,
+    ptUp: (r) => `最近一个月大涨了 ${r}%，现在追进去容易买在山顶`,
+    ptDown: (r) => `最近一个月跌了 ${r}%，还在下跌路上，先别急着接`,
+    ptFlat: (d, r) => `最近一个月${d}了 ${r}%，走势不算极端`,
+    up: "涨", down: "跌",
+    ptPeHigh: (pe) => `市盈率 ${pe} 倍，市场已经给了很高的期待，业绩稍不及预期就容易跌`,
+    ptPeLow: (pe) => `市盈率 ${pe} 倍，估值不算贵`,
+    ptPeMid: (pe) => `市盈率 ${pe} 倍，估值中等`,
+    // 纪律对照
+    shadowTitle: "纪律对照",
+    shadowSaved: (d, p, v) => `纪律对照：${d} 收盘曾跌破止损线，那天卖出是 ${p}%，比现在少亏 ${v}% —— 下次红灯亮了别犹豫`,
+    shadowCost: (d, v) => `纪律对照：${d} 曾跌破止损线，这次扛回来了（比纪律卖出多赚 ${v}%）—— 但别把幸运当能力`,
+    winLoss: (w, l) => `${w}胜${l}负`, avgWin: (v) => `平均赚 +${v}%`, avgLoss: (v) => `平均亏 ${v}%`,
+    beatCount: (w, n) => `跑赢大盘 ${w}/${n} 只`,
+    beatNote: "牛市里都涨，只有跑赢大盘才算选股本事",
+    nowState: (l, st) => `现状：${l} · ${st}`,
+    shares: "股",
+    // 登录
+    signIn: "登录", signOut: "退出", account: "账号",
+    loginTitle: "登录后数据跟着你走",
+    loginSub: "手机、电脑、平板自动同步持仓和想买清单。只需要一个邮箱，不用设密码。",
+    emailLabel: "邮箱", codeLabel: "验证码", sendCode: "发送验证码", sending: "发送中…",
+    verifyCode: "登录", verifying: "登录中…", changeEmail: "换个邮箱", later: "以后再说",
+    loginNote: "不登录也能用，数据存在这台设备的浏览器里。登录只是为了多设备同步。",
+    loginOk: "✅ 登录成功，数据已同步",
+    logoutOk: "已退出。本机数据还在。",
+    mergeAsk: (n) => `这台设备上有 ${n} 条本地记录。要合并到你的账号吗？（取消则用云端数据覆盖本机）`,
+    // 通用
+    netErr: "连不上服务器。请刷新页面重试；如果一直失败，说明后端服务没在运行。",
+    notFound: (c) => `没找到「${c}」，换个名字或代码试试`,
+    holdSaved: (n, c, e, q) => `已记录持仓 <b>${n}</b>（成本 ${c}${e}${q}）：跌破提醒线会亮红灯`,
+    holdAdded: (n, m, c, p, q) => `✓ 已添加 <b>${n}</b>（${m}）成本 ${c}${p}${q}`,
+    wishSaved: (n, c, tg) => `<b>${n}</b> 已进想买清单：跌到 ${c}${tg} 会亮绿灯提醒`,
+    goLook: "去看看 →",
+    failed: (m) => `失败：${m}`,
+    disclaimerFoot: "© 2026 low battery studio — still at 1%. 仅供研究教育，非投资建议",
+  },
+
+  en: {
+    tagline: "steady, not clever",
+    sysbar: "simple quant for people running on 1% — real prices · plain verdicts",
+    navBuy: "what to buy", navBuySub: "check if a stock is worth touching, or let AI find one",
+    navHold: "what I own", navHoldSub: "P&L at a glance, red light when it's time to sell",
+    navWish: "what I want", navWishSub: "too pricey for now — we'll ping you at your price",
+    advTools: "// advanced ▾", advScan: "screener", advRisk: "risk review", advBt: "backtest",
+    checkTitle: "check a stock: can I touch it right now?",
+    checkSub: "Type a name or ticker. Real prices, plain answers: is it expensive, are there traps, when should you leave.",
+    checkPh: "US ticker (AAPL) · Canada add .TO · crypto BTC / ETH · A-shares by name",
+    checkBtn: "check", checking: "pulling real prices and running the check (5–10s)…",
+    tryThese: "Not sure who to check? Try:", orAi: ", or let the AI scout below dig up candidates — tickers in its report are clickable.",
+    aiTitle: "no target yet? let AI find one",
+    aiSub: 'Tell it a direction (say "robotics") and it walks up the supply chain looking for companies nobody has bid up yet — risks included.',
+    aiPh: "What are you bullish on? e.g. robotics / domestic chips / AI compute",
+    aiBtn: "write report", aiBtnBusy: "writing…", aiTryThese: "try a theme:",
+    aiWarn: "⚠️ The AI has no live data — treat any price or market-cap figure as unverified · research & education only, not investment advice · any",
+    aiWarn2: "in the report is clickable", tickerWord: "ticker",
+    exNaura: "Naura (A)", exMoutai: "Moutai (A)", exMontage: "Montage (A)",
+    exNvda: "Nvidia (US)", exShop: "Shopify (CA)", exBtc: "Bitcoin",
+    exAiCool: "AI liquid cooling", exRobot: "humanoid robots", exHbm: "HBM localisation", exPower: "datacentre power",
+    mktA: "A-shares", mktUS: "US", mktCA: "Canada", mktCrypto: "crypto", mktAll: "everything",
+    curCAD: "CAD", curUSD: "USD", curCNY: "CNY",
+    aiReviewTitle: "🔍 independent review (a second AI whose only job is to poke holes in the first one)",
+    holdTitle: "what I own", addHold: "+ add position",
+    holdSub: "Log what you own. Every visit we recompute P&L, draw the trend, compare to the index and watch your stop — red light means think about selling.",
+    holdEmpty: "Nothing logged yet. Hit \"+ add position\", or check a stock under \"what to buy\" and tap \"I already bought this\".",
+    holdLoading: "fetching prices, computing P&L…",
+    addFormTitle: "add a position (A-shares / US / Canada / crypto auto-detected)",
+    afStock: "name or ticker", afStockPh: "NVDA / SHOP.TO / BTC / 茅台",
+    afDate: "purchase date", afPrice: "cost per share", afCur: "currency you paid in", afQty: "shares (optional)",
+    afCurHint: "💡 Buying US stocks with CAD (Wealthsimple etc.)? Pick CAD and enter the CAD cost your broker shows — P&L is then computed in CAD, matching your statement.",
+    afSubmit: "add it", afAdding: "looking it up…", cancel: "cancel",
+    afNeed: "⚠️ Name and cost price are required",
+    afBadPrice: "⚠️ That cost price doesn't look right",
+    afNotFound: (s) => `⚠️ Couldn't identify "${s}". US: plain ticker (NVDA). Canada: add .TO. Crypto: BTC / ETH.`,
+    afCurAuto: "auto (use the stock's own market)",
+    wishTitle: "what I want",
+    wishSub: "Park the ones you like but find expensive. Set the price you'd pay — green light when it gets there. No need to refresh quotes all day.",
+    wishEmpty: "wishlist running on 0%… nothing here yet. Check a stock under \"what to buy\" and tap \"want it, waiting for cheaper\".",
+    wishLoading: "checking whether anything hit your price…",
+    ok: "✓ all good", stopHit: "⛔ below your stop — think about selling",
+    wishHit: "🟢 it hit your price — re-check before you act", wishGap: (g) => `${g}% to go before it hits your price`,
+    boughtOn: (d, c, e) => `bought ${d} · cost ${c}${e}`, stopLine: (c, s) => `stop ${c}${s}`,
+    profit: "up", loss: "down", recheck: "re-check", sold: "sold / remove", iBought: "I bought it", noWant: "not anymore",
+    noData: "no data",
+    beat: (b, v) => `beating ${b} by ${v}%`, lag: (b, v) => `trailing ${b} by ${v}%`,
+    checkedAt: (t) => `checked ${t}`, savedLocal: "stored on this device", savedCloud: "synced to your account",
+    trendNote: "trend covers the last 60 trading days", benchNote: "\"beating/trailing\" = versus the index of that stock's own market",
+    fxNote: (fx, qc, ql) => `converted at ${fx} (${qc}${ql} in its own currency)`,
+    myHold: "my positions", mktValue: "value",
+    addedOn: (d, c, p) => `added ${d} (was ${c}${p})`, target: (c, t) => `target ${c}${t}`,
+    verdictGreen: "worth researching — but don't go all in", verdictYellow: "hold off for now", verdictRed: "don't touch it right now",
+    watchOut: "what to watch out for", iBoughtIt: "✅ I already bought this (watch my P&L and stop)",
+    wantIt: "🌟 want it, waiting for cheaper (ping me at my price)", whatIsIt: "💡 what does this company even do? ask the AI",
+    proDetails: "📊 show the technical detail (price level / criteria / exit rules) ▾",
+    waterLine: (l, s) => `price level (6 months) · ${l} · ${s}`,
+    offHigh: "off the high", m1: "1mo", m3: "3mo", sma: "SMA50", above: "above ✓", below: "below ✗",
+    mcap: "mkt cap", flagsTitle: "red flags (any hit = downgrade)",
+    noFlags: "✓ No automatic red flags. Still check the qualitative ones yourself: dilution, single-customer risk, bandwagon plays.",
+    critAuto: "bottleneck criteria · auto-scored", critManual: "qualitative criteria (verify, then tick)",
+    critCount: (n, t) => `${n}/${t} hit — the more it hits, the higher your conviction`,
+    exitRules: "exit rules (any one true = you were wrong, leave without negotiating)",
+    ptTop: (c, l) => `It's at ${c}${l} — just about the priciest it's been in six months.`,
+    ptLow: (c, l, o) => `It's at ${c}${l}, ${o}% below its six-month high — down at the low end of its range.`,
+    ptMid: (c, l, o) => `It's at ${c}${l}, mid-range for the last six months (${o}% below the high).`,
+    ptUp: (r) => `It ripped ${r}% in the past month — chase it now and you're likely buying the top.`,
+    ptDown: (r) => `It's fallen ${r}% in the past month and is still sliding — don't rush in.`,
+    ptFlat: (d, r) => `It's ${d} ${r}% over the past month — nothing extreme.`,
+    up: "up", down: "down",
+    ptPeHigh: (pe) => `P/E of ${pe} — the market already expects a lot; any earnings miss and it drops.`,
+    ptPeLow: (pe) => `P/E of ${pe} — not expensive.`,
+    ptPeMid: (pe) => `P/E of ${pe} — middling valuation.`,
+    shadowTitle: "discipline check",
+    shadowSaved: (d, p, v) => `Discipline check: it closed below your stop on ${d}. Selling that day would have been ${p}% — ${v}% better than where you are now. Next time the red light comes on, don't hesitate.`,
+    shadowCost: (d, v) => `Discipline check: it broke your stop on ${d} and you held through it — that worked out ${v}% better than the rule would have. Just don't mistake luck for skill.`,
+    winLoss: (w, l) => `${w}W ${l}L`, avgWin: (v) => `avg win +${v}%`, avgLoss: (v) => `avg loss ${v}%`,
+    beatCount: (w, n) => `beat the index on ${w}/${n}`,
+    beatNote: "In a bull market everything goes up — only beating the index shows actual stock-picking skill",
+    nowState: (l, st) => `now: ${l} · ${st}`,
+    shares: "sh",
+    signIn: "sign in", signOut: "sign out", account: "account",
+    loginTitle: "sign in and your data follows you",
+    loginSub: "Positions and wishlist sync across phone, laptop and tablet. Just an email — no password to remember.",
+    emailLabel: "email", codeLabel: "code", sendCode: "send code", sending: "sending…",
+    verifyCode: "sign in", verifying: "signing in…", changeEmail: "use another email", later: "maybe later",
+    loginNote: "You can use everything without an account — data just lives in this browser. Signing in only adds cross-device sync.",
+    loginOk: "✅ signed in — your data is synced",
+    logoutOk: "Signed out. Your local data is still here.",
+    mergeAsk: (n) => `This device has ${n} local record(s). Merge them into your account? (Cancel = replace local with your cloud data)`,
+    netErr: "Can't reach the server. Refresh and retry; if it keeps failing the backend isn't running.",
+    notFound: (c) => `Couldn't find "${c}" — try another name or ticker`,
+    holdSaved: (n, c, e, q) => `Logged <b>${n}</b> (cost ${c}${e}${q}) — red light if it breaks your stop`,
+    holdAdded: (n, m, c, p, q) => `✓ Added <b>${n}</b> (${m}) at ${c}${p}${q}`,
+    wishSaved: (n, c, tg) => `<b>${n}</b> is on your wishlist — green light when it hits ${c}${tg}`,
+    goLook: "take a look →",
+    failed: (m) => `failed: ${m}`,
+    disclaimerFoot: "© 2026 low battery studio — still at 1%. research & education only, not investment advice",
+  },
+};
+
+// 首次访问按浏览器语言猜，之后用用户自己选的
+let LANG = localStorage.getItem('sq_lang')
+  || ((navigator.language || 'zh').toLowerCase().startsWith('zh') ? 'zh' : 'en');
+const t = (k, ...a) => { const v = (I18N[LANG] || I18N.zh)[k]; return typeof v === 'function' ? v(...a) : (v ?? k); };
+
+function applyI18n() {
+  document.documentElement.lang = LANG === 'zh' ? 'zh-CN' : 'en';
+  document.querySelectorAll('[data-i18n]').forEach(el => { el.textContent = t(el.dataset.i18n); });
+  document.querySelectorAll('[data-i18n-ph]').forEach(el => { el.placeholder = t(el.dataset.i18nPh); });
+  document.querySelectorAll('[data-i18n-html]').forEach(el => { el.innerHTML = t(el.dataset.i18nHtml); });
+  const lb = document.getElementById('langBtn');
+  if (lb) lb.textContent = LANG === 'zh' ? 'EN' : '中文';
+  const auto = document.querySelector('#afCur option[value=""]');
+  if (auto) auto.textContent = t('afCurAuto');
+  updateBadges();
+  // 已渲染的动态内容跟着换语言
+  if (lastCheck) doCheck();
+  if (document.getElementById('panel-hold').classList.contains('active')) refreshHold();
+  if (document.getElementById('panel-wish').classList.contains('active')) refreshWish();
+}
+
+function toggleLang() {
+  LANG = LANG === 'zh' ? 'en' : 'zh';
+  localStorage.setItem('sq_lang', LANG);
+  applyI18n();
+  fetch('/api/auth/lang', { method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ lang: LANG }) }).catch(() => {});
+}
+
+/* ============ 登录 / 云端同步 ============ */
+let USER = null;
+
+async function checkAuth() {
+  try {
+    const r = await fetch('/api/auth/me');
+    const d = await r.json();
+    USER = d.ok ? d : null;
+  } catch { USER = null; }
+  renderAccount();
+  if (USER) await pullCloud();
+}
+
+function renderAccount() {
+  const b = document.getElementById('accountBtn');
+  if (!b) return;
+  if (USER) {
+    b.textContent = USER.email.split('@')[0];
+    b.title = USER.email + ' · ' + t('signOut');
+    b.onclick = doLogout;
+    b.style.color = 'var(--red1)';
+    b.style.borderColor = 'var(--red1)';
+  } else {
+    b.textContent = t('signIn');
+    b.title = '';
+    b.onclick = openLogin;
+    b.style.color = 'var(--dim)';
+    b.style.borderColor = 'var(--line)';
+  }
+}
+
+function openLogin() {
+  const m = document.getElementById('loginModal');
+  m.style.display = 'flex'; m.classList.remove('hidden');
+  m.onclick = (e) => { if (e.target === m) closeLogin(); };
+  document.getElementById('loginEmail').focus();
+}
+function closeLogin() {
+  const m = document.getElementById('loginModal');
+  m.style.display = 'none'; m.classList.add('hidden');
+  document.getElementById('loginMsg').textContent = '';
+}
+function backToEmail() {
+  document.getElementById('loginStep1').classList.remove('hidden');
+  document.getElementById('loginStep2').classList.add('hidden');
+  document.getElementById('loginMsg').textContent = '';
+}
+
+async function sendLoginCode() {
+  const email = document.getElementById('loginEmail').value.trim();
+  const btn = document.getElementById('loginSendBtn'), msg = document.getElementById('loginMsg');
+  btn.disabled = true; btn.textContent = t('sending');
+  try {
+    const r = await fetch('/api/auth/send_code', { method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ email, lang: LANG }) });
+    const d = await r.json();
+    msg.textContent = d.ok ? d.message : d.error;
+    msg.style.color = d.ok ? 'var(--charge)' : 'var(--red1)';
+    if (d.ok) {
+      document.getElementById('loginStep1').classList.add('hidden');
+      document.getElementById('loginStep2').classList.remove('hidden');
+      document.getElementById('loginEmailEcho').textContent = email;
+      document.getElementById('loginCode').focus();
+    }
+  } catch { msg.textContent = t('netErr'); msg.style.color = 'var(--red1)'; }
+  btn.disabled = false; btn.textContent = t('sendCode');
+}
+
+async function submitLoginCode() {
+  const email = document.getElementById('loginEmail').value.trim();
+  const code = document.getElementById('loginCode').value.trim();
+  const btn = document.getElementById('loginVerifyBtn'), msg = document.getElementById('loginMsg');
+  btn.disabled = true; btn.textContent = t('verifying');
+  try {
+    const r = await fetch('/api/auth/verify', { method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ email, code, lang: LANG }) });
+    const d = await r.json();
+    if (!d.ok) { msg.textContent = d.error; msg.style.color = 'var(--red1)'; }
+    else {
+      USER = { email: d.email, lang: LANG };
+      renderAccount(); closeLogin();
+      await mergeOnLogin();
+      toast(t('loginOk'));
+    }
+  } catch { msg.textContent = t('netErr'); msg.style.color = 'var(--red1)'; }
+  btn.disabled = false; btn.textContent = t('verifyCode');
+}
+
+async function doLogout() {
+  await fetch('/api/auth/logout', { method: 'POST' }).catch(() => {});
+  USER = null; renderAccount(); toast(t('logoutOk'));
+}
+
+// 登录瞬间：本机有数据就问要不要合并，避免把老数据冲掉
+async function mergeOnLogin() {
+  const localHold = getList('sq_hold'), localWish = getList('sq_wish');
+  const localCount = localHold.length + localWish.length;
+  let cloud = { hold: [], wish: [] };
+  try {
+    const r = await fetch('/api/data');
+    const d = await r.json();
+    if (d.ok) cloud = { hold: d.hold || [], wish: d.wish || [] };
+  } catch {}
+
+  if (localCount && confirm(t('mergeAsk', localCount))) {
+    const byCode = (arr) => Object.fromEntries(arr.map(x => [x.code, x]));
+    const hold = Object.values({ ...byCode(cloud.hold), ...byCode(localHold) });
+    const wish = Object.values({ ...byCode(cloud.wish), ...byCode(localWish) });
+    setList('sq_hold', hold); setList('sq_wish', wish);
+    await pushCloud();
+  } else {
+    setList('sq_hold', cloud.hold); setList('sq_wish', cloud.wish);
+  }
+  updateBadges();
+  if (document.getElementById('panel-hold').classList.contains('active')) refreshHold();
+}
+
+async function pullCloud() {
+  try {
+    const r = await fetch('/api/data');
+    const d = await r.json();
+    if (d.ok) { setList('sq_hold', d.hold || []); setList('sq_wish', d.wish || []); updateBadges(); }
+  } catch {}
+}
+
+// 每次本地改动后推云端（未登录静默跳过）
+async function pushCloud() {
+  if (!USER) return;
+  try {
+    await fetch('/api/data', { method: 'PUT', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ hold: getList('sq_hold'), wish: getList('sq_wish') }) });
+  } catch {}
+}
+
 function switchTab(tab, el) {
     document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
     document.querySelectorAll('.tab-btn, .main-btn').forEach(b => b.classList.remove('active'));
@@ -423,16 +850,16 @@ async function apiFetch(url) {
             return await res.json();
         } catch (e) {
             if (i === 0) { await new Promise(r => setTimeout(r, 1500)); continue; }
-            throw new Error('连不上服务器。请刷新页面重试；如果一直失败，说明后端服务没在运行（本地要启动 uvicorn，线上要部署到 Vercel）');
+            throw new Error(t('netErr'));
         }
     }
 }
 
 function tabBtn(name) {
-    const alias = {'卡点体检':'买什么', '查一只股':'买什么', 'AI 深度报告':'买什么',
-                   '帮我找股票':'买什么', '观察池':'已经买了', '我的关注':'已经买了'};
-    name = alias[name] || name;
-    return [...document.querySelectorAll('.tab-btn, .main-btn')].find(b => b.textContent.includes(name));
+    const map = {'卡点体检':'check','查一只股':'check','买什么':'check','AI 深度报告':'check',
+                 '帮我找股票':'check','观察池':'hold','我的关注':'hold','已经买了':'hold','想买什么':'wish'};
+    const tab = map[name] || name;
+    return document.querySelector(`.main-btn[data-nav="${tab}"]`);
 }
 // 从任何地方跳到体检页并直接体检
 function goCheck(code) {
@@ -461,7 +888,7 @@ async function doCheck() {
     if (!code) return;
     document.getElementById('checkEmpty').style.display = 'none';
     const box = document.getElementById('checkResult');
-    box.innerHTML = `<div class="py-12 text-center text-[#E5484D]">charging… 正在拉取真实行情体检（约 5-10 秒）</div>`;
+    box.innerHTML = `<div class="py-12 text-center text-[#E5484D]">charging… ${t('checking')}</div>`;
     try {
         // 纯字母代码 = 美股/加股（AAPL / SHOP.TO），直接查，不走A股搜索
         const overseas = /^[A-Z][A-Z0-9.\-]{0,9}$/.test(code) && !/^\d{6}\.(SH|SZ)$/.test(code);
@@ -476,16 +903,16 @@ async function doCheck() {
                 code = code + (code[0] === '6' ? '.SH' : '.SZ');
                 document.getElementById('checkCode').value = code;
             } else {
-                box.innerHTML = `<div class="text-[#E5484D] p-6">没找到「${code}」，换个名称或直接输代码试试</div>`;
+                box.innerHTML = `<div class="text-[#E5484D] p-6">${t('notFound', code)}</div>`;
                 return;
             }
         }
-        const d = await apiFetch(`/api/serenity/stock_check?code=${encodeURIComponent(code)}`);
+        const d = await apiFetch(`/api/serenity/stock_check?code=${encodeURIComponent(code)}&lang=${LANG}`);
         if (d.error) { box.innerHTML = `<div class="text-[#E5484D] p-6">${d.error}</div>`; return; }
         lastCheck = d;
         box.innerHTML = renderCheck(d);
     } catch (e) {
-        box.innerHTML = `<div class="text-[#E5484D] p-6">体检失败：${e.message}</div>`;
+        box.innerHTML = `<div class="text-[#E5484D] p-6">${t('failed', e.message)}</div>`;
     }
 }
 
@@ -494,26 +921,26 @@ function plainTalk(d) {
     const p = d.price, v = d.verdict;
     const lines = [];
     // 价格位置
-    if (p.range_pos_6mo_pct >= 85) lines.push(`现在 ${p.cur}${p.last}，几乎是半年来最贵的时候`);
-    else if (p.range_pos_6mo_pct <= 20) lines.push(`现在 ${p.cur}${p.last}，比半年最高点便宜了 ${Math.abs(p.pct_off_6mo_high).toFixed(0)}%，处在半年来的低位`);
-    else lines.push(`现在 ${p.cur}${p.last}，在半年价格区间的中间位置（比最高点低 ${Math.abs(p.pct_off_6mo_high).toFixed(0)}%）`);
+    if (p.range_pos_6mo_pct >= 85) lines.push(t('ptTop', p.cur, p.last));
+    else if (p.range_pos_6mo_pct <= 20) lines.push(t('ptLow', p.cur, p.last, Math.abs(p.pct_off_6mo_high).toFixed(0)));
+    else lines.push(t('ptMid', p.cur, p.last, Math.abs(p.pct_off_6mo_high).toFixed(0)));
     // 近期走势
     if (p.ret_1m_pct !== null) {
-        if (p.ret_1m_pct > 15) lines.push(`最近一个月大涨了 ${p.ret_1m_pct}%，现在追进去容易买在山顶`);
-        else if (p.ret_1m_pct < -10) lines.push(`最近一个月跌了 ${Math.abs(p.ret_1m_pct)}%，还在下跌路上，先别急着接`);
-        else lines.push(`最近一个月${p.ret_1m_pct >= 0 ? '涨' : '跌'}了 ${Math.abs(p.ret_1m_pct)}%，走势不算极端`);
+        if (p.ret_1m_pct > 15) lines.push(t('ptUp', p.ret_1m_pct));
+        else if (p.ret_1m_pct < -10) lines.push(t('ptDown', Math.abs(p.ret_1m_pct)));
+        else lines.push(t('ptFlat', p.ret_1m_pct >= 0 ? t('up') : t('down'), Math.abs(p.ret_1m_pct)));
     }
     // 估值
     if (d.basic.pe) {
-        if (d.basic.pe > 60) lines.push(`市盈率 ${d.basic.pe} 倍，市场已经给了很高的期待，业绩稍不及预期就容易跌`);
-        else if (d.basic.pe < 20) lines.push(`市盈率 ${d.basic.pe} 倍，估值不算贵`);
-        else lines.push(`市盈率 ${d.basic.pe} 倍，估值中等`);
+        if (d.basic.pe > 60) lines.push(t('ptPeHigh', d.basic.pe));
+        else if (d.basic.pe < 20) lines.push(t('ptPeLow', d.basic.pe));
+        else lines.push(t('ptPeMid', d.basic.pe));
     }
     // 总结论（用二轴判定翻译）
     let headline, emoji;
-    if (v.code === 'green') { emoji = '🟢'; headline = '可以研究，但别一把梭'; }
-    else if (v.code === 'red') { emoji = '🔴'; headline = '现在别碰'; }
-    else { emoji = '🟡'; headline = '先看看，别急'; }
+    if (v.code === 'green') { emoji = '🟢'; headline = t('verdictGreen'); }
+    else if (v.code === 'red') { emoji = '🔴'; headline = t('verdictRed'); }
+    else { emoji = '🟡'; headline = t('verdictYellow'); }
     return { emoji, headline, hint: v.hint, lines };
 }
 
@@ -529,7 +956,7 @@ function renderCheck(d) {
 
     let flagsHtml = d.red_flags.length
         ? d.red_flags.map(f => `<div class="text-xs ${f.level==='hard'?'text-[#E5484D]':'text-[#4A463C]'}">${f.level==='hard'?'⛔':'⚠️'} ${f.text}</div>`).join('')
-        : '<div class="text-xs text-[#2f9e53]">✓ 未命中自动红旗（定性红旗仍需自查：增发稀释/单一客户/蹭热点）</div>';
+        : `<div class="text-xs text-[#2f9e53]">${t('noFlags')}</div>`;
 
     const autoHtml = d.criteria_auto.map(c =>
         `<div class="text-xs ${c.hit?'text-[#2f9e53]':'text-[#8A8578]'}">${c.text}</div>`).join('');
@@ -555,60 +982,55 @@ function renderCheck(d) {
             <div class="mt-4 space-y-1.5">
                 ${talk.lines.map(l=>`<div class="text-sm text-[#4A463C] leading-relaxed">· ${l}</div>`).join('')}
             </div>
-            ${flagPlain ? `<div class="mt-4 pt-4 border-t border-[#E4DAC7] space-y-1.5"><div class="text-xs font-bold text-[#8A8578] mb-1">要小心的地方</div>${flagPlain}</div>` : ''}
+            ${flagPlain ? `<div class="mt-4 pt-4 border-t border-[#E4DAC7] space-y-1.5"><div class="text-xs font-bold text-[#8A8578] mb-1">${t('watchOut')}</div>${flagPlain}</div>` : ''}
             <div class="flex flex-wrap gap-3 mt-6">
-                <button onclick="addToHold()" class="px-6 py-3 btn-red text-sm">
-                    我已经买了 → 帮我盯着
-                </button>
-                <button onclick="addToWish()" class="px-6 py-3 btn-ghost text-sm">
-                    想买，等便宜点 → 到价提醒
-                </button>
+                <button onclick="addToHold()" class="px-6 py-3 btn-red text-sm">${t('iBoughtIt')}</button>
+                <button onclick="addToWish()" class="px-6 py-3 btn-ghost text-sm">${t('wantIt')}</button>
                 <button onclick="goAnalyze('用大白话讲讲 ${d.name}（${d.code}，${d.industry||''}）：这家公司是干嘛的？在产业链里的位置重不重要？现在值不值得关注？最大的风险是什么？')"
                         class="px-6 py-3 btn-ghost text-sm">
-                    这公司是干嘛的？让 ai 讲讲
-                </button>
+${t('whatIsIt')}</button>
             </div>
         </div>
 
         <!-- 专业细节（默认折叠） -->
         <details class="pro border border-[#E4DAC7] rounded-2xl p-5">
-        <summary>// 查看专业细节（价格位置 · 判据打分 · 离场规则） ▾</summary>
+        <summary>${t('proDetails')}</summary>
         <div class="space-y-5">
         <div class="border border-[#E4DAC7] rounded-2xl p-5">
-            <div class="text-xs font-bold text-[#8A8578] mb-3">水位标尺（近 6 个月）· ${p.level} · ${p.stage}</div>
+            <div class="text-xs font-bold text-[#8A8578] mb-3">${t('waterLine', p.level, p.stage)}</div>
             <div class="relative h-3 bg-gradient-to-r from-[#3FB55B]/30 via-[#E4DAC7] to-[#E5484D]/40 rounded-full">
                 <div class="absolute -top-1 w-1.5 h-5 bg-[#17150F] rounded" style="left:${pos}%"></div>
             </div>
             <div class="flex justify-between text-[10px] text-[#8A8578] mt-2">
-                <span>低 ${p.cur}${p.low_6mo}</span>
-                <span class="text-white font-bold">现价 ${p.cur}${p.last}（区间 ${p.range_pos_6mo_pct}%）</span>
-                <span>高 ${p.cur}${p.high_6mo}</span>
+                <span>${p.cur}${p.low_6mo}</span>
+                <span class="font-bold" style="color:var(--ink)">${p.cur}${p.last} · ${p.range_pos_6mo_pct}%</span>
+                <span>${p.cur}${p.high_6mo}</span>
             </div>
             <div class="flex gap-6 mt-3 text-xs text-[#4A463C]">
-                <span>距高点 <b>${p.pct_off_6mo_high}%</b></span>
-                <span>1月 <b class="${p.ret_1m_pct>=0?'text-[#2f9e53]':'text-[#E5484D]'}">${p.ret_1m_pct}%</b></span>
-                <span>3月 <b class="${p.ret_3m_pct>=0?'text-[#2f9e53]':'text-[#E5484D]'}">${p.ret_3m_pct}%</b></span>
-                <span>SMA50 ${p.above_sma50?'上方 ✓':'下方 ✗'}</span>
+                <span>${t('offHigh')} <b>${p.pct_off_6mo_high}%</b></span>
+                <span>${t('m1')} <b class="${p.ret_1m_pct>=0?'text-[#2f9e53]':'text-[#E5484D]'}">${p.ret_1m_pct}%</b></span>
+                <span>${t('m3')} <b class="${p.ret_3m_pct>=0?'text-[#2f9e53]':'text-[#E5484D]'}">${p.ret_3m_pct}%</b></span>
+                <span>${t('sma')} ${p.above_sma50?t('above'):t('below')}</span>
                 ${d.basic.pe?`<span>PE ${d.basic.pe}</span>`:''}
-                ${d.basic.total_mv?`<span>市值 ${(d.basic.total_mv/10000).toFixed(0)} 亿</span>`:''}
+                ${d.basic.total_mv?`<span>${t('mcap')} ¥${(d.basic.total_mv/10000).toFixed(0)}00M</span>`:''}
             </div>
         </div>
 
         <div class="grid md:grid-cols-2 gap-5">
             <div class="border border-[#E4DAC7] rounded-2xl p-5 space-y-2">
-                <div class="text-xs font-bold text-[#8A8578]">红旗扫描（命中即降级）</div>
+                <div class="text-xs font-bold text-[#8A8578]">${t('flagsTitle')}</div>
                 ${flagsHtml}
             </div>
             <div class="border border-[#E4DAC7] rounded-2xl p-5 space-y-2">
-                <div class="text-xs font-bold text-[#8A8578]">卡点判据 · 自动判定</div>
+                <div class="text-xs font-bold text-[#8A8578]">${t('critAuto')}</div>
                 ${autoHtml}
-                <div class="text-xs font-bold text-[#8A8578] pt-2">定性判据（自己核实后勾选）<span id="critCount" class="text-[#E5484D] ml-2"></span></div>
+                <div class="text-xs font-bold text-[#8A8578] pt-2">${t('critManual')}<span id="critCount" class="text-[#E5484D] ml-2"></span></div>
                 ${manualHtml}
             </div>
         </div>
 
         <div class="border border-[#E5484D]/35 rounded-2xl p-5">
-            <div class="text-xs font-bold text-[#E5484D] mb-2">离场规则（满足任一 = 承认判断错，无条件离场）</div>
+            <div class="text-xs font-bold text-[#E5484D] mb-2">${t('exitRules')}</div>
             ${d.invalidation.rules.map(r=>`<div class="text-xs text-[#4A463C]">· ${r}</div>`).join('')}
             <div class="text-[10px] text-[#8A8578] mt-2">${d.invalidation.note}</div>
         </div>
@@ -621,12 +1043,12 @@ function renderCheck(d) {
 function updateCritCount() {
     const n = document.querySelectorAll('.crit-box:checked').length;
     const total = document.querySelectorAll('.crit-box').length;
-    document.getElementById('critCount').textContent = `已命中 ${n}/${total}（命中越多信念越高）`;
+    document.getElementById('critCount').textContent = t('critCount', n, total);
 }
 
 /* ============ 已经买了 / 想买什么（localStorage 两套清单） ============ */
 function getList(key) { return JSON.parse(localStorage.getItem(key) || '[]'); }
-function setList(key, v) { localStorage.setItem(key, JSON.stringify(v)); }
+function setList(key, v) { localStorage.setItem(key, JSON.stringify(v)); pushCloud(); }
 
 // 旧版观察池数据自动迁移到「已经买了」
 (function migrate() {
@@ -640,17 +1062,24 @@ function setList(key, v) { localStorage.setItem(key, JSON.stringify(v)); }
 function updateBadges() {
     const set = (id, n) => {
         const b = document.getElementById(id);
-        if (b) b.innerHTML = n ? `<span class="text-xs px-2 py-0.5 rounded-full ml-1" style="background:var(--night);color:var(--paper);font-family:var(--font-mono)">${n}</span>` : '';
+        if (b) b.innerHTML = n ? `<span class="text-xs px-2 py-0.5 rounded-full ml-1" style="background:var(--red1);color:#fff;font-family:var(--font-mono)">${n}</span>` : '';
     };
     set('holdBadge', getList('sq_hold').length);
     set('wishBadge', getList('sq_wish').length);
 }
-window.addEventListener('DOMContentLoaded', updateBadges);
+window.addEventListener('DOMContentLoaded', () => {
+    updateBadges();
+    applyI18n();
+    checkAuth();   // 已登录就拉云端数据覆盖本机
+});
 
-function saveHolding({code, name, entry, qty, added, cur}) {
+const CUR_SYMS = { CAD: 'C$', USD: '$', CNY: '¥' };
+function saveHolding({code, name, entry, qty, added, cur, curCode}) {
     const stop = Math.round(entry * 0.85 * 100) / 100;
     const w = getList('sq_hold').filter(x => x.code !== code);
-    w.push({ code, name, entry, qty: qty || null, stop, cur: cur || '¥',
+    w.push({ code, name, entry, qty: qty || null, stop,
+             cur: curCode ? (CUR_SYMS[curCode] || cur) : (cur || '¥'),
+             curCode: curCode || null,   // 你付款的币种；null = 用标的自身币种
              added: added || new Date().toLocaleDateString('sv') });
     setList('sq_hold', w);
     updateBadges();
@@ -663,12 +1092,12 @@ function addToHold() {
     const entryStr = prompt(`你买 ${lastCheck.name} 的成本价是多少？（${cur}）`, lastCheck.price.last);
     if (entryStr === null) return;
     const entry = parseFloat(entryStr);
-    if (!entry || entry <= 0) { toast('价格没填对，没有记录'); return; }
+    if (!entry || entry <= 0) { toast(t('afBadPrice')); return; }
     const qtyStr = prompt(`买了多少股？（可不填，直接确定跳过）`, '');
     const qty = qtyStr ? parseFloat(qtyStr) : null;
     const stop = saveHolding({code: lastCheck.code, name: lastCheck.name, entry, qty, cur});
-    toast(`已记录持仓 <b>${lastCheck.name}</b>（成本 ${cur}${entry}${qty?' × '+qty+'股':''}）：跌破 ${cur}${stop} 会亮红灯提醒
-           <span class="code-link ml-2" onclick="switchTab('hold', tabBtn('已经买了'))">去看看 →</span>`);
+    toast(t('holdSaved', lastCheck.name, cur, entry, qty ? ' × ' + qty + t('shares') : '')
+       + ` <span class="code-link ml-2" onclick="switchTab('hold', tabBtn('hold'))">${t('goLook')}</span>`);
 }
 
 /* ── 添加持仓表单 ── */
@@ -682,27 +1111,42 @@ function toggleAddForm() {
     document.getElementById('afMsg').textContent = '';
 }
 
+// 输完股票自动预选币种（A股→CNY / 加股→CAD / 其余→USD），用户可改成自己实付的币
+async function previewCur() {
+    const stock = document.getElementById('afStock').value.trim();
+    const sel = document.getElementById('afCur');
+    if (!stock || sel.value) return;
+    try {
+        const r = await apiFetch(`/api/serenity/resolve?q=${encodeURIComponent(stock)}&lang=${LANG}`);
+        if (!r.ok) return;
+        const guess = r.cur === '¥' ? 'CNY' : r.cur === 'C$' ? 'CAD' : 'USD';
+        if (!sel.value) sel.value = guess;
+    } catch {}
+}
+
 async function submitAddForm() {
     const stock = document.getElementById('afStock').value.trim();
     const date = document.getElementById('afDate').value;
     const price = parseFloat(document.getElementById('afPrice').value);
     const qty = parseFloat(document.getElementById('afQty').value) || null;
+    const curCode = document.getElementById('afCur').value || null;
     const msg = document.getElementById('afMsg');
     const btn = document.getElementById('afBtn');
-    if (!stock) { msg.textContent = '⚠️ 请填股票名字或代码'; return; }
-    if (!price || price <= 0) { msg.textContent = '⚠️ 请填买入价'; return; }
-    btn.disabled = true; msg.textContent = '正在识别市场...';
+    if (!stock) { msg.textContent = t('afNeed'); return; }
+    if (!price || price <= 0) { msg.textContent = t('afBadPrice'); return; }
+    btn.disabled = true; msg.textContent = t('afAdding');
     try {
-        const r = await apiFetch(`/api/serenity/resolve?q=${encodeURIComponent(stock)}`);
-        if (!r.ok) { msg.textContent = `⚠️ 没认出「${stock}」。A股可输中文名，美股输代码（NVDA），加股加 .TO，币输 BTC / ETH`; btn.disabled = false; return; }
-        const stop = saveHolding({code: r.code, name: r.name, entry: price, qty, added: date, cur: r.cur});
+        const r = await apiFetch(`/api/serenity/resolve?q=${encodeURIComponent(stock)}&lang=${LANG}`);
+        if (!r.ok) { msg.textContent = t('afNotFound', stock); btn.disabled = false; return; }
+        const stop = saveHolding({code: r.code, name: r.name, entry: price, qty, added: date, cur: r.cur, curCode});
         msg.textContent = '';
         toggleAddForm();
         document.getElementById('afStock').value = ''; document.getElementById('afPrice').value = ''; document.getElementById('afQty').value = '';
-        toast(`✓ 已添加 <b>${r.name}</b>（${r.market}）成本 ${r.cur}${price}${qty?' × '+qty+'股':''}，止损提醒线 ${r.cur}${stop}`);
+        toast(t('holdAdded', r.name, r.market, CUR_SYMS[curCode] || r.cur, price, qty ? ' × ' + qty + t('shares') : ''));
+        document.getElementById('afCur').value = '';
         refreshHold();
     } catch (e) {
-        msg.textContent = '添加失败：' + e.message;
+        msg.textContent = t('failed', e.message);
     } finally { btn.disabled = false; }
 }
 
@@ -713,15 +1157,15 @@ function addToWish() {
     const tStr = prompt(`${lastCheck.name} 现在 ${cur}${lastCheck.price.last}。跌到多少你愿意买？（${cur}）`, suggest);
     if (tStr === null) return;
     const target = parseFloat(tStr);
-    if (!target || target <= 0) { toast('价格没填对，没有记录'); return; }
+    if (!target || target <= 0) { toast(t('afBadPrice')); return; }
     const w = getList('sq_wish').filter(x => x.code !== lastCheck.code);
     w.push({ code: lastCheck.code, name: lastCheck.name, target,
              priceWhenAdded: lastCheck.price.last, cur,
              added: new Date().toLocaleDateString('sv') });
     setList('sq_wish', w);
     updateBadges();
-    toast(`<b>${lastCheck.name}</b> 已进想买清单：跌到 ${cur}${target} 会亮绿灯提醒
-           <span class="code-link ml-2" onclick="switchTab('wish', tabBtn('想买什么'))">去看看 →</span>`);
+    toast(t('wishSaved', lastCheck.name, cur, target)
+       + ` <span class="code-link ml-2" onclick="switchTab('wish', tabBtn('wish'))">${t('goLook')}</span>`);
 }
 
 function removeFrom(key, code, refresh) {
@@ -744,20 +1188,22 @@ function wishToHold(code) {
     toast(`${item.name} 已从「想买」转入「已经买了」`);
 }
 
-const fmtMoney = n => n >= 10000 ? (n/10000).toFixed(2) + '万' : n.toFixed(0);
+const fmtMoney = n => LANG === 'zh'
+    ? (n >= 10000 ? (n/10000).toFixed(2) + '万' : n.toFixed(0))
+    : (n >= 1000 ? (n/1000).toFixed(1) + 'k' : n.toFixed(0));
 
 async function refreshHold() {
     const w = getList('sq_hold');
     const box = document.getElementById('holdResult');
     if (!w.length) {
-        box.innerHTML = '<div class="text-center py-8"><img src="/hero-mascot.png" alt="" style="width:130px;margin:0 auto 14px;opacity:.9"><div class="eyebrow" style="display:inline-block">holdings running on 0%</div><div class="text-sm text-[#4A463C] mt-2">还没记录持仓。点右上角「+ 添加持仓」，或去「买什么」查一只股后点「我已经买了」。</div></div>';
+        box.innerHTML = `<div class="text-center py-8"><img src="/hero-mascot.png" alt="" style="width:130px;margin:0 auto 14px;opacity:.9"><div class="eyebrow" style="display:inline-block">holdings running on 0%</div><div class="text-sm text-[#4A463C] mt-2">${t('holdEmpty')}</div></div>`;
         document.getElementById('portfolioSummary').innerHTML = '';
         return;
     }
-    box.innerHTML = '<div class="py-8 text-center text-[#2f9e53]">charging… 正在查最新价格、算盈亏</div>';
-    const items = w.map(x => `${x.code}:${x.entry}:${x.stop}:${x.added||''}`).join(',');
+    box.innerHTML = `<div class="py-8 text-center text-[#2f9e53]">charging… ${t('holdLoading')}</div>`;
+    const items = w.map(x => `${x.code}:${x.entry}:${x.stop}:${x.added||''}:${x.curCode||''}`).join(',');
     try {
-        const d = await apiFetch(`/api/serenity/watch_check?items=${encodeURIComponent(items)}`);
+        const d = await apiFetch(`/api/serenity/watch_check?items=${encodeURIComponent(items)}&lang=${LANG}`);
         const byCode = {}; d.items.forEach(i => byCode[i.code] = i);
 
         // 汇总（分币种：不同货币不能直接相加）
@@ -770,14 +1216,14 @@ async function refreshHold() {
             totals[c].value += r.last * x.qty;
             totals[c].cost += x.entry * x.qty;
         });
-        const sumHtml = Object.entries(totals).map(([c, t]) => {
-            const pnl = t.value - t.cost;
-            const pct = t.cost ? (pnl / t.cost * 100).toFixed(1) : 0;
-            return `<div class="text-xs"><span class="text-[#8A8578]">市值</span> <b>${c}${fmtMoney(t.value)}</b>
+        const sumHtml = Object.entries(totals).map(([c, tot]) => {
+            const pnl = tot.value - tot.cost;
+            const pct = tot.cost ? (pnl / tot.cost * 100).toFixed(1) : 0;
+            return `<div class="text-xs"><span class="text-[#8A8578]">${t('mktValue')}</span> <b>${c}${fmtMoney(tot.value)}</b>
                     <span class="${pnl>=0?'text-[#2f9e53]':'text-[#E5484D]'} font-bold ml-1">${pnl>=0?'+':'-'}${fmtMoney(Math.abs(pnl))}（${pnl>=0?'+':''}${pct}%）</span></div>`;
         }).join('');
         document.getElementById('portfolioSummary').innerHTML = sumHtml
-            ? `<div class="text-[#8A8578] text-xs mb-0.5">我的持仓</div>${sumHtml}` : '';
+            ? `<div class="text-[#8A8578] text-xs mb-0.5">${t('myHold')}</div>${sumHtml}` : '';
 
         // ③ 战绩统计（借鉴 Vibe-Trading metrics：胜率/平均盈亏/跑赢大盘次数）
         const scored = w.map(x => byCode[x.code]).filter(r => r && r.pnl_pct !== undefined);
@@ -789,17 +1235,17 @@ async function refreshHold() {
             const alphaWins = alphaScored.filter(r => r.alpha_pct > 0).length;
             recordHtml = `<div class="border border-[#E4DAC7] rounded-2xl px-5 py-3 mb-4 flex flex-wrap gap-x-6 gap-y-1 items-center" style="background:var(--paper-2)">
                 <span class="eyebrow">track record</span>
-                <span class="text-xs text-[#4A463C]"><b>${wins.length}胜${losses.length}负</b></span>
-                ${avg(wins)!==null?`<span class="text-xs text-[#2f9e53]">平均赚 +${avg(wins)}%</span>`:''}
-                ${avg(losses)!==null?`<span class="text-xs text-[#E5484D]">平均亏 ${avg(losses)}%</span>`:''}
-                ${alphaScored.length?`<span class="text-xs text-[#4A463C]">跑赢大盘 ${alphaWins}/${alphaScored.length} 只</span>`:''}
-                <span class="text-[10px] text-[#8A8578]">牛市里都涨，只有跑赢大盘才算选股本事</span>
+                <span class="text-xs text-[#4A463C]"><b>${t('winLoss', wins.length, losses.length)}</b></span>
+                ${avg(wins)!==null?`<span class="text-xs text-[#2f9e53]">${t('avgWin', avg(wins))}</span>`:''}
+                ${avg(losses)!==null?`<span class="text-xs text-[#E5484D]">${t('avgLoss', avg(losses))}</span>`:''}
+                ${alphaScored.length?`<span class="text-xs text-[#4A463C]">${t('beatCount', alphaWins, alphaScored.length)}</span>`:''}
+                <span class="text-[10px] text-[#8A8578]">${t('beatNote')}</span>
             </div>`;
         }
 
         box.innerHTML = recordHtml + w.map(x => {
             const r = byCode[x.code] || {};
-            if (r.error || r.last === undefined) return `<div class="border border-[#E4DAC7] rounded-2xl p-4 mb-3 text-xs text-[#8A8578]">${x.name} ${x.code} — 暂无数据</div>`;
+            if (r.error || r.last === undefined) return `<div class="border border-[#E4DAC7] rounded-2xl p-4 mb-3 text-xs text-[#8A8578]">${x.name} ${x.code} — ${t('noData')}</div>`;
             const trig = r.invalidation_triggered;
             const c = r.cur || '¥';
             const pnlAmt = x.qty ? (r.last - x.entry) * x.qty : null;
@@ -808,33 +1254,33 @@ async function refreshHold() {
             const shadowHtml = sh ? (() => {
                 const dt = `${sh.cross_date.slice(4,6)}/${sh.cross_date.slice(6,8)}`;
                 return sh.saved_pct > 0
-                    ? `<div class="text-[11px] mt-1.5 px-3 py-1.5 rounded-xl bg-[#E5484D]/8 text-[#C23237]">纪律对照：${dt} 收盘曾跌破止损线，那天卖出是 ${sh.discipline_pnl_pct}%，比现在少亏 ${sh.saved_pct}% —— 下次红灯亮了别犹豫</div>`
-                    : `<div class="text-[11px] mt-1.5 px-3 py-1.5 rounded-xl bg-[#F7F1E7] text-[#4A463C]">纪律对照：${dt} 曾跌破止损线，这次扛回来了（比纪律卖出多赚 ${Math.abs(sh.saved_pct)}%）—— 但别把幸运当能力</div>`;
+                    ? `<div class="text-[11px] mt-1.5 px-3 py-1.5 rounded-xl bg-[#E5484D]/8 text-[#C23237]">${t('shadowSaved', dt, sh.discipline_pnl_pct, sh.saved_pct)}</div>`
+                    : `<div class="text-[11px] mt-1.5 px-3 py-1.5 rounded-xl" style="background:var(--paper);color:var(--ink-70)">${t('shadowCost', dt, Math.abs(sh.saved_pct))}</div>`;
             })() : '';
             return `
             <div class="border ${trig?'border-[#E5484D]/70':'border-[#E4DAC7]'} rounded-2xl p-5 mb-3">
                 <div class="flex flex-wrap justify-between items-center gap-3">
                     <div class="min-w-[200px]">
                         <div class="font-bold">${x.name} <span class="font-mono text-xs text-[#8A8578]">${x.code}</span>
-                            ${trig?'<span class="ml-2 text-xs px-3 py-0.5 rounded-full bg-[#E5484D]/10 text-[#E5484D] font-bold">⛔ 跌破止损线，该考虑卖了</span>':'<span class="ml-2 text-xs px-3 py-0.5 rounded-full bg-[#3FB55B]/12 text-[#2f9e53]">✓ 一切正常</span>'}
+                            ${trig?`<span class="ml-2 text-xs px-3 py-0.5 rounded-full bg-[#E5484D]/10 text-[#E5484D] font-bold">${t('stopHit')}</span>`:`<span class="ml-2 text-xs px-3 py-0.5 rounded-full bg-[#3FB55B]/12 text-[#2f9e53]">${t('ok')}</span>`}
                         </div>
-                        <div class="text-xs text-[#8A8578] mt-1">${x.added} 买入 · 成本 ${c}${x.entry}${x.qty?' × '+x.qty+'股 = '+c+fmtMoney(x.entry*x.qty):''} · 止损线 ${c}${x.stop}</div>
-                        <div class="text-xs text-[#8A8578] mt-0.5">现状：${r.level} · ${r.stage}</div>
+                        <div class="text-xs text-[#8A8578] mt-1">${t('boughtOn', x.added, c, x.entry)}${x.qty?' × '+x.qty+t('shares')+' = '+c+fmtMoney(x.entry*x.qty):''} · ${t('stopLine', c, x.stop)}</div>
+                        <div class="text-xs text-[#8A8578] mt-0.5">${t('nowState', r.level, r.stage)}${r.fx_rate?' · '+t('fxNote', r.fx_rate, r.quote_cur, r.quote_last):''}</div>
                         ${shadowHtml}
                     </div>
                     <div class="flex-1 min-w-[160px] max-w-[280px] h-14"><canvas id="spark-${x.code.replace(/\./g,'_')}"></canvas></div>
                     <div class="text-right">
                         <div class="text-lg font-bold">${c}${r.last}</div>
-                        <div class="text-sm font-bold ${r.pnl_pct>=0?'text-[#2f9e53]':'text-[#E5484D]'}">${r.pnl_pct>=0?'赚':'亏'} ${Math.abs(r.pnl_pct)}%${pnlAmt!==null?`（${c}${fmtMoney(Math.abs(pnlAmt))}）`:''}</div>
-                        ${r.alpha_pct!==null&&r.alpha_pct!==undefined?`<div class="text-[10px] ${r.alpha_pct>=0?'text-[#2f9e53]/80':'text-[#E5484D]/80'}" title="同期${r.bench_name} ${r.hs300_pnl_pct}%">${r.alpha_pct>=0?'跑赢'+(r.bench_name||'大盘')+' '+r.alpha_pct:'跑输'+(r.bench_name||'大盘')+' '+Math.abs(r.alpha_pct)}%</div>`:''}
+                        <div class="text-sm font-bold ${r.pnl_pct>=0?'text-[#2f9e53]':'text-[#E5484D]'}">${r.pnl_pct>=0?t('profit'):t('loss')} ${Math.abs(r.pnl_pct)}%${pnlAmt!==null?`（${c}${fmtMoney(Math.abs(pnlAmt))}）`:''}</div>
+                        ${r.alpha_pct!==null&&r.alpha_pct!==undefined?`<div class="text-[10px] ${r.alpha_pct>=0?'text-[#2f9e53]/80':'text-[#E5484D]/80'}" title="同期${r.bench_name} ${r.hs300_pnl_pct}%">${r.alpha_pct>=0?t('beat', r.bench_name, r.alpha_pct):t('lag', r.bench_name, Math.abs(r.alpha_pct))}</div>`:''}
                         <div class="flex gap-3 justify-end mt-1">
-                            <button onclick="goCheck('${x.code}')" class="text-[10px] text-[#E5484D] hover:text-[#C23237]">复检</button>
-                            <button onclick="removeFrom('sq_hold','${x.code}',refreshHold)" class="text-[10px] text-[#8A8578] hover:text-[#E5484D]">已卖出/移除</button>
+                            <button onclick="goCheck('${x.code}')" class="text-[10px] text-[#E5484D] hover:text-[#C23237]">${t('recheck')}</button>
+                            <button onclick="removeFrom('sq_hold','${x.code}',refreshHold)" class="text-[10px] text-[#8A8578] hover:text-[#E5484D]">${t('sold')}</button>
                         </div>
                     </div>
                 </div>
             </div>`;
-        }).join('') + `<div class="text-[10px] text-[#8A8578] mt-2">检查时间 ${d.checked_at} · 走势为近 60 个交易日 · 数据存于本浏览器 · 「跑赢/跑输」= 和你所在市场的大盘指数比</div>`;
+        }).join('') + `<div class="text-[10px] text-[#8A8578] mt-2">${t('checkedAt', d.checked_at)} · ${t('trendNote')} · ${USER ? t('savedCloud') : t('savedLocal')} · ${t('benchNote')}</div>`;
 
         // 逐只画走势小图（横线 = 你的成本价）
         w.forEach(async x => {
@@ -861,7 +1307,7 @@ async function refreshHold() {
             } catch(e) {}
         });
     } catch (e) {
-        box.innerHTML = `<div class="text-[#E5484D] p-6">检查失败：${e.message}</div>`;
+        box.innerHTML = `<div class="text-[#E5484D] p-6">${t('failed', e.message)}</div>`;
     }
 }
 // 打开网站就把持仓汇总带出来（有持仓才查）
@@ -870,36 +1316,36 @@ window.addEventListener('DOMContentLoaded', () => { if (getList('sq_hold').lengt
 async function refreshWish() {
     const w = getList('sq_wish');
     const box = document.getElementById('wishResult');
-    if (!w.length) { box.innerHTML = '<div class="text-[#8A8578] text-sm">wishlist running on 0%… 还没有想买的。去「买什么」查一只股，点「想买，等便宜点」。</div>'; return; }
-    box.innerHTML = '<div class="py-8 text-center text-[#E5484D]">charging… 正在看有没有跌到你要的价</div>';
+    if (!w.length) { box.innerHTML = `<div class="text-[#8A8578] text-sm">${t('wishEmpty')}</div>`; return; }
+    box.innerHTML = `<div class="py-8 text-center text-[#E5484D]">charging… ${t('wishLoading')}</div>`;
     const items = w.map(x => `${x.code}:${x.target}`).join(',');
     try {
-        const d = await apiFetch(`/api/serenity/wish_check?items=${encodeURIComponent(items)}`);
+        const d = await apiFetch(`/api/serenity/wish_check?items=${encodeURIComponent(items)}&lang=${LANG}`);
         const byCode = {}; d.items.forEach(i => byCode[i.code] = i);
         box.innerHTML = w.map(x => {
             const r = byCode[x.code] || {};
-            if (r.error || r.last === undefined) return `<div class="border border-[#E4DAC7] rounded-2xl p-4 mb-3 text-xs text-[#8A8578]">${x.name} ${x.code} — 暂无数据</div>`;
+            if (r.error || r.last === undefined) return `<div class="border border-[#E4DAC7] rounded-2xl p-4 mb-3 text-xs text-[#8A8578]">${x.name} ${x.code} — ${t('noData')}</div>`;
             const c = r.cur || '¥';
             return `
             <div class="border ${r.hit?'border-[#3FB55B]/60':'border-[#E4DAC7]'} rounded-2xl p-5 mb-3 flex flex-wrap justify-between items-center gap-3">
                 <div>
                     <div class="font-bold">${x.name} <span class="font-mono text-xs text-[#8A8578]">${x.code}</span>
-                        ${r.hit?'<span class="ml-2 text-xs px-3 py-0.5 rounded-full bg-[#3FB55B]/14 text-[#2f9e53] font-bold">🟢 到你要的价了！先复检再决定</span>':`<span class="ml-2 text-xs px-3 py-0.5 rounded-full bg-[#F7F1E7] text-[#8A8578]">还差 ${r.gap_pct}% 跌到目标</span>`}
+                        ${r.hit?`<span class="ml-2 text-xs px-3 py-0.5 rounded-full bg-[#3FB55B]/14 text-[#2f9e53] font-bold">${t('wishHit')}</span>`:`<span class="ml-2 text-xs px-3 py-0.5 rounded-full bg-[#F7F1E7] text-[#8A8578]">${t('wishGap', r.gap_pct)}</span>`}
                     </div>
-                    <div class="text-xs text-[#8A8578] mt-1">${x.added} 加入（当时 ${c}${x.priceWhenAdded||'-'}）· 目标价 ${c}${x.target}</div>
+                    <div class="text-xs text-[#8A8578] mt-1">${t('addedOn', x.added, c, x.priceWhenAdded||'-')} · ${t('target', c, x.target)}</div>
                 </div>
                 <div class="text-right">
                     <div class="text-lg font-bold">${c}${r.last}</div>
                     <div class="flex gap-3 justify-end mt-1">
-                        <button onclick="goCheck('${x.code}')" class="text-[10px] text-[#E5484D] hover:text-[#C23237]">复检</button>
-                        <button onclick="wishToHold('${x.code}')" class="text-[10px] text-[#2f9e53] hover:text-[#27833f]">我买了</button>
-                        <button onclick="removeFrom('sq_wish','${x.code}',refreshWish)" class="text-[10px] text-[#8A8578] hover:text-[#E5484D]">不想买了</button>
+                        <button onclick="goCheck('${x.code}')" class="text-[10px] text-[#E5484D] hover:text-[#C23237]">${t('recheck')}</button>
+                        <button onclick="wishToHold('${x.code}')" class="text-[10px] text-[#2f9e53] hover:text-[#27833f]">${t('iBought')}</button>
+                        <button onclick="removeFrom('sq_wish','${x.code}',refreshWish)" class="text-[10px] text-[#8A8578] hover:text-[#E5484D]">${t('noWant')}</button>
                     </div>
                 </div>
             </div>`;
-        }).join('') + `<div class="text-[10px] text-[#8A8578] mt-2">检查时间 ${d.checked_at} · 数据存于本浏览器</div>`;
+        }).join('') + `<div class="text-[10px] text-[#8A8578] mt-2">${t('checkedAt', d.checked_at)} · ${USER ? t('savedCloud') : t('savedLocal')}</div>`;
     } catch (e) {
-        box.innerHTML = `<div class="text-[#E5484D] p-6">检查失败：${e.message}</div>`;
+        box.innerHTML = `<div class="text-[#E5484D] p-6">${t('failed', e.message)}</div>`;
     }
 }
 
@@ -914,7 +1360,7 @@ async function verifyTickers(reportText) {
     if (!codes.length) return;
     holder.innerHTML = '<div class="mt-8 text-xs text-[#8A8578]">正在用真实行情核对报告里的代码...</div>';
     try {
-        const d = await apiFetch(`/api/serenity/verify_tickers?codes=${encodeURIComponent(codes.join(','))}`);
+        const d = await apiFetch(`/api/serenity/verify_tickers?codes=${encodeURIComponent(codes.join(','))}&lang=${LANG}`);
         const bad = d.items.filter(i => !i.ok);
         holder.innerHTML = `
         <div class="mt-8 border ${bad.length?'border-[#E5484D]/50':'border-[#3FB55B]/40'} rounded-2xl p-5">
@@ -968,11 +1414,11 @@ function renderChain(reportText) {
         html += `<div class="flex items-center gap-3 mb-4 flex-wrap">
             <div class="text-[10px] text-[#8A8578] w-16 shrink-0 text-right">${layer.name}</div>`;
         (layer.nodes||[]).forEach(n => {
-            const t = nodeType(n);
-            const cls = t==='funnel' ? 'chain-hot'
-                      : t==='hub' ? 'chain-hot chain-hub'
+            const nt = nodeType(n);
+            const cls = nt==='funnel' ? 'chain-hot'
+                      : nt==='hub' ? 'chain-hot chain-hub'
                       : 'border-[#E4DAC7] text-[#4A463C] bg-white';
-            html += `<div class="chain-node px-3 py-1.5 rounded-xl border text-xs ${cls}" data-node="${n.replace(/"/g,'')}">${t?'⭐ ':''}${linkifyCodes(n)}</div>`;
+            html += `<div class="chain-node px-3 py-1.5 rounded-xl border text-xs ${cls}" data-node="${n.replace(/"/g,'')}">${nt?'⭐ ':''}${linkifyCodes(n)}</div>`;
         });
         html += `</div>`;
     });
@@ -1017,9 +1463,9 @@ async function doAnalyze() {
     let raw = '', reviewRaw = '', reviewing = false;
     const esc = s => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
     const CHAIN_RE = /```chain\s*([\s\S]*?)(```|$)/;
-    const mdRender = t => {
-        t = t.replace(CHAIN_RE, '');  // 图谱数据块不显示为文字
-        let h = esc(t)
+    const mdRender = md => {
+        let x = md.replace(CHAIN_RE, '');  // 图谱数据块不显示为文字
+        let h = esc(x)
             .replace(/^### (.*)$/gm, '<h3>$1</h3>')
             .replace(/^## (.*)$/gm, '<h2>$1</h2>')
             .replace(/^# (.*)$/gm, '<h2>$1</h2>')
@@ -1029,7 +1475,7 @@ async function doAnalyze() {
         return linkifyCodes(h);
     };
     try {
-        const res = await fetch(`/api/serenity/analyze?query=${encodeURIComponent(q)}&market=${encodeURIComponent(market)}`);
+        const res = await fetch(`/api/serenity/analyze?query=${encodeURIComponent(q)}&market=${encodeURIComponent(market)}&lang=${LANG}`);
         const reader = res.body.getReader();
         const dec = new TextDecoder();
         let buf = '';
@@ -1048,7 +1494,7 @@ async function doAnalyze() {
                     renderChain(raw);   // 主报告结束，画供应链图谱
                     verifyTickers(raw); // 并对 AI 提到的代码做真实行情对账
                     reviewBox.innerHTML = `<div class="mt-8 border border-[#E4DAC7] rounded-2xl p-5">
-                        <div class="text-sm font-bold text-[#4A463C] mb-2">独立复核 <span class="eyebrow ml-2">second opinion</span><div class="text-xs text-[#8A8578] mt-0.5" style="font-family:var(--font-body)">另一个 AI 专门挑刺，帮你防止被忽悠</div></div>
+                        <div class="text-sm font-bold text-[#4A463C] mb-2">${t('aiReviewTitle')} <span class="eyebrow ml-2">second opinion</span><div class="text-xs text-[#8A8578] mt-0.5" style="font-family:var(--font-body)">另一个 AI 专门挑刺，帮你防止被忽悠</div></div>
                         <div id="aiReviewText" class="text-sm text-[#4A463C] leading-relaxed"></div></div>`;
                 }
                 if (msg.review) { reviewRaw += msg.review;
@@ -1160,7 +1606,7 @@ window.onload = () => {
     }, 800);
 };
 </script>
-<div class="text-center py-8 sysbar" style="border-bottom:none;border-top:1px solid var(--line);margin-top:32px">© 2026 low battery studio — still at 1%. 仅供研究教育，非投资建议</div>
+<div class="text-center py-8 sysbar" style="border-bottom:none;border-top:1px solid var(--line);margin-top:32px" data-i18n="disclaimerFoot">© 2026 low battery studio — still at 1%. 仅供研究教育，非投资建议</div>
 <div id="battery"><span class="shell"><span class="juice" id="juice"></span></span><span id="battPct">1%</span><span id="battLabel">power saving mode</span></div>
 <button id="themeBtn" onclick="LBSTheme.cycle()" title="点击切换：auto(跟随系统/时间) → dark → light">auto</button>
 <script>

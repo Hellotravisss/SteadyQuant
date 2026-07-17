@@ -4,6 +4,8 @@
  * 数据源：Tushare（A股）、Yahoo Finance（美股/加股）、DeepSeek/Anthropic（AI 报告）。
  */
 import Anthropic from "@anthropic-ai/sdk";
+import * as auth from "./auth.js";
+import { pack } from "./i18n.js";
 
 const CUR_SYM = { CNY: "¥", USD: "$", CAD: "C$" };
 const isAshare = (c) => /^\d{6}\.(SH|SZ)$/.test(c);
@@ -109,6 +111,38 @@ async function dailySeries(env, code) {
   return { dates: y.dates.slice(-320), closes: y.closes.slice(-320), currency: y.meta.currency || "USD" };
 }
 
+/* ── 汇率：解决"用加币买美股"这类跨币种记账 ──
+   Yahoo 的 USDCAD=X 表示"1 USD = ? CAD"。返回 date → rate 的映射。 */
+const fxCache = {};
+async function fxSeries(from, to) {
+  if (from === to) return null;
+  const key = `${from}${to}`;
+  if (!(key in fxCache)) {
+    fxCache[key] = (async () => {
+      const y = await yahooChart(`${key}=X`);
+      if (!y?.closes?.length) return null;
+      const map = {};
+      y.dates.forEach((d, i) => (map[d] = y.closes[i]));
+      return map;
+    })();
+  }
+  return fxCache[key];
+}
+/** 取某日汇率：优先当日，没有就用该日之前最近的一天（休市/时差） */
+function fxAt(map, date) {
+  if (!map) return 1;
+  const dates = Object.keys(map).sort();
+  if (!dates.length) return null;
+  let pick = null;
+  for (const d of dates) { if (d <= date) pick = d; else break; }
+  return map[pick || dates[0]];
+}
+const fxLatest = (map) => {
+  if (!map) return 1;
+  const dates = Object.keys(map).sort();
+  return dates.length ? map[dates[dates.length - 1]] : null;
+};
+
 // A股全量列表缓存（isolate 级，1小时）
 let stockCache = { data: null, ts: 0 };
 async function stockList(env) {
@@ -123,7 +157,7 @@ async function stockList(env) {
 
 /* ───────── 水位标尺（skill 硬规则：全部真实价格） ───────── */
 
-function computePA(closes, currency) {
+function computePA(closes, currency, S = pack("zh")) {
   if (!closes || closes.length < 30) return null;
   const last = closes[closes.length - 1];
   const win = closes.slice(-120);
@@ -136,19 +170,19 @@ function computePA(closes, currency) {
   const sma50 = closes.slice(-smaN).reduce((a, b) => a + b, 0) / smaN;
   const aboveSma50 = last > sma50;
 
-  let level;
-  if (rangePos >= 90) level = "贴顶";
-  else if (rangePos >= 70) level = "高位";
-  else if (rangePos >= 40) level = "中位";
-  else if (rangePos >= 15) level = "低位";
-  else level = "贴底";
+  let level, levelKey;
+  if (rangePos >= 90) { levelKey = "top"; level = S.lvl_top; }
+  else if (rangePos >= 70) { levelKey = "high"; level = S.lvl_high; }
+  else if (rangePos >= 40) { levelKey = "mid"; level = S.lvl_mid; }
+  else if (rangePos >= 15) { levelKey = "low"; level = S.lvl_low; }
+  else { levelKey = "bottom"; level = S.lvl_bottom; }
 
-  let stage;
-  if (ret1m !== null && ret1m > 15 && rangePos > 80) stage = "extended（已抛物线，追高风险大）";
-  else if (aboveSma50 && ret3m !== null && ret3m > 0 && rangePos > 50) stage = "momentum（趋势健康）";
-  else if (rangePos < 30 && ret1m !== null && ret1m > -5) stage = "basing（低位筑底）";
-  else if (ret1m !== null && ret1m < -10) stage = "falling（下跌中，别接飞刀）";
-  else stage = "neutral（震荡）";
+  let stage, stageKey;
+  if (ret1m !== null && ret1m > 15 && rangePos > 80) { stageKey = "extended"; stage = S.stg_extended; }
+  else if (aboveSma50 && ret3m !== null && ret3m > 0 && rangePos > 50) { stageKey = "momentum"; stage = S.stg_momentum; }
+  else if (rangePos < 30 && ret1m !== null && ret1m > -5) { stageKey = "basing"; stage = S.stg_basing; }
+  else if (ret1m !== null && ret1m < -10) { stageKey = "falling"; stage = S.stg_falling; }
+  else { stageKey = "neutral"; stage = S.stg_neutral; }
 
   const r2 = (x) => Math.round(x * 100) / 100;
   const r1 = (x) => (x === null ? null : Math.round(x * 10) / 10);
@@ -163,113 +197,84 @@ function computePA(closes, currency) {
     ret_1m_pct: r1(ret1m),
     ret_3m_pct: r1(ret3m),
     above_sma50: aboveSma50,
-    level,
-    stage,
+    level, levelKey,
+    stage, stageKey,
     data_points: closes.length,
   };
 }
 
-async function priceAnalysis(env, code) {
+async function priceAnalysis(env, code, S = pack("zh")) {
   const s = await dailySeries(env, code);
   if (!s) return null;
-  return computePA(s.closes.slice(-140), s.currency);
+  return computePA(s.closes.slice(-140), s.currency, S);
 }
 
 /* ───────── 红旗 / 判据 / 判定 / 证伪 / 风控 ───────── */
 
-function redFlagScan(basic, pa) {
+function redFlagScan(basic, pa, S = pack("zh")) {
   const flags = [];
   const { pe, pb, total_mv: mv, amount: turnover } = basic;
-  if (pe != null && pe > 100)
-    flags.push({ level: "hard", text: `估值极端（PE ${Math.round(pe)}）——好卡点被炒到 100x forward P/E 就不是好卡点` });
-  if (pe == null || pe <= 0)
-    flags.push({ level: "warn", text: "PE 为负/缺失 —— 亏损中，检查现金跑道能否活到放量" });
-  if (pb != null && pb > 10)
-    flags.push({ level: "warn", text: `PB ${pb.toFixed(1)} 偏高，安全边际薄` });
-  if (turnover != null && turnover < 50000)
-    flags.push({ level: "hard", text: "日均成交额 < 5000万 —— A股流动性陷阱（无机构关注）" });
-  if (mv != null && mv > 30000000)
-    flags.push({ level: "warn", text: "市值超大盘 —— 已被充分发现，本框架判断力弱、无不对称空间" });
-  if (pa?.stage.startsWith("extended"))
-    flags.push({ level: "warn", text: `1个月涨 ${pa.ret_1m_pct}% 且贴顶 —— stage 问题，降🟡等回调或确认基本面跟得上` });
-  if (pa?.stage.startsWith("falling"))
-    flags.push({ level: "warn", text: "下跌趋势中 —— 区分「非实质性错杀」与「基本面恶化」，别接飞刀" });
+  if (pe != null && pe > 100) flags.push({ level: "hard", text: S.flag_pe_extreme(Math.round(pe)) });
+  if (pe == null || pe <= 0) flags.push({ level: "warn", text: S.flag_pe_neg });
+  if (pb != null && pb > 10) flags.push({ level: "warn", text: S.flag_pb_high(pb.toFixed(1)) });
+  if (turnover != null && turnover < 50000) flags.push({ level: "hard", text: S.flag_illiquid });
+  if (mv != null && mv > 30000000) flags.push({ level: "warn", text: S.flag_megacap });
+  if (pa?.stageKey === "extended") flags.push({ level: "warn", text: S.flag_extended(pa.ret_1m_pct) });
+  if (pa?.stageKey === "falling") flags.push({ level: "warn", text: S.flag_falling });
   return flags;
 }
 
-const CRITERIA_QUALITATIVE = [
-  { id: "monopoly", text: "垄断性/不可替代：单一供应商或寡头，别人 1-2 年内绕不过" },
-  { id: "designin", text: "designed-in + 多客户：进了多条链的 BOM，替换成本高（收费站式卡位）" },
-  { id: "certlag", text: "认证周期未反映营收：量产在后年 → 现在财报难看 = 错杀机会" },
-  { id: "imbalance", text: "供需严重失衡：产能售罄/大客户包产能/backlog 已去风险" },
-  { id: "policy", text: "政策/地缘护城河：国产替代/出口管制壁垒/自给率低" },
-  { id: "balance", text: "资产负债表能活到放量：现金跑道 > 烧钱速度，无 toxic 负债" },
-  { id: "preinst", text: "前机构：卖方研报少、机构低配、散户没听过" },
-];
+const CRIT_IDS = ["monopoly", "designin", "certlag", "imbalance", "policy", "balance", "preinst"];
+const critManual = (S) => CRIT_IDS.map((id, i) => ({ id, text: S.crit_manual[i] }));
 
-function criteriaAuto(basic) {
+function criteriaAuto(basic, S = pack("zh")) {
   const out = [];
   const mv = basic.total_mv;
   if (mv != null) {
     const mvYi = mv / 10000;
     const small = mvYi < 150;
-    out.push({ id: "smallcap", hit: small,
-      text: `极小市值（现 ${Math.round(mvYi)} 亿）：${small ? "✓ 有 10x 不对称空间" : "✗ 市值偏大，不对称性减弱"}` });
+    out.push({ id: "smallcap", hit: small, text: S.crit_smallcap(Math.round(mvYi), small) });
   }
   const pe = basic.pe;
   if (pe != null && pe > 0) {
     const cheap = pe < 25;
-    out.push({ id: "valuation", hit: cheap,
-      text: `估值安全边际（PE ${pe.toFixed(1)}）：${cheap ? "✓ 估值压抑" : "✗ 已有溢价，问自己是否已 priced in"}` });
+    out.push({ id: "valuation", hit: cheap, text: S.crit_valuation(pe.toFixed(1), cheap) });
   }
   return out;
 }
 
-function twoAxisVerdict(pa, basic) {
+function twoAxisVerdict(pa, basic, S = pack("zh")) {
   const highWater = pa.range_pos_6mo_pct >= 70;
   const pe = basic.pe;
 
   if (pe == null && Object.keys(basic).length === 0) {
-    if (highWater)
-      return { code: "yellow", label: "🟡 价格在高位",
-        hint: "已接近半年高点。暂无估值数据，无法判断是「贵但对」还是「博傻」—— 先自查业绩增速能不能跟上涨幅" };
-    return { code: "yellow", label: "🟡 位置不贵，但要自查基本面",
-      hint: "价格位置有吸引力，但暂无估值数据 —— 确认 PE/增速/现金流没问题再考虑" };
+    if (highWater) return { code: "yellow", label: S.v_high_noval, hint: S.v_high_noval_h };
+    return { code: "yellow", label: S.v_cheap_noval, hint: S.v_cheap_noval_h };
   }
 
   const fundOk = pe != null && pe > 0 && pe < 40;
-  if (highWater && fundOk)
-    return { code: "green", label: "🟢 贵但可能对",
-      hint: "高水位但估值未失控 —— 动量龙头别轻易 fade；确认盈利增速跟得上涨幅再定" };
-  if (highWater && !fundOk)
-    return { code: "red", label: "🔴 真贴顶", hint: "高水位 + 纯重估（基本面跟不上）—— 再涨是博傻，回避" };
-  if (!highWater && fundOk)
-    return { code: "green", label: "🟢 经典埋伏区",
-      hint: "低/中水位 + 估值合理 —— Mode A 早期埋伏或 Mode B 超跌反弹的猎区" };
-  return { code: "yellow", label: "🟡 观望",
-    hint: "水位不高 + 估值/基本面存疑 —— 先搞清市场为什么给这个定价，想清「重估触发条件」再考虑" };
+  if (highWater && fundOk) return { code: "green", label: S.v_pricey_right, hint: S.v_pricey_right_h };
+  if (highWater && !fundOk) return { code: "red", label: S.v_real_top, hint: S.v_real_top_h };
+  if (!highWater && fundOk) return { code: "green", label: S.v_ambush, hint: S.v_ambush_h };
+  return { code: "yellow", label: S.v_wait, hint: S.v_wait_h };
 }
 
-function invalidationRules(pa) {
+function invalidationRules(pa, S = pack("zh")) {
   const stop = Math.round(pa.last * 0.85 * 100) / 100;
   const cur = pa.cur || "¥";
   return {
     stop_price: stop,
-    rules: [
-      `价格/stage（机器可检）：跌破 ${cur}${stop}（现价-15%）且 1 月动量转负 → 承认判断错，无条件离场`,
-      "基本面：下季度订单/营收未随主题增长（认证/放量逻辑证伪）",
-      "估值：继续大涨但毛利/盈利未扩 → 纯博傻阶段，止盈离场",
-    ],
-    note: "没有证伪条件的🟢 = 故事，不是投资假设。入观察池后每次打开自动检查是否触发。",
+    rules: [S.inval_price(cur, stop), S.inval_fund, S.inval_val],
+    note: S.inval_note,
   };
 }
 
-function riskControl(principal, proposedPosition) {
+function riskControl(principal, proposedPosition, S = pack("zh")) {
   const limit = principal * 0.1;
   const passed = proposedPosition <= limit;
   return {
     passed,
-    reasons: passed ? [] : [`单笔仓位超限（${Math.round(proposedPosition)} > ${Math.round(limit)}）`],
+    reasons: passed ? [] : [S.risk_over(Math.round(proposedPosition), Math.round(limit))],
     proposed_position: proposedPosition,
     max_allowed: Math.round(limit * 100) / 100,
     drawdown: 0, strategy_age_days: 999,
@@ -278,7 +283,7 @@ function riskControl(principal, proposedPosition) {
 
 /* ───────── 各端点 ───────── */
 
-async function stockCheck(env, code, principal = 2000) {
+async function stockCheck(env, code, principal = 2000, S = pack("zh")) {
   code = code.trim().toUpperCase();
 
   if (!isAshare(code)) {
@@ -289,48 +294,46 @@ async function stockCheck(env, code, principal = 2000) {
       if (c?.meta?.instrumentType === "CRYPTOCURRENCY") { y = c; code = code + "-USD"; }
     }
     if (!y) y = await yahooChart(code);
-    if (!y) return { error: `查不到 ${code}。美股直接输代码（如 AAPL / NVDA），加拿大股加 .TO（如 SHOP.TO），加密货币输 BTC / ETH 或 BTC-USD` };
+    if (!y) return { error: S.err_not_found(code) };
     const isCrypto = y.meta.instrumentType === "CRYPTOCURRENCY";
     const name = y.meta.shortName || y.meta.longName || code;
-    const market = isCrypto ? "加密货币"
-      : code.endsWith(".TO") || y.meta.currency === "CAD" ? "加拿大" : "美股";
-    const pa = computePA(y.closes.slice(-140), y.meta.currency || "USD");
-    if (!pa) return { error: "价格数据不足，无法判定" };
+    const market = isCrypto ? S.mkt_crypto
+      : code.endsWith(".TO") || y.meta.currency === "CAD" ? S.mkt_ca : S.mkt_us;
+    const pa = computePA(y.closes.slice(-140), y.meta.currency || "USD", S);
+    if (!pa) return { error: S.err_price_thin2 };
     // 海外/币的 basic 为空是"没接数据"而非"真亏损"，去掉误导性的 PE 缺失红旗
-    const flags = redFlagScan({}, pa).filter((f) => !f.text.startsWith("PE 为负/缺失"));
+    const flags = redFlagScan({}, pa, S).filter((f) => f.text !== S.flag_pe_neg);
     let verdict;
     if (isCrypto) {
-      flags.unshift({ level: "warn", text: "加密货币 7×24 交易、无涨跌停、波动远大于股票 —— 止损线可能一夜被击穿，仓位务必比股票更小" });
+      flags.unshift({ level: "warn", text: S.flag_crypto });
       const high = pa.range_pos_6mo_pct >= 70;
       if (pa.stage.startsWith("falling"))
-        verdict = { code: "yellow", label: "🟡 先等它跌完", hint: "正在下跌途中 —— 币圈的飞刀比股票更锋利，等跌势企稳再考虑" };
+        verdict = { code: "yellow", label: S.v_crypto_fall, hint: S.v_crypto_fall_h };
       else if (high)
-        verdict = { code: "yellow", label: "🟡 价格在高位", hint: "已接近半年高点。币没有估值锚，追高完全靠情绪接力 —— 想清楚谁会用更高的价接你的货" };
+        verdict = { code: "yellow", label: S.v_crypto_high, hint: S.v_crypto_high_h };
       else
-        verdict = { code: "yellow", label: "🟡 位置不贵，但币没有底", hint: "价格位置有吸引力，但加密货币没有盈利/分红托底，「便宜」不构成买入理由 —— 只用亏光也不心疼的钱参与" };
+        verdict = { code: "yellow", label: S.v_crypto_low, hint: S.v_crypto_low_h };
     } else {
-      verdict = twoAxisVerdict(pa, {});
-      if (pa.stage.startsWith("falling") && verdict.code === "green")
-        verdict = { code: "yellow", label: "🟡 先等它跌完", hint: "位置还行，但正在下跌途中 —— 等跌势企稳再考虑，别接飞刀" };
+      verdict = twoAxisVerdict(pa, {}, S);
+      if (pa.stageKey === "falling" && verdict.code === "green")
+        verdict = { code: "yellow", label: S.v_wait_fall, hint: S.v_wait_fall_h2 };
     }
     return {
       code, name, industry: market, price: pa, basic: {},
       red_flags: flags, criteria_auto: [],
-      criteria_manual: isCrypto ? [] : CRITERIA_QUALITATIVE,
-      verdict, invalidation: invalidationRules(pa),
-      risk_check: riskControl(principal, pa.last),
-      disclaimer: isCrypto
-        ? "仅供研究教育，非投资建议。加密货币无基本面数据，判定只基于价格位置；波动与归零风险远高于股票。"
-        : "仅供研究教育，非投资建议。海外标的估值/财务数据未接入，判定只基于价格位置，基本面需自查。",
+      criteria_manual: isCrypto ? [] : critManual(S),
+      verdict, invalidation: invalidationRules(pa, S),
+      risk_check: riskControl(principal, pa.last, S),
+      disclaimer: isCrypto ? S.disc_crypto : S.disc_os,
     };
   }
 
   const info = await tushare(env, "stock_basic", { ts_code: code }, "ts_code,name,industry,list_date");
-  if (!info?.items?.length) return { error: `代码 ${code} 不存在或无法验证（skill 纪律：禁止凭记忆写 ticker）` };
+  if (!info?.items?.length) return { error: S.err_ticker(code) };
   const [, name, industry] = info.items[0];
 
-  const pa = await priceAnalysis(env, code);
-  if (!pa) return { error: "价格数据不足（skill 纪律：严禁凭印象猜水位，无真实价格则不判定）" };
+  const pa = await priceAnalysis(env, code, S);
+  if (!pa) return { error: S.err_price_thin };
 
   let basic = {};
   for (let i = 1; i < 10; i++) {
@@ -349,13 +352,12 @@ async function stockCheck(env, code, principal = 2000) {
     if (amts.length) basic.amount = amts.reduce((a, b) => a + b, 0) / amts.length;
   }
 
-  const flags = redFlagScan(basic, pa);
-  let verdict = twoAxisVerdict(pa, basic);
-  if (pa.stage.startsWith("falling") && verdict.code === "green")
-    verdict = { code: "yellow", label: "🟡 先等它跌完",
-      hint: "位置和估值都还行，但正在下跌途中 —— 等跌势企稳（1个月动量转正）再考虑，别接飞刀" };
+  const flags = redFlagScan(basic, pa, S);
+  let verdict = twoAxisVerdict(pa, basic, S);
+  if (pa.stageKey === "falling" && verdict.code === "green")
+    verdict = { code: "yellow", label: S.v_wait_fall, hint: S.v_wait_fall_h };
   if (flags.some((f) => f.level === "hard") && verdict.code === "green")
-    verdict = { code: "yellow", label: "🟡 有硬红旗，降级观望", hint: "命中硬红旗（见下）——除非红旗解除，否则不进" };
+    verdict = { code: "yellow", label: S.v_hard_flag, hint: S.v_hard_flag_h };
 
   const basicOut = {};
   for (const [k, v] of Object.entries(basic))
@@ -363,10 +365,10 @@ async function stockCheck(env, code, principal = 2000) {
 
   return {
     code, name, industry, price: pa, basic: basicOut,
-    red_flags: flags, criteria_auto: criteriaAuto(basic), criteria_manual: CRITERIA_QUALITATIVE,
-    verdict, invalidation: invalidationRules(pa),
-    risk_check: riskControl(principal, pa.last * 100),
-    disclaimer: "仅供研究教育，非投资建议。判定基于量化规则，定性判据需你自己勾选核实。",
+    red_flags: flags, criteria_auto: criteriaAuto(basic, S), criteria_manual: critManual(S),
+    verdict, invalidation: invalidationRules(pa, S),
+    risk_check: riskControl(principal, pa.last * 100, S),
+    disclaimer: S.disc_a,
   };
 }
 
@@ -394,9 +396,9 @@ async function yahooSeries(symbol) {
   return map;
 }
 
-async function watchCheck(env, items) {
+async function watchCheck(env, items, S = pack("zh")) {
   const benchCache = {};
-  const benchName = { hs300: "沪深300", "^GSPC": "标普500", "^GSPTSE": "多伦多综指", "BTC-USD": "比特币" };
+  const benchName = { hs300: S.bench_hs300, "^GSPC": S.bench_spx, "^GSPTSE": S.bench_tsx, "BTC-USD": S.bench_btc };
   const benchKey = (code) =>
     isAshare(code) ? "hs300"
     : /-(USD|USDT|USDC)$/.test(code) ? "BTC-USD"
@@ -418,21 +420,33 @@ async function watchCheck(env, items) {
     const code = parts[0].toUpperCase();
     const entry = parseFloat(parts[1]), stop = parseFloat(parts[2]);
     const added = parts[3] ? parts[3].replace(/-/g, "") : null;
+    const costCur = (parts[4] || "").toUpperCase() || null; // 你实际付款的币种（如加币买美股）
     const series = await dailySeries(env, code);
-    const pa = series ? computePA(series.closes.slice(-140), series.currency) : null;
-    if (!pa) return { code, error: "无价格数据" };
-    const last = pa.last;
-    const pnl = (last / entry - 1) * 100;
-    const triggered = last < stop && pa.ret_1m_pct !== null && pa.ret_1m_pct < 0;
+    const pa = series ? computePA(series.closes.slice(-140), series.currency, S) : null;
+    if (!pa) return { code, error: S.err_no_price };
+
+    // 跨币种记账：成本按你付的币计（对得上券商账单），
+    // 但水位/判定仍按标的自身币种算（避免汇率噪音污染"是不是在高位"的判断）。
+    const quoteCur = series.currency;
+    const needFx = costCur && costCur !== quoteCur;
+    const fx = needFx ? await fxSeries(quoteCur, costCur) : null;
+    const fxNow = needFx ? fxLatest(fx) : 1;
+    if (needFx && !fxNow) return { code, error: S.err_fx(quoteCur, costCur) };
+
+    const cur = needFx ? (CUR_SYM[costCur] || costCur + " ") : (pa.cur || "¥");
+    const lastCost = pa.last * fxNow;                 // 现价换算成你的币
+    const pnl = (lastCost / entry - 1) * 100;         // 你真实的盈亏（含汇率影响）
+    const triggered = lastCost < stop && pa.ret_1m_pct !== null && pa.ret_1m_pct < 0;
 
     // 纪律对照（Vibe-Trading Shadow Account 的简化版）：
     // 找出加入后第一次收盘跌破止损线的那天——如果那天按纪律卖了，现在会怎样
     let shadow = null;
     if (added) {
       for (let i = 0; i < series.dates.length; i++) {
-        if (series.dates[i] > added && series.closes[i] < stop) {
-          const sellPx = series.closes[i];
-          const discPnl = (sellPx / entry - 1) * 100;
+        if (series.dates[i] <= added) continue;
+        const closeCost = needFx ? series.closes[i] * fxAt(fx, series.dates[i]) : series.closes[i];
+        if (closeCost < stop) {
+          const discPnl = (closeCost / entry - 1) * 100;
           shadow = {
             cross_date: series.dates[i],
             discipline_pnl_pct: Math.round(discPnl * 10) / 10,
@@ -443,6 +457,8 @@ async function watchCheck(env, items) {
       }
     }
 
+    // alpha 用标的自身币种算：个股和指数都在同一币种下比，汇率影响自然抵消，
+    // 这样"选股有没有本事"不会被汇率涨跌搅浑。
     let alpha = null, idxPnl = null;
     if (added) {
       const bench = await getBench(code);
@@ -451,13 +467,19 @@ async function watchCheck(env, items) {
         const base = bDates.find((d) => d >= added);
         if (base && bDates.length) {
           idxPnl = (bench[bDates[bDates.length - 1]] / bench[base] - 1) * 100;
-          alpha = pnl - idxPnl;
+          const entryQuote = needFx ? entry / fxAt(fx, added) : entry;
+          const pnlQuote = (pa.last / entryQuote - 1) * 100;
+          alpha = pnlQuote - idxPnl;
         }
       }
     }
     const r1 = (x) => (x == null ? null : Math.round(x * 10) / 10);
     return {
-      code, entry, stop, last, cur: pa.cur || "¥",
+      code, entry, stop, cur,
+      last: Math.round(lastCost * 100) / 100,
+      quote_last: needFx ? pa.last : null,
+      quote_cur: needFx ? (CUR_SYM[quoteCur] || quoteCur) : null,
+      fx_rate: needFx ? Math.round(fxNow * 10000) / 10000 : null,
       pnl_pct: r1(pnl), bench_name: benchName[benchKey(code)],
       hs300_pnl_pct: r1(idxPnl), alpha_pct: r1(alpha),
       invalidation_triggered: triggered, level: pa.level, stage: pa.stage,
@@ -468,12 +490,12 @@ async function watchCheck(env, items) {
   return { items: results, checked_at: nowStr() };
 }
 
-async function wishCheck(env, items) {
+async function wishCheck(env, items, S = pack("zh")) {
   const parsed = items.split(",").map((it) => it.trim().split(":")).filter((p) => p.length >= 2);
   const results = await Promise.all(parsed.map(async (parts) => {
     const code = parts[0].toUpperCase(), target = parseFloat(parts[1]);
-    const pa = await priceAnalysis(env, code);
-    if (!pa) return { code, error: "无价格数据" };
+    const pa = await priceAnalysis(env, code, S);
+    if (!pa) return { code, error: S.err_no_price };
     return {
       code, target, last: pa.last, cur: pa.cur || "¥",
       hit: pa.last <= target,
@@ -484,24 +506,24 @@ async function wishCheck(env, items) {
   return { items: results, checked_at: nowStr() };
 }
 
-async function history(env, code, points = 60) {
+async function history(env, code, points = 60, S = pack("zh")) {
   code = code.trim().toUpperCase();
   const s = await dailySeries(env, code);
-  if (!s) return { error: "无数据" };
-  const market = isAshare(code) ? "A股"
-    : /-(USD|USDT|USDC)$/.test(code) ? "加密货币"
-    : code.endsWith(".TO") || s.currency === "CAD" ? "加拿大" : "美股";
+  if (!s) return { error: S.err_no_data };
+  const market = isAshare(code) ? S.mkt_a
+    : /-(USD|USDT|USDC)$/.test(code) ? S.mkt_crypto
+    : code.endsWith(".TO") || s.currency === "CAD" ? S.mkt_ca : S.mkt_us;
   return { code, market, cur: CUR_SYM[s.currency] || "$",
     dates: s.dates.slice(-points),
     closes: s.closes.slice(-points).map((c) => Math.round(c * 100) / 100) };
 }
 
-async function resolve(env, q) {
+async function resolve(env, q, S = pack("zh")) {
   q = q.trim().toUpperCase();
   if (isAshare(q)) {
     const info = await tushare(env, "stock_basic", { ts_code: q }, "ts_code,name");
     if (info?.items?.length)
-      return { ok: true, code: q, name: info.items[0][1], market: "A股", cur: "¥" };
+      return { ok: true, code: q, name: info.items[0][1], market: S.mkt_a, cur: "¥" };
     return { ok: false };
   }
   if (/^\d{6}$/.test(q)) {
@@ -509,7 +531,7 @@ async function resolve(env, q) {
     for (const suf of sufs) {
       const info = await tushare(env, "stock_basic", { ts_code: q + suf }, "ts_code,name");
       if (info?.items?.length)
-        return { ok: true, code: q + suf, name: info.items[0][1], market: "A股", cur: "¥" };
+        return { ok: true, code: q + suf, name: info.items[0][1], market: S.mkt_a, cur: "¥" };
     }
   }
   if (/^[A-Z][A-Z0-9.\-]{0,9}$/.test(q)) {
@@ -518,31 +540,31 @@ async function resolve(env, q) {
       const c = await yahooChart(q + "-USD");
       if (c?.meta?.instrumentType === "CRYPTOCURRENCY")
         return { ok: true, code: q + "-USD", name: c.meta.shortName || q + "-USD",
-          market: "加密货币", cur: "$" };
+          market: S.mkt_crypto, cur: "$" };
     }
     const y = await yahooChart(q);
     if (y) {
       const cur = y.meta.currency || "USD";
       const isCrypto = y.meta.instrumentType === "CRYPTOCURRENCY";
       return { ok: true, code: q, name: y.meta.shortName || y.meta.longName || q,
-        market: isCrypto ? "加密货币" : q.endsWith(".TO") || cur === "CAD" ? "加拿大" : "美股",
+        market: isCrypto ? S.mkt_crypto : q.endsWith(".TO") || cur === "CAD" ? S.mkt_ca : S.mkt_us,
         cur: CUR_SYM[cur] || "$" };
     }
   }
   const items = await stockList(env);
   for (const [ts, name] of items)
     if (name.toUpperCase().includes(q))
-      return { ok: true, code: ts, name, market: "A股", cur: "¥" };
+      return { ok: true, code: ts, name, market: S.mkt_a, cur: "¥" };
   return { ok: false };
 }
 
-async function verifyTickers(env, codes) {
+async function verifyTickers(env, codes, S = pack("zh")) {
   const uniq = [...new Set(codes.split(",").map((c) => c.trim().toUpperCase()).filter(Boolean))].slice(0, 12);
   const results = await Promise.all(uniq.map(async (code) => {
     if (isAshare(code)) {
       const info = await tushare(env, "stock_basic", { ts_code: code }, "ts_code,name");
       if (info?.items?.length) {
-        const pa = await priceAnalysis(env, code);
+        const pa = await priceAnalysis(env, code, S);
         return { code, ok: true, name: info.items[0][1], last: pa?.last ?? null, cur: "¥" };
       }
       return { code, ok: false };
@@ -587,7 +609,7 @@ function fiveFactorScore(close, pe, pb, dv, maxPrice, cfg) {
   return { total: r1(sDv + sPe + sPb + sRoe + sPrice), roe_est: r1(roe) };
 }
 
-async function scan(env, principal = 2000, risk = "stable") {
+async function scan(env, principal = 2000, risk = "stable", S = pack("zh")) {
   let maxPrice = Math.max(Math.min(principal / 100, 300), 2);
   const cfgs = {
     stable: { pe: 15, dv: 4, pb: 2 },
@@ -602,7 +624,7 @@ async function scan(env, principal = 2000, risk = "stable") {
     dailyData = await tushare(env, "daily_basic", { trade_date: d }, "ts_code,close,pe,pb,dv_ratio");
     if (dailyData?.items?.length) { targetDate = d; break; }
   }
-  if (!dailyData) return { error: "暂无行情数据", top_picks: [] };
+  if (!dailyData) return { error: S.scan_nodata, top_picks: [] };
 
   const nameMap = Object.fromEntries(await stockList(env));
   const results = [];
@@ -612,12 +634,12 @@ async function scan(env, principal = 2000, risk = "stable") {
     if (!(pe > 0 && pe < cfg.pe && dv > cfg.dv && pb < cfg.pb)) continue;
     const score = fiveFactorScore(close, pe, pb, dv, maxPrice, cfg);
     results.push({
-      code, name: nameMap[code] || "未知",
+      code, name: nameMap[code] || S.unknown,
       price: Math.round(close * 100) / 100,
       pe: Math.round(pe * 10) / 10, pb: Math.round(pb * 10) / 10,
       dv: Math.round(dv * 100) / 100,
       roe: score.roe_est, score: score.total,
-      risk_check: riskControl(principal, close * 100),
+      risk_check: riskControl(principal, close * 100, S),
     });
   }
   results.sort((a, b) => b.score - a.score);
@@ -625,22 +647,22 @@ async function scan(env, principal = 2000, risk = "stable") {
     top_picks: results.slice(0, 15) };
 }
 
-function riskReview(code, totalReturn, winRate, maxDrawdown, dataMode) {
+function riskReview(code, totalReturn, winRate, maxDrawdown, dataMode, S = pack("zh")) {
   const flags = [];
   let score = 100;
-  if (dataMode === "simulated") { flags.push("数据为模拟生成（PE/dv 随机），真实性低"); score -= 25; }
-  if (String(totalReturn).includes("模拟")) { flags.push("回测包含模拟数据，建议降低置信度"); score -= 15; }
+  if (dataMode === "simulated") { flags.push(S.rr_sim); score -= 25; }
+  if (String(totalReturn).includes("模拟")) { flags.push(S.rr_sim2); score -= 15; }
   const wr = parseFloat(String(winRate).replace("%", "")) || 0;
-  if (wr > 85) { flags.push("胜率异常高（>85%），可能存在过拟合或幸存者偏差"); score -= 20; }
+  if (wr > 85) { flags.push(S.rr_winrate); score -= 20; }
   const dd = parseFloat(String(maxDrawdown).replace("%", "")) || 0;
-  if (dd < 5) { flags.push("最大回撤极低，实盘中几乎不可能，检查是否有 lookahead bias"); score -= 15; }
-  if (!flags.length) flags.push("未发现明显异常，但仍建议小资金实盘验证 3 个月");
+  if (dd < 5) { flags.push(S.rr_dd); score -= 15; }
+  if (!flags.length) flags.push(S.rr_ok);
   return {
     code,
     review: {
       review_score: Math.max(0, score), flags,
-      recommendation: score >= 70 ? "通过" : "需人工复核后小资金测试",
-      red_line: "AI 绝不能直接下单，所有决策必须经过本风控函数",
+      recommendation: score >= 70 ? S.rr_pass : S.rr_review,
+      red_line: S.risk_redline,
     },
     timestamp: new Date().toISOString(),
   };
@@ -681,6 +703,10 @@ const REVIEWER_SYSTEM = `你是独立复核员，立场是挑刺反驳，不是�
 3. 【读者动手前必须自己核实的清单】：列 3 条以内最关键的待核实项
 
 不复述报告内容。没发现大问题就说"未发现硬伤"再给核实清单。`;
+
+const EN_DIRECTIVE = `
+
+【LANGUAGE OVERRIDE — highest priority】Write the ENTIRE report in English, ignoring any instruction above about writing for Chinese readers. Keep tickers and standard finance terms as-is. Same structure, same discipline, same falsification requirements — just in natural English prose.`;
 
 async function* streamDeepseek(env, system, user, maxTokens = 8000) {
   const res = await fetch("https://api.deepseek.com/chat/completions", {
@@ -734,7 +760,7 @@ function llmStream(env, system, user, maxTokens = 8000, effort = "medium", webSe
   return streamAnthropic(env, system, user, maxTokens, effort, webSearch);
 }
 
-function analyzeSSE(env, query, market) {
+function analyzeSSE(env, query, market, S = pack("zh"), lang = "zh") {
   const enc = new TextEncoder();
   const send = (ctrl, obj) => ctrl.enqueue(enc.encode("data: " + JSON.stringify(obj) + "\n\n"));
 
@@ -742,21 +768,22 @@ function analyzeSSE(env, query, market) {
     async start(ctrl) {
       try {
         if (!env.DEEPSEEK_API_KEY && !env.ANTHROPIC_API_KEY) {
-          send(ctrl, { error: "未配置 AI 密钥。请用 wrangler secret put DEEPSEEK_API_KEY 添加后重试；「查一只股」和持仓功能不受影响。" });
+          send(ctrl, { error: S.ai_nokey });
           ctrl.close(); return;
         }
         const report = [];
-        for await (const text of llmStream(env, SERENITY_SYSTEM, `市场范围：${market}。请分析：${query}`, 8000, "medium", true)) {
+        const sys = SERENITY_SYSTEM + (lang === "en" ? EN_DIRECTIVE : "");
+        for await (const text of llmStream(env, sys, `市场范围：${market}。请分析：${query}`, 8000, "medium", true)) {
           report.push(text);
           send(ctrl, { text });
         }
         send(ctrl, { phase: "review" });
         try {
-          for await (const text of llmStream(env, REVIEWER_SYSTEM,
+          for await (const text of llmStream(env, REVIEWER_SYSTEM + (lang === "en" ? EN_DIRECTIVE : ""),
             `用户的原始问题：${query}\n\n待复核的报告：\n${report.join("")}`, 1800, "low"))
             send(ctrl, { review: text });
         } catch (re) {
-          send(ctrl, { review: `（复核失败：${re.message}）` });
+          send(ctrl, { review: S.ai_review_fail(re.message) });
         }
         send(ctrl, { done: true });
       } catch (e) {
@@ -780,25 +807,36 @@ export default {
     const url = new URL(request.url);
     const p = url.pathname;
     const q = (k, def = "") => url.searchParams.get(k) ?? def;
+    const lang = q("lang", "zh") === "en" ? "en" : "zh";
+    const S = pack(lang);
 
     try {
+      // ── 登录 / 同步 ──
+      if (p === "/api/auth/send_code" && request.method === "POST") return auth.sendCode(env, request);
+      if (p === "/api/auth/verify" && request.method === "POST") return auth.verifyCode(env, request);
+      if (p === "/api/auth/me") return auth.me(env, request);
+      if (p === "/api/auth/logout" && request.method === "POST") return auth.logout(env, request);
+      if (p === "/api/auth/lang" && request.method === "POST") return auth.setLang(env, request);
+      if (p === "/api/data" && request.method === "GET") return auth.getData(env, request);
+      if (p === "/api/data" && request.method === "PUT") return auth.putData(env, request);
+
       if (p === "/api/serenity/stock_check")
-        return json(await stockCheck(env, q("code"), parseFloat(q("principal", "2000"))));
-      if (p === "/api/serenity/watch_check") return json(await watchCheck(env, q("items")));
-      if (p === "/api/serenity/wish_check") return json(await wishCheck(env, q("items")));
+        return json(await stockCheck(env, q("code"), parseFloat(q("principal", "2000")), S));
+      if (p === "/api/serenity/watch_check") return json(await watchCheck(env, q("items"), S));
+      if (p === "/api/serenity/wish_check") return json(await wishCheck(env, q("items"), S));
       if (p === "/api/serenity/history")
-        return json(await history(env, q("code"), parseInt(q("points", "60"))));
-      if (p === "/api/serenity/resolve") return json(await resolve(env, q("q")));
-      if (p === "/api/serenity/verify_tickers") return json(await verifyTickers(env, q("codes")));
-      if (p === "/api/serenity/analyze") return analyzeSSE(env, q("query"), q("market", "A股"));
+        return json(await history(env, q("code"), parseInt(q("points", "60")), S));
+      if (p === "/api/serenity/resolve") return json(await resolve(env, q("q"), S));
+      if (p === "/api/serenity/verify_tickers") return json(await verifyTickers(env, q("codes"), S));
+      if (p === "/api/serenity/analyze") return analyzeSSE(env, q("query"), q("market", S.mkt_a), S, lang);
       if (p === "/api/search") return json(await search(env, q("keyword")));
       if (p === "/api/scan")
-        return json(await scan(env, parseFloat(q("principal", "2000")), q("risk", "stable")));
+        return json(await scan(env, parseFloat(q("principal", "2000")), q("risk", "stable"), S));
       if (p === "/api/risk_review")
         return json(riskReview(q("code"), q("total_return", "12.5%"), q("win_rate", "68%"),
-          q("max_drawdown", "9.2%"), q("data_mode", "real")));
+          q("max_drawdown", "9.2%"), q("data_mode", "real"), S));
       if (p.startsWith("/api/"))
-        return json({ error: `接口 ${p} 未在 Cloudflare 版实现（旧回测接口已下线）` }, 404);
+        return json({ error: S.err_api(p) }, 404);
     } catch (e) {
       return json({ error: String(e.message || e) }, 500);
     }
