@@ -462,6 +462,93 @@ async function appleCallback(env, request) {
   return new Response(null, { status: 302, headers });
 }
 
+/* ───────── 微信登录（开放平台"网站应用"扫码流程） ─────────
+   与谷歌同构（GET 跳转 + GET 回调），两处微信特色：
+   ① 授权页是二维码页（scope=snsapi_login），用户拿手机微信扫码确认
+   ② 微信不提供邮箱 → 无法按邮箱认亲，identities 用 unionid（跨应用稳定）优先、
+      没有 unionid 就用 openid。微信用户是独立新账号（业界通行做法） */
+
+function wechatStart(env, request) {
+  if (!env.WECHAT_APP_ID)
+    return json(request, { ok: false, error: "wechat login not configured yet" }, 503);
+  const url = new URL(request.url);
+  let returnTo = url.searchParams.get("return_to") || "https://quant.lowbattery.studio/";
+  if (!RETURN_RE.test(returnTo)) returnTo = "https://quant.lowbattery.studio/";
+
+  const state = randHex(16);
+  const auth = new URL("https://open.weixin.qq.com/connect/qrconnect");
+  auth.searchParams.set("appid", env.WECHAT_APP_ID);
+  auth.searchParams.set("redirect_uri", "https://accounts.lowbattery.studio/api/auth/wechat/callback");
+  auth.searchParams.set("response_type", "code");
+  auth.searchParams.set("scope", "snsapi_login");
+  auth.searchParams.set("state", state);
+
+  return new Response(null, {
+    status: 302,
+    headers: {
+      Location: auth.toString() + "#wechat_redirect",
+      "Set-Cookie": `lbs_wstate=${state}.${encodeURIComponent(returnTo)}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=600`,
+    },
+  });
+}
+
+async function wechatCallback(env, request) {
+  const url = new URL(request.url);
+  const code = url.searchParams.get("code");
+  const state = url.searchParams.get("state");
+  const m = (request.headers.get("Cookie") || "").match(/(?:^|;\s*)lbs_wstate=([a-f0-9]+)\.([^;]+)/);
+  const returnTo = m ? decodeURIComponent(m[2]) : "https://quant.lowbattery.studio/";
+  const clearState = "lbs_wstate=; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=0";
+
+  // 用户在扫码页点了取消 → 无 code，安静回家
+  if (!code)
+    return new Response(null, { status: 302, headers: { Location: returnTo, "Set-Cookie": clearState } });
+  if (!state || !m || m[1] !== state)
+    return oauthFail("登录状态校验失败，请回到网站重试 / sign-in state check failed", returnTo);
+  if (!RETURN_RE.test(returnTo))
+    return oauthFail("非法回跳地址 / bad return address", "https://quant.lowbattery.studio/");
+
+  const tokenRes = await fetch(
+    "https://api.weixin.qq.com/sns/oauth2/access_token?" + new URLSearchParams({
+      appid: env.WECHAT_APP_ID,
+      secret: env.WECHAT_APP_SECRET,
+      code,
+      grant_type: "authorization_code",
+    })
+  );
+  const tok = await tokenRes.json().catch(() => ({}));
+  if (!tok.openid) {
+    console.log(`wechat token exchange fail: ${JSON.stringify(tok)}`);
+    return oauthFail("微信登录失败，请重试 / WeChat sign-in failed", returnTo);
+  }
+
+  // unionid 在同主体多应用间稳定，优先；带前缀防止与 openid 撞值
+  const wuid = tok.unionid ? `u:${tok.unionid}` : `o:${tok.openid}`;
+  const nowIso = new Date().toISOString();
+
+  let userId = (await env.DB.prepare(
+    "SELECT user_id FROM identities WHERE provider='wechat' AND provider_uid=?"
+  ).bind(wuid).first())?.user_id;
+
+  if (!userId) {
+    userId = randHex(16);
+    await env.DB.prepare("INSERT INTO users (id, email, lang, created_at, last_seen) VALUES (?, NULL, 'zh', ?, ?)")
+      .bind(userId, nowIso, nowIso).run();
+    await env.DB.prepare(
+      "INSERT INTO identities (provider, provider_uid, user_id, created_at) VALUES ('wechat', ?, ?, ?)"
+    ).bind(wuid, userId, nowIso).run();
+  }
+  await env.DB.prepare("UPDATE users SET last_seen=? WHERE id=?").bind(nowIso, userId).run();
+
+  const sessionCookie = await createSession(env, userId);
+  const dest = new URL(returnTo);
+  dest.searchParams.set("lbs_login", "1");
+  const headers = new Headers({ Location: dest.toString() });
+  headers.append("Set-Cookie", sessionCookie);
+  headers.append("Set-Cookie", clearState);
+  return new Response(null, { status: 302, headers });
+}
+
 async function currentUser(env, request) {
   const token = cookieToken(request);
   if (!token) return null;
@@ -479,7 +566,10 @@ async function currentUser(env, request) {
 
 async function me(env, request) {
   const user = await currentUser(env, request);
-  return json(request, user ? { ok: true, email: user.email, lang: user.lang } : { ok: false });
+  if (!user) return json(request, { ok: false });
+  // 微信用户没有邮箱 → 给一个可显示的名字
+  const display = user.email ? user.email.split("@")[0] : (user.lang === "en" ? "wechat user" : "微信用户");
+  return json(request, { ok: true, email: user.email, display, lang: user.lang });
 }
 
 async function logout(env, request) {
@@ -511,6 +601,8 @@ export default {
     try {
       if (p === "/api/auth/google/start") return googleStart(env, request);
       if (p === "/api/auth/google/callback") return googleCallback(env, request);
+      if (p === "/api/auth/wechat/start") return wechatStart(env, request);
+      if (p === "/api/auth/wechat/callback") return wechatCallback(env, request);
       if (p === "/api/auth/apple/start") return appleStart(env, request);
       if (p === "/api/auth/apple/callback" && request.method === "POST") return appleCallback(env, request);
       if (p === "/api/auth/send_code" && request.method === "POST") return sendCode(env, request);
