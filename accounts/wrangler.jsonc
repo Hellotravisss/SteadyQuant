@@ -8,6 +8,11 @@
       "custom_domain": true
     }
   ],
+  "vars": {
+    "APPLE_TEAM_ID": "4SC6PB8SA2",
+    "APPLE_KEY_ID": "CB8GFX9JK2",
+    "APPLE_SERVICES_ID": "studio.lowbattery.auth"
+  },
   "d1_databases": [
     {
       "binding": "DB",
