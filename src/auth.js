@@ -27,10 +27,10 @@ const T = {
     tooMany: "错误次数过多，请重新获取验证码",
     wrongCode: "验证码不对，再看看",
     needLogin: "请先登录",
-    subject: "steadyquant 登录验证码",
+    subject: "Low Battery Studio 登录验证码",
     emailTitle: "你的登录验证码",
     emailBody: "5 分钟内有效。不是你本人操作的话，忽略这封邮件即可。",
-    emailFoot: "steadyquant · 仅供研究教育，非投资建议",
+    emailFoot: "low battery studio · still at 1%",
   },
   en: {
     badEmail: "That doesn't look like a valid email",
@@ -42,10 +42,10 @@ const T = {
     tooMany: "Too many wrong tries — request a new code",
     wrongCode: "Wrong code, have another look",
     needLogin: "Please sign in first",
-    subject: "your steadyquant sign-in code",
+    subject: "your Low Battery Studio sign-in code",
     emailTitle: "your sign-in code",
     emailBody: "Valid for 5 minutes. If this wasn't you, just ignore this email.",
-    emailFoot: "steadyquant · research & education only, not investment advice",
+    emailFoot: "low battery studio · still at 1%",
   },
 };
 const t = (lang, k) => (T[lang] || T.zh)[k];
@@ -64,7 +64,7 @@ const genCode = () => String(crypto.getRandomValues(new Uint32Array(1))[0] % 100
 function codeEmailHtml(code, lang) {
   return `<!doctype html><html><body style="margin:0;background:#F7F1E7;font-family:-apple-system,'Helvetica Neue',Arial,sans-serif;color:#17150F">
   <div style="max-width:420px;margin:0 auto;padding:40px 24px">
-    <div style="font-size:12px;letter-spacing:.14em;color:#8A8578;font-family:ui-monospace,monospace">// steadyquant</div>
+    <div style="font-size:12px;letter-spacing:.14em;color:#8A8578;font-family:ui-monospace,monospace">// low battery studio</div>
     <h1 style="font-size:24px;font-weight:800;margin:12px 0 20px">${t(lang, "emailTitle")}</h1>
     <div style="background:#fff;border:1px solid #E4DAC7;border-radius:20px;padding:24px;text-align:center">
       <div style="font-family:ui-monospace,monospace;font-size:38px;font-weight:700;letter-spacing:.22em;color:#E5484D">${code}</div>
@@ -100,7 +100,7 @@ export async function sendCode(env, request) {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        from: "steadyquant <verify@lowbattery.studio>",
+        from: "Low Battery Studio <verify@lowbattery.studio>",
         to: [addr],
         subject: `${t(lang, "subject")}: ${code}`,
         html: codeEmailHtml(code, lang),

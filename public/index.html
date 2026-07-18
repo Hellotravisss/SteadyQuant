@@ -524,7 +524,6 @@ const I18N = {
     loginNote: "不登录也能用，数据存在这台设备的浏览器里。登录只是为了多设备同步。",
     loginOk: "✅ 登录成功，数据已同步",
     logoutOk: "已退出。本机数据还在。",
-    mergeAsk: (n) => `这台设备上有 ${n} 条本地记录。要合并到你的账号吗？（取消则用云端数据覆盖本机）`,
     // 通用
     netErr: "连不上服务器。请刷新页面重试；如果一直失败，说明后端服务没在运行。",
     notFound: (c) => `没找到「${c}」，换个名字或代码试试`,
@@ -625,7 +624,6 @@ const I18N = {
     loginNote: "You can use everything without an account — data just lives in this browser. Signing in only adds cross-device sync.",
     loginOk: "✅ signed in — your data is synced",
     logoutOk: "Signed out. Your local data is still here.",
-    mergeAsk: (n) => `This device has ${n} local record(s). Merge them into your account? (Cancel = replace local with your cloud data)`,
     netErr: "Can't reach the server. Refresh and retry; if it keeps failing the backend isn't running.",
     notFound: (c) => `Couldn't find "${c}" — try another name or ticker`,
     holdSaved: (n, c, e, q) => `Logged <b>${n}</b> (cost ${c}${e}${q}) — red light if it breaks your stop`,
@@ -770,15 +768,13 @@ async function mergeOnLogin() {
     if (d.ok) cloud = { hold: d.hold || [], wish: d.wish || [] };
   } catch {}
 
-  if (localCount && confirm(t('mergeAsk', localCount))) {
-    const byCode = (arr) => Object.fromEntries(arr.map(x => [x.code, x]));
-    const hold = Object.values({ ...byCode(cloud.hold), ...byCode(localHold) });
-    const wish = Object.values({ ...byCode(cloud.wish), ...byCode(localWish) });
-    setList('sq_hold', hold); setList('sq_wish', wish);
-    await pushCloud();
-  } else {
-    setList('sq_hold', cloud.hold); setList('sq_wish', cloud.wish);
-  }
+  // 静默合并：本地 + 云端取并集（同代码以本地为准，因为是这台设备刚编辑的）。
+  // 不弹窗——合并不丢数据，普通用户无需理解"合并还是覆盖"这种技术选择。
+  const byCode = (arr) => Object.fromEntries(arr.map(x => [x.code, x]));
+  const hold = Object.values({ ...byCode(cloud.hold), ...byCode(localHold) });
+  const wish = Object.values({ ...byCode(cloud.wish), ...byCode(localWish) });
+  setList('sq_hold', hold); setList('sq_wish', wish);
+  if (localCount) await pushCloud();  // 只有本地确有数据才回推，省一次写
   updateBadges();
   if (document.getElementById('panel-hold').classList.contains('active')) refreshHold();
 }
