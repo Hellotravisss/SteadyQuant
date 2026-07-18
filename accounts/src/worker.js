@@ -320,6 +320,148 @@ async function googleCallback(env, request) {
   return new Response(null, { status: 302, headers });
 }
 
+/* ───────── 苹果登录（Sign in with Apple，web 流程） ─────────
+   与谷歌同构，两处苹果特色：
+   ① client_secret 不是固定字符串，而是用 .p8 私钥现签的 ES256 JWT（苹果规定）
+   ② scope 带 email 时回调必须是跨站 form_post(POST)——SameSite=Lax 的 cookie
+      在跨站 POST 上不会被带上，所以 state 临时 cookie 必须 SameSite=None */
+
+const b64url = (s) => btoa(s).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+const b64urlBytes = (bytes) =>
+  btoa(String.fromCharCode(...bytes)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+
+async function appleClientSecret(env) {
+  // .p8 (PKCS8 PEM) → CryptoKey
+  const pem = env.APPLE_PRIVATE_KEY.replace(/-----[^-]+-----/g, "").replace(/\s+/g, "");
+  const der = Uint8Array.from(atob(pem), (c) => c.charCodeAt(0));
+  const key = await crypto.subtle.importKey(
+    "pkcs8", der, { name: "ECDSA", namedCurve: "P-256" }, false, ["sign"]);
+  const now = Math.floor(Date.now() / 1000);
+  const header = b64url(JSON.stringify({ alg: "ES256", kid: env.APPLE_KEY_ID }));
+  const payload = b64url(JSON.stringify({
+    iss: env.APPLE_TEAM_ID, iat: now, exp: now + 3600,
+    aud: "https://appleid.apple.com", sub: env.APPLE_SERVICES_ID,
+  }));
+  const input = `${header}.${payload}`;
+  const sig = await crypto.subtle.sign(
+    { name: "ECDSA", hash: "SHA-256" }, key, new TextEncoder().encode(input));
+  return `${input}.${b64urlBytes(new Uint8Array(sig))}`;
+}
+
+const appleConfigured = (env) =>
+  env.APPLE_TEAM_ID && env.APPLE_KEY_ID && env.APPLE_SERVICES_ID && env.APPLE_PRIVATE_KEY;
+
+function appleStart(env, request) {
+  if (!appleConfigured(env))
+    return json(request, { ok: false, error: "apple login not configured yet" }, 503);
+  const url = new URL(request.url);
+  let returnTo = url.searchParams.get("return_to") || "https://quant.lowbattery.studio/";
+  if (!RETURN_RE.test(returnTo)) returnTo = "https://quant.lowbattery.studio/";
+
+  const state = randHex(16);
+  const auth = new URL("https://appleid.apple.com/auth/authorize");
+  auth.searchParams.set("client_id", env.APPLE_SERVICES_ID);
+  auth.searchParams.set("redirect_uri", "https://accounts.lowbattery.studio/api/auth/apple/callback");
+  auth.searchParams.set("response_type", "code");
+  auth.searchParams.set("scope", "email");
+  auth.searchParams.set("response_mode", "form_post"); // 带 email scope 时苹果强制 form_post
+  auth.searchParams.set("state", state);
+
+  return new Response(null, {
+    status: 302,
+    headers: {
+      Location: auth.toString(),
+      // 跨站 POST 回调要能读到 → SameSite=None（谷歌那条是 Lax，因为它走 GET 重定向）
+      "Set-Cookie": `lbs_astate=${state}.${encodeURIComponent(returnTo)}; HttpOnly; Secure; SameSite=None; Path=/; Max-Age=600`,
+    },
+  });
+}
+
+async function appleCallback(env, request) {
+  const form = await request.formData().catch(() => null);
+  const code = form?.get("code");
+  const state = form?.get("state");
+  const m = (request.headers.get("Cookie") || "").match(/(?:^|;\s*)lbs_astate=([a-f0-9]+)\.([^;]+)/);
+  const returnTo = m ? decodeURIComponent(m[2]) : "https://quant.lowbattery.studio/";
+  const clearState = "lbs_astate=; HttpOnly; Secure; SameSite=None; Path=/; Max-Age=0";
+
+  if (form?.get("error") === "user_cancelled_authorize")
+    return new Response(null, { status: 302, headers: { Location: returnTo, "Set-Cookie": clearState } });
+  if (!code || !state || !m || m[1] !== state)
+    return oauthFail("登录状态校验失败，请回到网站重试 / sign-in state check failed", returnTo);
+  if (!RETURN_RE.test(returnTo))
+    return oauthFail("非法回跳地址 / bad return address", "https://quant.lowbattery.studio/");
+
+  let clientSecret;
+  try { clientSecret = await appleClientSecret(env); }
+  catch (e) {
+    console.log(`apple secret sign fail: ${e.message}`);
+    return oauthFail("苹果登录配置有误 / Apple sign-in misconfigured", returnTo);
+  }
+
+  const tokenRes = await fetch("https://appleid.apple.com/auth/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      code,
+      client_id: env.APPLE_SERVICES_ID,
+      client_secret: clientSecret,
+      redirect_uri: "https://accounts.lowbattery.studio/api/auth/apple/callback",
+      grant_type: "authorization_code",
+    }),
+  });
+  if (!tokenRes.ok) {
+    console.log(`apple token exchange fail ${tokenRes.status}: ${await tokenRes.text().catch(() => "")}`);
+    return oauthFail("苹果登录失败，请重试 / Apple sign-in failed", returnTo);
+  }
+  const { id_token } = await tokenRes.json();
+  let claims;
+  try {
+    claims = JSON.parse(atob(id_token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/")));
+  } catch {
+    return oauthFail("身份解析失败 / could not parse identity", returnTo);
+  }
+  if (claims.aud !== env.APPLE_SERVICES_ID || !String(claims.iss || "").includes("appleid.apple.com"))
+    return oauthFail("身份校验失败 / identity check failed", returnTo);
+
+  const auid = String(claims.sub);
+  // 苹果可能给"隐私中转邮箱"(xxx@privaterelay.appleid.com)——一样是能收信的真邮箱，照常用
+  const verified = claims.email_verified === true || claims.email_verified === "true";
+  const email = verified && claims.email ? String(claims.email).toLowerCase() : null;
+  const nowIso = new Date().toISOString();
+
+  // 认亲三步与谷歌一致：已绑身份 → 同邮箱挂靠 → 新建
+  let userId = (await env.DB.prepare(
+    "SELECT user_id FROM identities WHERE provider='apple' AND provider_uid=?"
+  ).bind(auid).first())?.user_id;
+
+  if (!userId && email) {
+    userId = (await env.DB.prepare("SELECT id FROM users WHERE email=?").bind(email).first())?.id;
+    if (userId)
+      await env.DB.prepare(
+        "INSERT OR IGNORE INTO identities (provider, provider_uid, user_id, created_at) VALUES ('apple', ?, ?, ?)"
+      ).bind(auid, userId, nowIso).run();
+  }
+
+  if (!userId) {
+    userId = randHex(16);
+    await env.DB.prepare("INSERT INTO users (id, email, lang, created_at, last_seen) VALUES (?, ?, 'zh', ?, ?)")
+      .bind(userId, email, nowIso, nowIso).run();
+    await env.DB.prepare(
+      "INSERT INTO identities (provider, provider_uid, user_id, created_at) VALUES ('apple', ?, ?, ?)"
+    ).bind(auid, userId, nowIso).run();
+  }
+  await env.DB.prepare("UPDATE users SET last_seen=? WHERE id=?").bind(nowIso, userId).run();
+
+  const sessionCookie = await createSession(env, userId);
+  const dest = new URL(returnTo);
+  dest.searchParams.set("lbs_login", "1");
+  const headers = new Headers({ Location: dest.toString() });
+  headers.append("Set-Cookie", sessionCookie);
+  headers.append("Set-Cookie", clearState);
+  return new Response(null, { status: 302, headers });
+}
+
 async function currentUser(env, request) {
   const token = cookieToken(request);
   if (!token) return null;
@@ -369,6 +511,8 @@ export default {
     try {
       if (p === "/api/auth/google/start") return googleStart(env, request);
       if (p === "/api/auth/google/callback") return googleCallback(env, request);
+      if (p === "/api/auth/apple/start") return appleStart(env, request);
+      if (p === "/api/auth/apple/callback" && request.method === "POST") return appleCallback(env, request);
       if (p === "/api/auth/send_code" && request.method === "POST") return sendCode(env, request);
       if (p === "/api/auth/verify" && request.method === "POST") return verifyCode(env, request);
       if (p === "/api/auth/me") return me(env, request);

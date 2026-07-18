@@ -5,3 +5,4 @@
 .wrangler/
 __pycache__/
 node_modules/
+*.p8
