@@ -660,11 +660,14 @@ function toggleLang() {
   LANG = LANG === 'zh' ? 'en' : 'zh';
   localStorage.setItem('sq_lang', LANG);
   applyI18n();
-  fetch('/api/auth/lang', { method: 'POST', headers: {'Content-Type':'application/json'},
+  fetch(ACC + '/api/auth/lang', { method: 'POST', credentials: 'include',
+    headers: {'Content-Type':'application/json'},
     body: JSON.stringify({ lang: LANG }) }).catch(() => {});
 }
 
 /* ============ 登录 / 云端同步 ============ */
+// 登录走 Low Battery Studio 账号中心：一次登录，全 studio 子域（quant/geo/flashpick…）通用
+const ACC = 'https://accounts.lowbattery.studio';
 let USER = null;
 
 async function checkAuth() {
@@ -717,7 +720,8 @@ async function sendLoginCode() {
   const btn = document.getElementById('loginSendBtn'), msg = document.getElementById('loginMsg');
   btn.disabled = true; btn.textContent = t('sending');
   try {
-    const r = await fetch('/api/auth/send_code', { method: 'POST', headers: {'Content-Type':'application/json'},
+    const r = await fetch(ACC + '/api/auth/send_code', { method: 'POST', credentials: 'include',
+      headers: {'Content-Type':'application/json'},
       body: JSON.stringify({ email, lang: LANG }) });
     const d = await r.json();
     msg.textContent = d.ok ? d.message : d.error;
@@ -738,7 +742,8 @@ async function submitLoginCode() {
   const btn = document.getElementById('loginVerifyBtn'), msg = document.getElementById('loginMsg');
   btn.disabled = true; btn.textContent = t('verifying');
   try {
-    const r = await fetch('/api/auth/verify', { method: 'POST', headers: {'Content-Type':'application/json'},
+    const r = await fetch(ACC + '/api/auth/verify', { method: 'POST', credentials: 'include',
+      headers: {'Content-Type':'application/json'},
       body: JSON.stringify({ email, code, lang: LANG }) });
     const d = await r.json();
     if (!d.ok) { msg.textContent = d.error; msg.style.color = 'var(--red1)'; }
@@ -753,7 +758,7 @@ async function submitLoginCode() {
 }
 
 async function doLogout() {
-  await fetch('/api/auth/logout', { method: 'POST' }).catch(() => {});
+  await fetch(ACC + '/api/auth/logout', { method: 'POST', credentials: 'include' }).catch(() => {});
   USER = null; renderAccount(); toast(t('logoutOk'));
 }
 

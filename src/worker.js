@@ -812,11 +812,9 @@ export default {
 
     try {
       // ── 登录 / 同步 ──
-      if (p === "/api/auth/send_code" && request.method === "POST") return auth.sendCode(env, request);
-      if (p === "/api/auth/verify" && request.method === "POST") return auth.verifyCode(env, request);
+      // 登录/发码/登出已移交账号中心 accounts.lowbattery.studio；
+      // quant 只保留"查身份"和自己的业务数据
       if (p === "/api/auth/me") return auth.me(env, request);
-      if (p === "/api/auth/logout" && request.method === "POST") return auth.logout(env, request);
-      if (p === "/api/auth/lang" && request.method === "POST") return auth.setLang(env, request);
       if (p === "/api/data" && request.method === "GET") return auth.getData(env, request);
       if (p === "/api/data" && request.method === "PUT") return auth.putData(env, request);
 

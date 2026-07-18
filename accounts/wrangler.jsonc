@@ -1,25 +1,16 @@
 {
-  "name": "steadyquant",
+  "name": "lbs-accounts",
   "main": "src/worker.js",
   "compatibility_date": "2026-07-01",
-  "assets": {
-    "directory": "./public",
-    "binding": "ASSETS"
-  },
   "routes": [
     {
-      "pattern": "quant.lowbattery.studio",
+      "pattern": "accounts.lowbattery.studio",
       "custom_domain": true
     }
   ],
   "d1_databases": [
     {
       "binding": "DB",
-      "database_name": "steadyquant-db",
-      "database_id": "c453b2a7-d508-4117-89a5-132d36efa506"
-    },
-    {
-      "binding": "ACCOUNTS_DB",
       "database_name": "lbs-accounts-db",
       "database_id": "7844b275-22ee-4fce-bd49-fc37f5e932d3"
     }
