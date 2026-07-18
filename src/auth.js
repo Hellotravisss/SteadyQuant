@@ -1,6 +1,6 @@
 /**
  * 邮箱验证码登录 + 云端同步
- * 发信走 Cloudflare Email Sending 的 Workers binding（env.EMAIL）。
+ * 发信走 Resend（免费额度 3000 封/月），REST 接口 + RESEND_API_KEY 密钥。
  * 安全约定：验证码只存哈希、5 分钟过期、5 次尝试上限、同邮箱 60 秒内不重发；
  * session token 走 httpOnly + Secure + SameSite=Lax cookie，JS 读不到。
  */
@@ -93,15 +93,27 @@ export async function sendCode(env, request) {
   ).bind(addr, await sha256(code), now + CODE_TTL_MS, now).run();
 
   try {
-    await env.EMAIL.send({
-      to: addr,
-      from: { email: "verify@lowbattery.studio", name: "steadyquant" },
-      subject: `${t(lang, "subject")}: ${code}`,
-      html: codeEmailHtml(code, lang),
-      text: `${t(lang, "emailTitle")}: ${code}\n\n${t(lang, "emailBody")}`,
+    const res = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${env.RESEND_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        from: "steadyquant <verify@lowbattery.studio>",
+        to: [addr],
+        subject: `${t(lang, "subject")}: ${code}`,
+        html: codeEmailHtml(code, lang),
+        text: `${t(lang, "emailTitle")}: ${code}\n\n${t(lang, "emailBody")}`,
+      }),
     });
+    if (!res.ok) {
+      const detail = await res.text().catch(() => "");
+      console.log(`resend send fail ${res.status}: ${detail}`);
+      return json({ ok: false, error: t(lang, "sendFail") }, 502);
+    }
   } catch (e) {
-    console.log(`email send fail: ${e.code || ""} ${e.message}`);
+    console.log(`resend send error: ${e.message}`);
     return json({ ok: false, error: t(lang, "sendFail") }, 502);
   }
   return json({ ok: true, message: t(lang, "sent") });

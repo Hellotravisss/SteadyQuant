@@ -19,12 +19,6 @@
       "database_id": "c453b2a7-d508-4117-89a5-132d36efa506"
     }
   ],
-  "send_email": [
-    {
-      "name": "EMAIL",
-      "allowed_sender_addresses": ["verify@lowbattery.studio"]
-    }
-  ],
   "observability": {
     "enabled": true
   }
