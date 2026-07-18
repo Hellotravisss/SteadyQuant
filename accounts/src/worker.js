@@ -185,13 +185,139 @@ async function verifyCode(env, request) {
     await env.DB.prepare("UPDATE users SET last_seen = ?, lang = ? WHERE id = ?").bind(nowIso, lang, user.id).run();
   }
 
+  return json(request, { ok: true, email: addr }, 200, {
+    "Set-Cookie": await createSession(env, user.id),
+  });
+}
+
+/** 建会话 + 生成 Set-Cookie（邮箱登录和第三方登录共用） */
+async function createSession(env, userId) {
   const token = randHex(32);
   await env.DB.prepare("INSERT INTO sessions (token, user_id, expires_at, created_at) VALUES (?, ?, ?, ?)")
-    .bind(token, user.id, Date.now() + SESSION_TTL_MS, nowIso).run();
+    .bind(token, userId, Date.now() + SESSION_TTL_MS, new Date().toISOString()).run();
+  return `${COOKIE_NAME}=${token}; ${COOKIE_ATTRS}; Max-Age=${Math.floor(SESSION_TTL_MS / 1000)}`;
+}
 
-  return json(request, { ok: true, email: addr }, 200, {
-    "Set-Cookie": `${COOKIE_NAME}=${token}; ${COOKIE_ATTRS}; Max-Age=${Math.floor(SESSION_TTL_MS / 1000)}`,
+/* ───────── 谷歌登录（OAuth 2.0 授权码模式） ─────────
+   /api/auth/google/start   → 跳去谷歌授权页（带防伪 state）
+   /api/auth/google/callback→ 谷歌带 code 跳回，换取身份，认亲/建号，落 session
+   认亲规则：谷歌身份已绑定→直接登录；未绑定但已验证邮箱与现有账号相同→挂到该账号；
+   否则新建账号。保证"邮箱注册过再用谷歌登录，持仓还在"。 */
+
+const RETURN_RE = /^https:\/\/([a-z0-9-]+\.)?lowbattery\.studio(\/|$)/;
+
+function googleStart(env, request) {
+  if (!env.GOOGLE_CLIENT_ID)
+    return json(request, { ok: false, error: "google login not configured yet" }, 503);
+  const url = new URL(request.url);
+  let returnTo = url.searchParams.get("return_to") || "https://quant.lowbattery.studio/";
+  if (!RETURN_RE.test(returnTo)) returnTo = "https://quant.lowbattery.studio/";
+
+  const state = randHex(16);
+  const auth = new URL("https://accounts.google.com/o/oauth2/v2/auth");
+  auth.searchParams.set("client_id", env.GOOGLE_CLIENT_ID);
+  auth.searchParams.set("redirect_uri", "https://accounts.lowbattery.studio/api/auth/google/callback");
+  auth.searchParams.set("response_type", "code");
+  auth.searchParams.set("scope", "openid email");
+  auth.searchParams.set("state", state);
+  auth.searchParams.set("prompt", "select_account");
+
+  return new Response(null, {
+    status: 302,
+    headers: {
+      Location: auth.toString(),
+      // state + 回跳地址存在临时 cookie 里，10 分钟有效，仅本域可见
+      "Set-Cookie": `lbs_gstate=${state}.${encodeURIComponent(returnTo)}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=600`,
+    },
   });
+}
+
+function oauthFail(msg, returnTo) {
+  // 出错时给一个极简说明页，别让用户停在白屏
+  return new Response(
+    `<!doctype html><meta charset="utf-8"><body style="font-family:system-ui;background:#F7F1E7;color:#17150F;display:grid;place-items:center;height:100vh;margin:0">
+     <div style="text-align:center"><p>${msg}</p><a href="${returnTo}" style="color:#E5484D">返回 / back</a></div>`,
+    { status: 400, headers: { "Content-Type": "text/html; charset=utf-8" } }
+  );
+}
+
+async function googleCallback(env, request) {
+  const url = new URL(request.url);
+  const code = url.searchParams.get("code");
+  const state = url.searchParams.get("state");
+  const m = (request.headers.get("Cookie") || "").match(/(?:^|;\s*)lbs_gstate=([a-f0-9]+)\.([^;]+)/);
+  const returnTo = m ? decodeURIComponent(m[2]) : "https://quant.lowbattery.studio/";
+  const clearState = "lbs_gstate=; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=0";
+
+  if (!code || !state || !m || m[1] !== state)
+    return oauthFail("登录状态校验失败，请回到网站重试 / sign-in state check failed", returnTo);
+  if (!RETURN_RE.test(returnTo))
+    return oauthFail("非法回跳地址 / bad return address", "https://quant.lowbattery.studio/");
+
+  // 用授权码换 token（直连谷歌，TLS 保证来源可信）
+  const tokenRes = await fetch("https://oauth2.googleapis.com/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      code,
+      client_id: env.GOOGLE_CLIENT_ID,
+      client_secret: env.GOOGLE_CLIENT_SECRET,
+      redirect_uri: "https://accounts.lowbattery.studio/api/auth/google/callback",
+      grant_type: "authorization_code",
+    }),
+  });
+  if (!tokenRes.ok) {
+    console.log(`google token exchange fail ${tokenRes.status}: ${await tokenRes.text().catch(() => "")}`);
+    return oauthFail("谷歌登录失败，请重试 / Google sign-in failed", returnTo);
+  }
+  const { id_token } = await tokenRes.json();
+  // id_token 是 JWT；直连谷歌拿到的，解 payload 并校验 aud/iss 即可
+  let claims;
+  try {
+    claims = JSON.parse(atob(id_token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/")));
+  } catch {
+    return oauthFail("身份解析失败 / could not parse identity", returnTo);
+  }
+  if (claims.aud !== env.GOOGLE_CLIENT_ID || !String(claims.iss || "").includes("accounts.google.com"))
+    return oauthFail("身份校验失败 / identity check failed", returnTo);
+
+  const guid = String(claims.sub);
+  const email = claims.email_verified ? String(claims.email || "").toLowerCase() : null;
+  const nowIso = new Date().toISOString();
+
+  // 1) 谷歌身份已绑定过 → 老朋友
+  let userId = (await env.DB.prepare(
+    "SELECT user_id FROM identities WHERE provider='google' AND provider_uid=?"
+  ).bind(guid).first())?.user_id;
+
+  // 2) 没绑过，但已验证邮箱与现有账号相同 → 认亲挂靠
+  if (!userId && email) {
+    userId = (await env.DB.prepare("SELECT id FROM users WHERE email=?").bind(email).first())?.id;
+    if (userId)
+      await env.DB.prepare(
+        "INSERT OR IGNORE INTO identities (provider, provider_uid, user_id, created_at) VALUES ('google', ?, ?, ?)"
+      ).bind(guid, userId, nowIso).run();
+  }
+
+  // 3) 全新用户 → 建号 + 绑身份
+  if (!userId) {
+    userId = randHex(16);
+    await env.DB.prepare("INSERT INTO users (id, email, lang, created_at, last_seen) VALUES (?, ?, 'zh', ?, ?)")
+      .bind(userId, email, nowIso, nowIso).run();
+    await env.DB.prepare(
+      "INSERT INTO identities (provider, provider_uid, user_id, created_at) VALUES ('google', ?, ?, ?)"
+    ).bind(guid, userId, nowIso).run();
+  }
+  await env.DB.prepare("UPDATE users SET last_seen=? WHERE id=?").bind(nowIso, userId).run();
+
+  const sessionCookie = await createSession(env, userId);
+  // 回跳时带 lbs_login=1，前端据此做一次本地数据静默合并
+  const dest = new URL(returnTo);
+  dest.searchParams.set("lbs_login", "1");
+  const headers = new Headers({ Location: dest.toString() });
+  headers.append("Set-Cookie", sessionCookie);
+  headers.append("Set-Cookie", clearState);
+  return new Response(null, { status: 302, headers });
 }
 
 async function currentUser(env, request) {
@@ -241,6 +367,8 @@ export default {
       return new Response(null, { status: 204, headers: corsHeaders(request) });
 
     try {
+      if (p === "/api/auth/google/start") return googleStart(env, request);
+      if (p === "/api/auth/google/callback") return googleCallback(env, request);
       if (p === "/api/auth/send_code" && request.method === "POST") return sendCode(env, request);
       if (p === "/api/auth/verify" && request.method === "POST") return verifyCode(env, request);
       if (p === "/api/auth/me") return me(env, request);
