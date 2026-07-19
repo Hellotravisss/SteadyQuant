@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SteadyQuant · 省心量化</title>
+    <title>steady · 定风波</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <meta name="description" content="给普通人用的看股工具：查一只股能不能碰、盯持仓止损、等想买的价。A股/美股/加股/加密货币，真实行情，大白话结论。仅供研究教育，非投资建议。">
@@ -145,7 +145,7 @@
     </script>
 </head>
 <body>
-<div class="sysbar" data-i18n="sysbar">simple quant for people running on 1% — real prices · plain verdicts</div>
+<div class="sysbar" data-i18n="sysbar">steady tools for people running on 1% — real prices · plain verdicts</div>
 <div class="p-6 max-w-7xl mx-auto">
 
     <!-- Header -->
@@ -153,8 +153,8 @@
         <div class="flex items-center gap-3">
             <div class="w-9 h-9 bg-[#E5484D] rounded-xl flex items-center justify-center text-white font-black text-2xl" style="box-shadow:0 3px 0 var(--red-deep)">s</div>
             <div>
-                <span class="text-2xl font-extrabold tracking-tight lc">steadyquant</span>
-                <span class="text-xs text-[#8A8578] ml-2" style="font-family:var(--font-mono)" data-i18n="tagline">省心量化</span>
+                <span class="text-2xl font-extrabold tracking-tight lc">steady</span>
+                <span class="text-xs text-[#8A8578] ml-2" style="font-family:var(--font-mono)" data-i18n="tagline">定风波</span>
             </div>
         </div>
         <div class="flex items-center gap-4">
@@ -443,8 +443,8 @@
 /* ============ 语言 ============ */
 const I18N = {
   zh: {
-    tagline: "省心量化",
-    sysbar: "simple quant for people running on 1% — real prices · plain verdicts",
+    tagline: "定风波",
+    sysbar: "steady tools for people running on 1% — real prices · plain verdicts",
     // 三入口
     navBuy: "买什么", navBuySub: "查一只股能不能碰，或让 AI 帮你找",
     navHold: "已经买了", navHoldSub: "盈亏一目了然，该卖的时候亮红灯",
@@ -550,12 +550,12 @@ const I18N = {
     wishSaved: (n, c, tg) => `<b>${n}</b> 已进想买清单：跌到 ${c}${tg} 会亮绿灯提醒`,
     goLook: "去看看 →",
     failed: (m) => `失败：${m}`,
-    disclaimerFoot: "© 2026 low battery studio — still at 1%. 仅供研究教育，非投资建议",
+    disclaimerFoot: "© 2026 low battery studio — still at 1% · 也无风雨也无晴 · 仅供研究教育，非投资建议",
   },
 
   en: {
     tagline: "steady, not clever",
-    sysbar: "simple quant for people running on 1% — real prices · plain verdicts",
+    sysbar: "steady tools for people running on 1% — real prices · plain verdicts",
     navBuy: "what to buy", navBuySub: "check if a stock is worth touching, or let AI find one",
     navHold: "what I own", navHoldSub: "P&L at a glance, red light when it's time to sell",
     navWish: "what I want", navWishSub: "too pricey for now — we'll ping you at your price",
@@ -1647,7 +1647,7 @@ window.onload = () => {
     }, 800);
 };
 </script>
-<div class="text-center py-8 sysbar" style="border-bottom:none;border-top:1px solid var(--line);margin-top:32px" data-i18n="disclaimerFoot">© 2026 low battery studio — still at 1%. 仅供研究教育，非投资建议</div>
+<div class="text-center py-8 sysbar" style="border-bottom:none;border-top:1px solid var(--line);margin-top:32px" data-i18n="disclaimerFoot">© 2026 low battery studio — still at 1% · 也无风雨也无晴 · 仅供研究教育，非投资建议</div>
 <div id="battery"><span class="shell"><span class="juice" id="juice"></span></span><span id="battPct">1%</span><span id="battLabel">power saving mode</span></div>
 <button id="themeBtn" onclick="LBSTheme.cycle()" title="点击切换：auto(跟随系统/时间) → dark → light">auto</button>
 <script>

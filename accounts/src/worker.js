@@ -210,8 +210,8 @@ function googleStart(env, request) {
   if (!env.GOOGLE_CLIENT_ID)
     return json(request, { ok: false, error: "google login not configured yet" }, 503);
   const url = new URL(request.url);
-  let returnTo = url.searchParams.get("return_to") || "https://quant.lowbattery.studio/";
-  if (!RETURN_RE.test(returnTo)) returnTo = "https://quant.lowbattery.studio/";
+  let returnTo = url.searchParams.get("return_to") || "https://steady.lowbattery.studio/";
+  if (!RETURN_RE.test(returnTo)) returnTo = "https://steady.lowbattery.studio/";
 
   const state = randHex(16);
   const auth = new URL("https://accounts.google.com/o/oauth2/v2/auth");
@@ -246,13 +246,13 @@ async function googleCallback(env, request) {
   const code = url.searchParams.get("code");
   const state = url.searchParams.get("state");
   const m = (request.headers.get("Cookie") || "").match(/(?:^|;\s*)lbs_gstate=([a-f0-9]+)\.([^;]+)/);
-  const returnTo = m ? decodeURIComponent(m[2]) : "https://quant.lowbattery.studio/";
+  const returnTo = m ? decodeURIComponent(m[2]) : "https://steady.lowbattery.studio/";
   const clearState = "lbs_gstate=; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=0";
 
   if (!code || !state || !m || m[1] !== state)
     return oauthFail("登录状态校验失败，请回到网站重试 / sign-in state check failed", returnTo);
   if (!RETURN_RE.test(returnTo))
-    return oauthFail("非法回跳地址 / bad return address", "https://quant.lowbattery.studio/");
+    return oauthFail("非法回跳地址 / bad return address", "https://steady.lowbattery.studio/");
 
   // 用授权码换 token（直连谷歌，TLS 保证来源可信）
   const tokenRes = await fetch("https://oauth2.googleapis.com/token", {
@@ -355,8 +355,8 @@ function appleStart(env, request) {
   if (!appleConfigured(env))
     return json(request, { ok: false, error: "apple login not configured yet" }, 503);
   const url = new URL(request.url);
-  let returnTo = url.searchParams.get("return_to") || "https://quant.lowbattery.studio/";
-  if (!RETURN_RE.test(returnTo)) returnTo = "https://quant.lowbattery.studio/";
+  let returnTo = url.searchParams.get("return_to") || "https://steady.lowbattery.studio/";
+  if (!RETURN_RE.test(returnTo)) returnTo = "https://steady.lowbattery.studio/";
 
   const state = randHex(16);
   const auth = new URL("https://appleid.apple.com/auth/authorize");
@@ -382,7 +382,7 @@ async function appleCallback(env, request) {
   const code = form?.get("code");
   const state = form?.get("state");
   const m = (request.headers.get("Cookie") || "").match(/(?:^|;\s*)lbs_astate=([a-f0-9]+)\.([^;]+)/);
-  const returnTo = m ? decodeURIComponent(m[2]) : "https://quant.lowbattery.studio/";
+  const returnTo = m ? decodeURIComponent(m[2]) : "https://steady.lowbattery.studio/";
   const clearState = "lbs_astate=; HttpOnly; Secure; SameSite=None; Path=/; Max-Age=0";
 
   if (form?.get("error") === "user_cancelled_authorize")
@@ -390,7 +390,7 @@ async function appleCallback(env, request) {
   if (!code || !state || !m || m[1] !== state)
     return oauthFail("登录状态校验失败，请回到网站重试 / sign-in state check failed", returnTo);
   if (!RETURN_RE.test(returnTo))
-    return oauthFail("非法回跳地址 / bad return address", "https://quant.lowbattery.studio/");
+    return oauthFail("非法回跳地址 / bad return address", "https://steady.lowbattery.studio/");
 
   let clientSecret;
   try { clientSecret = await appleClientSecret(env); }
@@ -472,8 +472,8 @@ function wechatStart(env, request) {
   if (!env.WECHAT_APP_ID)
     return json(request, { ok: false, error: "wechat login not configured yet" }, 503);
   const url = new URL(request.url);
-  let returnTo = url.searchParams.get("return_to") || "https://quant.lowbattery.studio/";
-  if (!RETURN_RE.test(returnTo)) returnTo = "https://quant.lowbattery.studio/";
+  let returnTo = url.searchParams.get("return_to") || "https://steady.lowbattery.studio/";
+  if (!RETURN_RE.test(returnTo)) returnTo = "https://steady.lowbattery.studio/";
 
   const state = randHex(16);
   const auth = new URL("https://open.weixin.qq.com/connect/qrconnect");
@@ -497,7 +497,7 @@ async function wechatCallback(env, request) {
   const code = url.searchParams.get("code");
   const state = url.searchParams.get("state");
   const m = (request.headers.get("Cookie") || "").match(/(?:^|;\s*)lbs_wstate=([a-f0-9]+)\.([^;]+)/);
-  const returnTo = m ? decodeURIComponent(m[2]) : "https://quant.lowbattery.studio/";
+  const returnTo = m ? decodeURIComponent(m[2]) : "https://steady.lowbattery.studio/";
   const clearState = "lbs_wstate=; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=0";
 
   // 用户在扫码页点了取消 → 无 code，安静回家
@@ -506,7 +506,7 @@ async function wechatCallback(env, request) {
   if (!state || !m || m[1] !== state)
     return oauthFail("登录状态校验失败，请回到网站重试 / sign-in state check failed", returnTo);
   if (!RETURN_RE.test(returnTo))
-    return oauthFail("非法回跳地址 / bad return address", "https://quant.lowbattery.studio/");
+    return oauthFail("非法回跳地址 / bad return address", "https://steady.lowbattery.studio/");
 
   const tokenRes = await fetch(
     "https://api.weixin.qq.com/sns/oauth2/access_token?" + new URLSearchParams({

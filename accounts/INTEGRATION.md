@@ -2,7 +2,7 @@
 
 > 给 geo / flashpick / cutpilot 等子域产品的 Claude Code session 阅读。
 > 读完本文档你应该能独立完成接入,不需要询问 SteadyQuant session。
-> 参考实现(已跑通):`/Users/travis/Documents/Vibe_Coding/SteadyQuant`(quant.lowbattery.studio)。
+> 参考实现(已跑通):`/Users/travis/Documents/Vibe_Coding/SteadyQuant`(steady.lowbattery.studio)。
 
 ## 是什么
 
@@ -105,7 +105,7 @@ const user = await r.json(); // {ok:true, email, display, lang} 或 {ok:false}
 
 - [ ] 未登录打开产品 → 正常可用,右上角显示"登录"
 - [ ] 邮箱验证码登录成功 → 右上角显示账号名
-- [ ] **关键**:在 quant.lowbattery.studio 登录后,打开你的产品 → 应该自动已登录(免登录);反之亦然
+- [ ] **关键**:在 steady.lowbattery.studio 登录后,打开你的产品 → 应该自动已登录(免登录);反之亦然
 - [ ] 苹果登录按钮走通(跳苹果授权→回来带 lbs_login=1→已登录)
 - [ ] 登出后,quant 那边也同步变成未登录(全域登出)
 - [ ] 你产品的用户数据在两台设备间随账号同步

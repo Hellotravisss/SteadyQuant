@@ -1,4 +1,4 @@
-# 省心量化 (SteadyQuant) 量化交易系统 (Vercel 版)
+# steady · 定风波（原 SteadyQuant / 省心量化）
 
 这是一个部署在 Vercel 上的量化交易仪表盘，严格遵循 **5层积木架构**（数据 → 研究 → 回测 → 风控 → 执行）。
 
@@ -41,7 +41,7 @@
 3. Vercel 会自动识别 `api/index.py` 并将其作为 Serverless Function 运行。
 4. 访问生成的 Vercel URL 即可。
 
-- **项目名称**: 省心量化 (SteadyQuant)
+- **项目名称**: steady · 定风波（steady.lowbattery.studio）
 - **前端**: HTML5, Tailwind CSS, Chart.js
 - **后端**: Python FastAPI, Requests, backtesting
 - **数据源**: Tushare Pro (2100 积分)

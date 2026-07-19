@@ -805,6 +805,9 @@ function analyzeSSE(env, query, market, S = pack("zh"), lang = "zh") {
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
+    // 品牌改名：quant → steady（旧域名 301 保收藏夹）
+    if (url.hostname === "quant.lowbattery.studio")
+      return Response.redirect("https://steady.lowbattery.studio" + url.pathname + url.search, 301);
     const p = url.pathname;
     const q = (k, def = "") => url.searchParams.get(k) ?? def;
     const lang = q("lang", "zh") === "en" ? "en" : "zh";
