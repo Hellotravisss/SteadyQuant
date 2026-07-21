@@ -506,6 +506,110 @@ async function wishCheck(env, items, S = pack("zh")) {
   return { items: results, checked_at: nowStr() };
 }
 
+/* ───────── 交易台账 → 组合分析（分市场表 + 汇率总表 + 战绩） ─────────
+   输入每只股的完整买卖流水，按移动平均法算已实现/未实现盈亏，
+   分市场用本币小计，总表按最新汇率换算到 base 币种。所有钱的计算都在这里。 */
+const MARKET_OF = (code) =>
+  isAshare(code) ? "A股"
+  : /-(USD|USDT|USDC)$/.test(code) ? "加密货币"
+  : code.endsWith(".TO") ? "加拿大" : "美股";
+const CUR_OF_MARKET = { "A股": "CNY", "美股": "USD", "加拿大": "CAD", "加密货币": "USD" };
+
+async function portfolio(env, body, S = pack("zh")) {
+  const items = Array.isArray(body?.items) ? body.items : [];
+  const base = ["CNY", "USD", "CAD", "HKD"].includes(body?.base) ? body.base : "CNY";
+  if (!items.length) return { stocks: [], markets: [], total: null, base, checked_at: nowStr() };
+
+  // 每只股：拉现价 + 按流水算盈亏
+  const stocks = await Promise.all(items.map(async (it) => {
+    const code = String(it.code || "").toUpperCase();
+    const market = MARKET_OF(code);
+    const txns = (Array.isArray(it.txns) ? it.txns : [])
+      .filter((t) => t && (t.side === "buy" || t.side === "sell") && t.price > 0 && t.qty > 0)
+      .sort((a, b) => (String(a.date) < String(b.date) ? -1 : 1));
+    // 移动平均法
+    let held = 0, avg = 0, realized = 0, bought = 0, sold = 0, buyCost = 0;
+    let closedWins = 0, closedTrades = 0, oversell = false;
+    for (const t of txns) {
+      if (t.side === "buy") {
+        const nq = held + t.qty;
+        avg = nq > 0 ? (held * avg + t.qty * t.price) / nq : 0;
+        held = nq; bought += t.qty; buyCost += t.qty * t.price;
+      } else {
+        const sq = Math.min(t.qty, held);
+        if (t.qty > held + 1e-9) oversell = true;
+        if (sq > 0) {
+          const pnl = sq * (t.price - avg);
+          realized += pnl; held -= sq; sold += sq;
+          closedTrades++; if (pnl > 0) closedWins++;
+        }
+      }
+    }
+    const pa = await priceAnalysis(env, code, S);
+    const last = pa ? pa.last : null;
+    const cur = pa ? pa.cur : (CUR_SYM[CUR_OF_MARKET[market]] || "$");
+    const costBasis = held * avg;
+    const value = last != null ? held * last : null;
+    const unrealized = value != null ? value - costBasis : null;
+    const r2 = (x) => (x == null ? null : Math.round(x * 100) / 100);
+    return {
+      code, name: it.name || code, market, cur,
+      currency: CUR_OF_MARKET[market],
+      hold_qty: r2(held), avg_cost: r2(avg), last,
+      bought_qty: r2(bought), sold_qty: r2(sold),
+      cost_basis: r2(costBasis), value: r2(value),
+      realized: r2(realized), unrealized: r2(unrealized),
+      total_pnl: r2(realized + (unrealized || 0)),
+      unreal_pct: costBasis > 0 && unrealized != null ? Math.round(unrealized / costBasis * 1000) / 10 : null,
+      no_price: last == null, oversell, txn_count: txns.length,
+      closed_wins: closedWins, closed_trades: closedTrades,
+    };
+  }));
+
+  // 分市场小计（本币）
+  const mkMap = {};
+  for (const s of stocks) {
+    const m = (mkMap[s.market] ||= {
+      market: s.market, currency: s.currency, cur: CUR_SYM[s.currency] || s.cur,
+      cost: 0, value: 0, realized: 0, unrealized: 0, closed_wins: 0, closed_trades: 0,
+    });
+    m.cost += s.cost_basis || 0;
+    m.value += s.value || 0;
+    m.realized += s.realized || 0;
+    m.unrealized += s.unrealized || 0;
+    m.closed_wins += s.closed_wins; m.closed_trades += s.closed_trades;
+  }
+  const markets = Object.values(mkMap).map((m) => {
+    const r2 = (x) => Math.round(x * 100) / 100;
+    return { ...m, cost: r2(m.cost), value: r2(m.value), realized: r2(m.realized),
+      unrealized: r2(m.unrealized), total_pnl: r2(m.realized + m.unrealized),
+      unreal_pct: m.cost > 0 ? Math.round(m.unrealized / m.cost * 1000) / 10 : null };
+  });
+
+  // 总表：各市场换算到 base
+  let tCost = 0, tValue = 0, tReal = 0, tUnreal = 0, tWins = 0, tTrades = 0, fxOk = true;
+  for (const m of markets) {
+    let rate = 1;
+    if (m.currency !== base) {
+      rate = fxLatest(await fxSeries(m.currency, base));
+      if (!rate) { fxOk = false; rate = 1; }
+    }
+    tCost += m.cost * rate; tValue += m.value * rate;
+    tReal += m.realized * rate; tUnreal += m.unrealized * rate;
+    tWins += m.closed_wins; tTrades += m.closed_trades;
+  }
+  const r2 = (x) => Math.round(x * 100) / 100;
+  const total = {
+    base, cur: CUR_SYM[base] || base, fx_ok: fxOk,
+    cost: r2(tCost), value: r2(tValue), realized: r2(tReal), unrealized: r2(tUnreal),
+    total_pnl: r2(tReal + tUnreal),
+    unreal_pct: tCost > 0 ? Math.round(tUnreal / tCost * 1000) / 10 : null,
+    win_rate: tTrades > 0 ? Math.round(tWins / tTrades * 1000) / 10 : null,
+    closed_trades: tTrades,
+  };
+  return { stocks, markets, total, base, checked_at: nowStr() };
+}
+
 async function history(env, code, points = 60, S = pack("zh")) {
   code = code.trim().toUpperCase();
   const s = await dailySeries(env, code);
@@ -925,6 +1029,8 @@ export default {
         return json(await stockCheck(env, q("code"), parseFloat(q("principal", "2000")), S));
       if (p === "/api/serenity/watch_check") return json(await watchCheck(env, q("items"), S));
       if (p === "/api/serenity/wish_check") return json(await wishCheck(env, q("items"), S));
+      if (p === "/api/serenity/portfolio" && request.method === "POST")
+        return json(await portfolio(env, await request.json().catch(() => ({})), S));
       if (p === "/api/serenity/history")
         return json(await history(env, q("code"), parseInt(q("points", "60")), S));
       if (p === "/api/serenity/resolve") return json(await resolve(env, q("q"), S));

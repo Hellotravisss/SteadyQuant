@@ -78,6 +78,19 @@
           background:var(--cloud);transition:transform .25s cubic-bezier(.34,1.56,.64,1),box-shadow .25s;font-family:var(--font-body)}
         .main-btn:hover{transform:translateY(-3px);box-shadow:0 18px 34px rgba(0,0,0,var(--shadow-a))}
         .main-btn.active{border-color:var(--red1);box-shadow:0 3px 0 var(--red-deep)}
+        .af-side{font-family:var(--font-mono);border:1px solid var(--line);background:var(--cloud);color:var(--dim);cursor:pointer;transition:all .15s}
+        .af-side.active{background:var(--ink);color:var(--paper);border-color:var(--ink)}
+        #afSideSell.active{background:#2f9e53;border-color:#2f9e53;color:#fff}
+        .pf-cur{font-family:var(--font-mono);font-size:11px;padding:4px 10px;border-radius:20px;border:1px solid var(--line);background:var(--cloud);color:var(--dim);cursor:pointer}
+        .pf-cur.active{background:var(--ink);color:var(--paper);border-color:var(--ink)}
+        .pf-table{width:100%;border-collapse:collapse;font-size:12.5px}
+        .pf-table th{text-align:right;font-weight:600;color:var(--dim);font-size:10.5px;padding:6px 8px;border-bottom:1px solid var(--line);font-family:var(--font-mono)}
+        .pf-table th:first-child{text-align:left}
+        .pf-table td{text-align:right;padding:9px 8px;border-bottom:1px solid var(--line)}
+        .pf-table td:first-child{text-align:left}
+        .pf-table tr:last-child td{border-bottom:none}
+        .pf-sub td{font-weight:700;border-top:2px solid var(--line);border-bottom:none}
+        .pos{color:#2f9e53} .neg{color:var(--red1)}
         details.pro summary{cursor:pointer;font-size:12px;color:var(--dim);list-style:none;font-family:var(--font-mono)}
         details.pro summary:hover{color:var(--ink-70)}
         details.pro[open] summary{margin-bottom:12px}
@@ -334,37 +347,32 @@
 
             <!-- 添加持仓表单 -->
             <div id="addForm" class="hidden border border-[#3FB55B]/40 rounded-2xl p-6 mb-6">
-                <div class="text-sm font-bold mb-4" data-i18n="addFormTitle">添加一笔持仓（A股/美股/加股/币 自动识别）</div>
-                <div class="grid grid-cols-1 md:grid-cols-5 gap-3">
+                <div class="text-sm font-bold mb-4" data-i18n="addFormTitle">记一笔交易（A股/美股/加股/币 自动识别）</div>
+                <div class="flex gap-2 mb-4">
+                    <button type="button" id="afSideBuy" onclick="setAfSide('buy')" class="af-side px-5 py-2 rounded-xl text-sm active" data-i18n="afBuy">买入</button>
+                    <button type="button" id="afSideSell" onclick="setAfSide('sell')" class="af-side px-5 py-2 rounded-xl text-sm" data-i18n="afSell">卖出</button>
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
                     <div>
                         <div class="text-[10px] text-[#8A8578] mb-1" data-i18n="afStock">股票名字或代码</div>
                         <input id="afStock" class="w-full px-4 py-3 rounded-xl text-sm" placeholder="茅台 / NVDA / SHOP.TO / BTC"
-                               data-i18n-ph="afStockPh" onblur="previewCur()">
+                               data-i18n-ph="afStockPh" oninput="this.dataset.code=''">
                     </div>
                     <div>
-                        <div class="text-[10px] text-[#8A8578] mb-1" data-i18n="afDate">买入日期</div>
+                        <div class="text-[10px] text-[#8A8578] mb-1" data-i18n="afDate2">日期</div>
                         <input id="afDate" type="date" class="w-full px-4 py-3 rounded-xl text-sm">
                     </div>
                     <div>
-                        <div class="text-[10px] text-[#8A8578] mb-1" data-i18n="afPrice">买入价（每股）</div>
+                        <div class="text-[10px] text-[#8A8578] mb-1" data-i18n="afPrice2">成交价（每股，按标的本币）</div>
                         <input id="afPrice" type="number" step="any" class="w-full px-4 py-3 rounded-xl text-sm" placeholder="1250.5">
                     </div>
                     <div>
-                        <div class="text-[10px] text-[#8A8578] mb-1" data-i18n="afCur">你付的币种</div>
-                        <select id="afCur" class="w-full px-4 py-3 rounded-xl text-sm">
-                            <option value="" data-i18n="afCurAuto">自动（按标的所在市场）</option>
-                            <option value="CAD" data-i18n="curCAD">CAD 加币</option>
-                            <option value="USD" data-i18n="curUSD">USD 美元</option>
-                            <option value="CNY" data-i18n="curCNY">CNY 人民币</option>
-                        </select>
-                    </div>
-                    <div>
-                        <div class="text-[10px] text-[#8A8578] mb-1" data-i18n="afQty">数量（股，可不填）</div>
+                        <div class="text-[10px] text-[#8A8578] mb-1" data-i18n="afQty2">数量（股/个）</div>
                         <input id="afQty" type="number" step="any" class="w-full px-4 py-3 rounded-xl text-sm" placeholder="100">
                     </div>
                 </div>
-                <div class="text-[10px] text-[#8A8578] mt-2" data-i18n="afCurHint">
-                    💡 用加币买美股（如 Wealthsimple）就选 CAD，填券商显示的加币成本价——盈亏会按加币算，跟你的账单对得上。
+                <div class="text-[10px] text-[#8A8578] mt-2" data-i18n="afTip">
+                    💡 美股填美元价、加股填加元价、A股填人民币价（就是券商成交单上的价）。总表会自动按汇率换算成一个币种给你看。
                 </div>
                 <div class="flex gap-3 mt-4 items-center flex-wrap">
                     <button onclick="submitAddForm()" id="afBtn" class="px-6 py-3 btn-red text-sm" data-i18n="afSubmit">确认添加</button>
@@ -505,11 +513,25 @@ const I18N = {
     curCAD: "CAD 加币", curUSD: "USD 美元", curCNY: "CNY 人民币",
     aiReviewTitle: "🔍 独立复核（另一个 AI 专门挑刺，帮你防止被忽悠）",
     // 持仓
-    holdTitle: "已经买了", addHold: "+ 添加持仓",
-    holdSub: "记下你的持仓，每次打开自动算盈亏、画走势、跟大盘比、盯止损——跌破提醒线亮红灯，提醒你该考虑卖了",
-    holdEmpty: "还没记录持仓。点右上角「+ 添加持仓」，或去「买什么」查一只股后点「我已经买了」。",
+    holdTitle: "已经买了", addHold: "+ 记一笔交易",
+    holdSub: "记下每一笔买入和卖出，自动帮你算持仓成本、已实现/未实现盈亏，按 A股/美股/加股/币 分表 + 汇率总表，还盯着止损线。",
+    holdEmpty: "还没记录交易。点右上角「+ 记一笔交易」，或去「买什么」查一只股后点「我已经买了」。",
     holdLoading: "正在查最新价格、算盈亏…",
-    addFormTitle: "添加一笔持仓（A股/美股/加股/币 自动识别）",
+    afBuy: "买入", afSell: "卖出", afNeedQty: "填一下数量（几股/几个）",
+    afDate2: "日期", afPrice2: "成交价（每股，按标的本币）", afQty2: "数量（股/个）",
+    afTip: "💡 美股填美元价、加股填加元价、A股填人民币价（券商成交单上的价）。总表会自动按汇率换算成一个币种。",
+    txnBuyOk: (n,p,q) => `已记录买入 ${n}：${p} × ${q}`,
+    txnSellOk: (n,p,q) => `已记录卖出 ${n}：${p} × ${q}`,
+    pfInvested: "投入成本", pfValue: "当前市值", pfUnreal: "未实现盈亏", pfRealized: "已实现盈亏",
+    pfTotalPnl: "合计盈亏", pfWinRate: "平仓胜率", pfClosed: (n) => `${n} 笔平仓`,
+    pfFxWarn: "⚠️ 部分汇率暂时拿不到，总表按 1:1 估算，仅供参考",
+    pfOversell: "卖超持仓", pfAddTxn: "再记一笔", pfRemove: "清除", pfCleared: "已清仓",
+    pfColName: "名称", pfColQty: "持仓", pfColAvg: "成本均价", pfColLast: "现价",
+    pfColUnreal: "未实现盈亏", pfColReal: "已实现",
+    pfSubtotal: "小计", pfCost: "成本",
+    pfMethodNote: "盈亏按移动平均成本法 · 总表按最新汇率换算 · 仅供研究教育",
+    mkt_a: "A股", mkt_us: "美股", mkt_ca: "加拿大", mkt_crypto: "加密货币",
+    addFormTitle: "记一笔交易（A股/美股/加股/币 自动识别）",
     afStock: "股票名字或代码", afStockPh: "茅台 / NVDA / SHOP.TO / BTC",
     afDate: "买入日期", afPrice: "买入价（每股）", afCur: "你付的币种", afQty: "数量（股，可不填）",
     afCurHint: "💡 用加币买美股（如 Wealthsimple）就选 CAD，填券商显示的加币成本价——盈亏会按加币算，跟你的账单对得上。",
@@ -620,11 +642,25 @@ const I18N = {
     mktA: "A-shares", mktUS: "US", mktCA: "Canada", mktCrypto: "crypto", mktAll: "everything",
     curCAD: "CAD", curUSD: "USD", curCNY: "CNY",
     aiReviewTitle: "🔍 independent review (a second AI whose only job is to poke holes in the first one)",
-    holdTitle: "what I own", addHold: "+ add position",
-    holdSub: "Log what you own. Every visit we recompute P&L, draw the trend, compare to the index and watch your stop — red light means think about selling.",
-    holdEmpty: "Nothing logged yet. Hit \"+ add position\", or check a stock under \"what to buy\" and tap \"I already bought this\".",
+    afBuy: "buy", afSell: "sell", afNeedQty: "enter a quantity (shares/units)",
+    afDate2: "date", afPrice2: "price (per share, native currency)", afQty2: "quantity",
+    afTip: "💡 Enter the trade price in the stock's own currency (USD for US, CAD for Canada, CNY for A-shares). The grand total converts everything at the latest FX.",
+    txnBuyOk: (n,p,q) => `logged buy ${n}: ${p} × ${q}`,
+    txnSellOk: (n,p,q) => `logged sell ${n}: ${p} × ${q}`,
+    pfInvested: "cost basis", pfValue: "market value", pfUnreal: "unrealized P&L", pfRealized: "realized P&L",
+    pfTotalPnl: "total P&L", pfWinRate: "win rate", pfClosed: (n) => `${n} closed`,
+    pfFxWarn: "⚠️ Some FX rates unavailable; total estimated at 1:1 — for reference only",
+    pfOversell: "sold > held", pfAddTxn: "add txn", pfRemove: "remove", pfCleared: "closed out",
+    pfColName: "name", pfColQty: "qty", pfColAvg: "avg cost", pfColLast: "price",
+    pfColUnreal: "unrealized P&L", pfColReal: "realized",
+    pfSubtotal: "subtotal", pfCost: "cost",
+    pfMethodNote: "P&L by moving-average cost · total converted at latest FX · education only",
+    mkt_a: "A-shares", mkt_us: "US", mkt_ca: "Canada", mkt_crypto: "crypto",
+    holdTitle: "what I own", addHold: "+ log a trade",
+    holdSub: "Log every buy and sell. We compute your cost basis, realized/unrealized P&L, break it out by market (A-shares / US / Canada / crypto) with an FX-converted grand total, and watch your stop.",
+    holdEmpty: "No trades logged yet. Hit \"+ log a trade\", or check a stock under \"what to buy\" and tap \"I already bought this\".",
     holdLoading: "fetching prices, computing P&L…",
-    addFormTitle: "add a position (A-shares / US / Canada / crypto auto-detected)",
+    addFormTitle: "log a trade (A-shares / US / Canada / crypto auto-detected)",
     afStock: "name or ticker", afStockPh: "NVDA / SHOP.TO / BTC / 茅台",
     afDate: "purchase date", afPrice: "cost per share", afCur: "currency you paid in", afQty: "shares (optional)",
     afCurHint: "💡 Buying US stocks with CAD (Wealthsimple etc.)? Pick CAD and enter the CAD cost your broker shows — P&L is then computed in CAD, matching your statement.",
@@ -1207,6 +1243,13 @@ function setList(key, v) { localStorage.setItem(key, JSON.stringify(v)); pushClo
         localStorage.setItem('sq_hold', old);
         localStorage.removeItem('sq_watch');
     }
+    // 单条持仓 → 交易台账（一次性规范化，之后云同步也是新格式）
+    try {
+        const h = JSON.parse(localStorage.getItem('sq_hold') || '[]');
+        if (h.length && h.some(x => !Array.isArray(x.txns))) {
+            localStorage.setItem('sq_hold', JSON.stringify(h.map(normHold)));
+        }
+    } catch {}
 })();
 
 function updateBadges() {
@@ -1224,16 +1267,30 @@ window.addEventListener('DOMContentLoaded', () => {
 });
 
 const CUR_SYMS = { CAD: 'C$', USD: '$', CNY: '¥' };
-function saveHolding({code, name, entry, qty, added, cur, curCode}) {
-    const stop = Math.round(entry * 0.85 * 100) / 100;
-    const w = getList('sq_hold').filter(x => x.code !== code);
-    w.push({ code, name, entry, qty: qty || null, stop,
-             cur: curCode ? (CUR_SYMS[curCode] || cur) : (cur || '¥'),
-             curCode: curCode || null,   // 你付款的币种；null = 用标的自身币种
-             added: added || new Date().toLocaleDateString('sv') });
-    setList('sq_hold', w);
+/* ── 交易台账数据层：每只股一个 {code,name,stop,txns:[{side,date,price,qty}]} ── */
+// 把任何旧格式（单条 entry/qty）规范成台账形态
+function normHold(x) {
+    if (Array.isArray(x.txns)) return { code:x.code, name:x.name, stop:x.stop||null, txns:x.txns };
+    const txns = x.entry ? [{ side:'buy', date:x.added || new Date().toLocaleDateString('sv'), price:x.entry, qty:x.qty || 0 }] : [];
+    return { code:x.code, name:x.name, stop:x.stop||null, txns };
+}
+function getHold() { return getList('sq_hold').map(normHold); }
+
+// 追加一笔交易；同 code 合并进一个台账
+function addTxn({code, name, side, date, price, qty}) {
+    const list = getHold();
+    let h = list.find(x => x.code === code);
+    if (!h) { h = { code, name, stop:null, txns:[] }; list.push(h); }
+    if (name) h.name = name;
+    h.txns.push({ side, date: date || new Date().toLocaleDateString('sv'), price, qty: qty || 0 });
+    if (side === 'buy') h.stop = Math.round(price * 0.85 * 100) / 100; // 止损线 = 最近买入价 85%
+    setList('sq_hold', list);
     updateBadges();
-    return stop;
+    return h.stop;
+}
+// 兼容旧调用（addToHold / wishToHold）
+function saveHolding({code, name, entry, qty, added}) {
+    return addTxn({ code, name, side:'buy', date:added, price:entry, qty });
 }
 
 function addToHold() {
@@ -1263,8 +1320,9 @@ function toggleAddForm() {
 
 // 输完股票自动预选币种（A股→CNY / 加股→CAD / 其余→USD），用户可改成自己实付的币
 async function previewCur() {
-    const stock = document.getElementById('afStock').value.trim();
     const sel = document.getElementById('afCur');
+    if (!sel) return;
+    const stock = document.getElementById('afStock').value.trim();
     if (!stock || sel.value) return;
     try {
         const r = await apiFetch(`/api/serenity/resolve?q=${encodeURIComponent(stock)}&lang=${LANG}`);
@@ -1274,26 +1332,51 @@ async function previewCur() {
     } catch {}
 }
 
+let afSide = 'buy';
+function setAfSide(s) {
+    afSide = s;
+    document.getElementById('afSideBuy').classList.toggle('active', s === 'buy');
+    document.getElementById('afSideSell').classList.toggle('active', s === 'sell');
+}
+// 用某只股预填表单（从台账行的"再记一笔"进）
+function addFormFor(code, name) {
+    const f = document.getElementById('addForm');
+    f.classList.remove('hidden');
+    document.getElementById('afDate').value = new Date().toLocaleDateString('sv');
+    document.getElementById('afStock').value = name || code;
+    document.getElementById('afStock').dataset.code = code;
+    document.getElementById('afPrice').focus();
+    document.getElementById('afMsg').textContent = '';
+    f.scrollIntoView({behavior:'smooth', block:'center'});
+}
+
 async function submitAddForm() {
-    const stock = document.getElementById('afStock').value.trim();
+    const stockEl = document.getElementById('afStock');
+    const stock = stockEl.value.trim();
     const date = document.getElementById('afDate').value;
     const price = parseFloat(document.getElementById('afPrice').value);
     const qty = parseFloat(document.getElementById('afQty').value) || null;
-    const curCode = document.getElementById('afCur').value || null;
     const msg = document.getElementById('afMsg');
     const btn = document.getElementById('afBtn');
     if (!stock) { msg.textContent = t('afNeed'); return; }
     if (!price || price <= 0) { msg.textContent = t('afBadPrice'); return; }
+    if (!qty || qty <= 0) { msg.textContent = t('afNeedQty'); return; }
     btn.disabled = true; msg.textContent = t('afAdding');
     try {
-        const r = await apiFetch(`/api/serenity/resolve?q=${encodeURIComponent(stock)}&lang=${LANG}`);
-        if (!r.ok) { msg.textContent = t('afNotFound', stock); btn.disabled = false; return; }
-        const stop = saveHolding({code: r.code, name: r.name, entry: price, qty, added: date, cur: r.cur, curCode});
+        // 若从台账"再记一笔"进来，直接用已知 code，省一次解析
+        let code = stockEl.dataset.code, name = stock, market = '';
+        if (!code) {
+            const r = await apiFetch(`/api/serenity/resolve?q=${encodeURIComponent(stock)}&lang=${LANG}`);
+            if (!r.ok) { msg.textContent = t('afNotFound', stock); btn.disabled = false; return; }
+            code = r.code; name = r.name; market = r.market;
+        }
+        addTxn({ code, name, side: afSide, date, price, qty });
         msg.textContent = '';
         toggleAddForm();
-        document.getElementById('afStock').value = ''; document.getElementById('afPrice').value = ''; document.getElementById('afQty').value = '';
-        toast(t('holdAdded', r.name, r.market, CUR_SYMS[curCode] || r.cur, price, qty ? ' × ' + qty + t('shares') : ''));
-        document.getElementById('afCur').value = '';
+        stockEl.value = ''; stockEl.dataset.code = '';
+        document.getElementById('afPrice').value = ''; document.getElementById('afQty').value = '';
+        setAfSide('buy');
+        toast(t(afSide === 'buy' ? 'txnBuyOk' : 'txnSellOk', name, price, qty));
         refreshHold();
     } catch (e) {
         msg.textContent = t('failed', e.message);
@@ -1342,123 +1425,116 @@ const fmtMoney = n => LANG === 'zh'
     ? (n >= 10000 ? (n/10000).toFixed(2) + '万' : n.toFixed(0))
     : (n >= 1000 ? (n/1000).toFixed(1) + 'k' : n.toFixed(0));
 
+let PF_BASE = localStorage.getItem('sq_pfbase') || (LANG === 'en' ? 'USD' : 'CNY');
+const MKT_ORDER = ['A股', '美股', '加拿大', '加密货币'];
+
 async function refreshHold() {
-    const w = getList('sq_hold');
+    const hold = getHold();
     const box = document.getElementById('holdResult');
-    if (!w.length) {
+    const sumEl = document.getElementById('portfolioSummary');
+    if (!hold.length) {
         box.innerHTML = `<div class="text-center py-8"><img src="/hero-mascot.png" alt="" style="width:130px;margin:0 auto 14px;opacity:.9"><div class="eyebrow" style="display:inline-block">holdings running on 0%</div><div class="text-sm text-[#4A463C] mt-2">${t('holdEmpty')}</div></div>`;
-        document.getElementById('portfolioSummary').innerHTML = '';
+        if (sumEl) sumEl.innerHTML = '';
         return;
     }
     box.innerHTML = `<div class="py-8 text-center text-[#2f9e53]">charging… ${t('holdLoading')}</div>`;
-    const items = w.map(x => `${x.code}:${x.entry}:${x.stop}:${x.added||''}:${x.curCode||''}`).join(',');
+    let d;
     try {
-        const d = await apiFetch(`/api/serenity/watch_check?items=${encodeURIComponent(items)}&lang=${LANG}`);
-        const byCode = {}; d.items.forEach(i => byCode[i.code] = i);
-
-        // 汇总（分币种：不同货币不能直接相加）
-        const totals = {};
-        w.forEach(x => {
-            const r = byCode[x.code];
-            if (!r || r.last === undefined || !x.qty) return;
-            const c = r.cur || '¥';
-            totals[c] = totals[c] || {value: 0, cost: 0};
-            totals[c].value += r.last * x.qty;
-            totals[c].cost += x.entry * x.qty;
+        const res = await fetch('/api/serenity/portfolio', {
+            method: 'POST', credentials: 'include',
+            headers: {'Content-Type':'application/json'},
+            body: JSON.stringify({ base: PF_BASE, items: hold.map(h => ({ code:h.code, name:h.name, txns:h.txns })) })
         });
-        const sumHtml = Object.entries(totals).map(([c, tot]) => {
-            const pnl = tot.value - tot.cost;
-            const pct = tot.cost ? (pnl / tot.cost * 100).toFixed(1) : 0;
-            return `<div class="text-xs"><span class="text-[#8A8578]">${t('mktValue')}</span> <b>${c}${fmtMoney(tot.value)}</b>
-                    <span class="${pnl>=0?'text-[#2f9e53]':'text-[#E5484D]'} font-bold ml-1">${pnl>=0?'+':'-'}${fmtMoney(Math.abs(pnl))}（${pnl>=0?'+':''}${pct}%）</span></div>`;
-        }).join('');
-        document.getElementById('portfolioSummary').innerHTML = sumHtml
-            ? `<div class="text-[#8A8578] text-xs mb-0.5">${t('myHold')}</div>${sumHtml}` : '';
+        d = await res.json();
+    } catch (e) { box.innerHTML = `<div class="text-[#E5484D] p-6">${t('failed', e.message)}</div>`; return; }
+    if (d.error) { box.innerHTML = `<div class="text-[#E5484D] p-6">${d.error}</div>`; return; }
 
-        // ③ 战绩统计（借鉴 Vibe-Trading metrics：胜率/平均盈亏/跑赢大盘次数）
-        const scored = w.map(x => byCode[x.code]).filter(r => r && r.pnl_pct !== undefined);
-        let recordHtml = '';
-        if (scored.length >= 2) {
-            const wins = scored.filter(r => r.pnl_pct > 0), losses = scored.filter(r => r.pnl_pct <= 0);
-            const avg = a => a.length ? (a.reduce((s,r)=>s+r.pnl_pct,0)/a.length).toFixed(1) : null;
-            const alphaScored = scored.filter(r => r.alpha_pct !== null && r.alpha_pct !== undefined);
-            const alphaWins = alphaScored.filter(r => r.alpha_pct > 0).length;
-            recordHtml = `<div class="border border-[#E4DAC7] rounded-2xl px-5 py-3 mb-4 flex flex-wrap gap-x-6 gap-y-1 items-center" style="background:var(--paper-2)">
-                <span class="eyebrow">track record</span>
-                <span class="text-xs text-[#4A463C]"><b>${t('winLoss', wins.length, losses.length)}</b></span>
-                ${avg(wins)!==null?`<span class="text-xs text-[#2f9e53]">${t('avgWin', avg(wins))}</span>`:''}
-                ${avg(losses)!==null?`<span class="text-xs text-[#E5484D]">${t('avgLoss', avg(losses))}</span>`:''}
-                ${alphaScored.length?`<span class="text-xs text-[#4A463C]">${t('beatCount', alphaWins, alphaScored.length)}</span>`:''}
-                <span class="text-[10px] text-[#8A8578]">${t('beatNote')}</span>
-            </div>`;
+    const byCode = {}; d.stocks.forEach(s => byCode[s.code] = s);
+    const money = (c, n) => `${c}${fmtMoney(Math.abs(n))}`;
+    const signed = (c, n) => `<span class="${n>=0?'pos':'neg'}">${n>=0?'+':'-'}${money(c, n)}</span>`;
+    const t2 = d.total;
+
+    // ── 总表（顶部，可切币种）──
+    const curBtns = ['CNY','USD','CAD','HKD'].map(b =>
+        `<span class="pf-cur ${PF_BASE===b?'active':''}" onclick="setPfBase('${b}')">${b}</span>`).join('');
+    const tc = t2.cur;
+    let totalHtml = `
+      <div class="border border-[var(--line)] rounded-2xl p-6 mb-5" style="background:var(--paper-2)">
+        <div class="flex flex-wrap justify-between items-center gap-3 mb-4">
+          <div class="eyebrow">grand total</div>
+          <div class="flex gap-1.5 items-center">${LANG==='en'?'show in':'合计币种'} ${curBtns}</div>
+        </div>
+        <div class="flex flex-wrap gap-x-8 gap-y-3">
+          <div><div class="text-[10px] text-[#8A8578]">${t('pfInvested')}</div><div class="text-lg font-bold">${money(tc, t2.cost)}</div></div>
+          <div><div class="text-[10px] text-[#8A8578]">${t('pfValue')}</div><div class="text-lg font-bold">${money(tc, t2.value)}</div></div>
+          <div><div class="text-[10px] text-[#8A8578]">${t('pfUnreal')}</div><div class="text-lg font-bold">${signed(tc, t2.unrealized)}${t2.unreal_pct!==null?` <span class="text-xs ${t2.unrealized>=0?'pos':'neg'}">(${t2.unrealized>=0?'+':''}${t2.unreal_pct}%)</span>`:''}</div></div>
+          <div><div class="text-[10px] text-[#8A8578]">${t('pfRealized')}</div><div class="text-lg font-bold">${signed(tc, t2.realized)}</div></div>
+          <div><div class="text-[10px] text-[#8A8578]">${t('pfTotalPnl')}</div><div class="text-lg font-bold">${signed(tc, t2.total_pnl)}</div></div>
+          ${t2.win_rate!==null?`<div><div class="text-[10px] text-[#8A8578]">${t('pfWinRate')}</div><div class="text-lg font-bold">${t2.win_rate}% <span class="text-[10px] text-[#8A8578]">(${t('pfClosed', t2.closed_trades)})</span></div></div>`:''}
+        </div>
+        ${!t2.fx_ok?`<div class="text-[10px] text-[#E5484D] mt-2">${t('pfFxWarn')}</div>`:''}
+      </div>`;
+    if (sumEl) sumEl.innerHTML = `<div class="text-[#8A8578] text-xs mb-0.5">${t('myHold')}</div><div class="text-xs">${t('pfValue')} <b>${money(tc, t2.value)}</b> · ${signed(tc, t2.total_pnl)}</div>`;
+
+    // ── 分市场表 ──
+    let tablesHtml = '';
+    for (const mk of MKT_ORDER) {
+        const m = d.markets.find(x => x.market === mk);
+        if (!m) continue;
+        const rows = d.stocks.filter(s => s.market === mk);
+        const mkName = t('mkt_' + ({'A股':'a','美股':'us','加拿大':'ca','加密货币':'crypto'}[mk]));
+        let rowsHtml = '';
+        for (const s of rows) {
+            const held = s.hold_qty > 0;
+            const stopHit = held && s.last && s.avg_cost && s.last < s.avg_cost * 0.85;
+            const nameCell = `<div class="font-bold">${s.name} <span class="font-mono text-[10px] text-[#8A8578]">${s.code}</span>
+                ${stopHit?`<span class="ml-1 text-[10px] px-2 py-0.5 rounded-full bg-[#E5484D]/10 text-[#E5484D]">${t('stopHit')}</span>`:''}
+                ${s.no_price?`<span class="ml-1 text-[10px] text-[#8A8578]">${t('noData')}</span>`:''}
+                ${s.oversell?`<span class="ml-1 text-[10px] text-[#E5484D]">${t('pfOversell')}</span>`:''}</div>
+                <div class="text-[10px] text-[#8A8578] mt-0.5">
+                  <span class="code-link" onclick="addFormFor('${s.code}','${(s.name||'').replace(/'/g,'')}')">${t('pfAddTxn')}</span> ·
+                  <span class="code-link" onclick="goCheck('${s.code}')">${t('recheck')}</span> ·
+                  <span class="code-link" onclick="removeFrom('sq_hold','${s.code}',refreshHold)">${t('pfRemove')}</span>
+                </div>`;
+            rowsHtml += `<tr>
+                <td>${nameCell}</td>
+                <td>${held ? s.hold_qty : '<span class="text-[#8A8578]">'+t('pfCleared')+'</span>'}</td>
+                <td>${held ? m.cur+s.avg_cost : '—'}</td>
+                <td>${s.last!=null ? m.cur+s.last : '—'}</td>
+                <td>${held && s.unrealized!=null ? signed(m.cur, s.unrealized)+(s.unreal_pct!==null?` <span class="text-[10px] ${s.unrealized>=0?'pos':'neg'}">${s.unrealized>=0?'+':''}${s.unreal_pct}%</span>`:'') : '—'}</td>
+                <td>${s.realized ? signed(m.cur, s.realized) : '—'}</td>
+            </tr>`;
         }
-
-        box.innerHTML = recordHtml + w.map(x => {
-            const r = byCode[x.code] || {};
-            if (r.error || r.last === undefined) return `<div class="border border-[#E4DAC7] rounded-2xl p-4 mb-3 text-xs text-[#8A8578]">${x.name} ${x.code} — ${t('noData')}</div>`;
-            const trig = r.invalidation_triggered;
-            const c = r.cur || '¥';
-            const pnlAmt = x.qty ? (r.last - x.entry) * x.qty : null;
-            // ② 纪律对照（影子账户）：曾跌破止损线的持仓，展示"如果那天卖了"
-            const sh = r.shadow;
-            const shadowHtml = sh ? (() => {
-                const dt = `${sh.cross_date.slice(4,6)}/${sh.cross_date.slice(6,8)}`;
-                return sh.saved_pct > 0
-                    ? `<div class="text-[11px] mt-1.5 px-3 py-1.5 rounded-xl bg-[#E5484D]/8 text-[#C23237]">${t('shadowSaved', dt, sh.discipline_pnl_pct, sh.saved_pct)}</div>`
-                    : `<div class="text-[11px] mt-1.5 px-3 py-1.5 rounded-xl" style="background:var(--paper);color:var(--ink-70)">${t('shadowCost', dt, Math.abs(sh.saved_pct))}</div>`;
-            })() : '';
-            return `
-            <div class="border ${trig?'border-[#E5484D]/70':'border-[#E4DAC7]'} rounded-2xl p-5 mb-3">
-                <div class="flex flex-wrap justify-between items-center gap-3">
-                    <div class="min-w-[200px]">
-                        <div class="font-bold">${x.name} <span class="font-mono text-xs text-[#8A8578]">${x.code}</span>
-                            ${trig?`<span class="ml-2 text-xs px-3 py-0.5 rounded-full bg-[#E5484D]/10 text-[#E5484D] font-bold">${t('stopHit')}</span>`:`<span class="ml-2 text-xs px-3 py-0.5 rounded-full bg-[#3FB55B]/12 text-[#2f9e53]">${t('ok')}</span>`}
-                        </div>
-                        <div class="text-xs text-[#8A8578] mt-1">${t('boughtOn', x.added, c, x.entry)}${x.qty?' × '+x.qty+t('shares')+' = '+c+fmtMoney(x.entry*x.qty):''} · ${t('stopLine', c, x.stop)}</div>
-                        <div class="text-xs text-[#8A8578] mt-0.5">${t('nowState', r.level, r.stage)}${r.fx_rate?' · '+t('fxNote', r.fx_rate, r.quote_cur, r.quote_last):''}</div>
-                        ${shadowHtml}
-                    </div>
-                    <div class="flex-1 min-w-[160px] max-w-[280px] h-14"><canvas id="spark-${x.code.replace(/\./g,'_')}"></canvas></div>
-                    <div class="text-right">
-                        <div class="text-lg font-bold">${c}${r.last}</div>
-                        <div class="text-sm font-bold ${r.pnl_pct>=0?'text-[#2f9e53]':'text-[#E5484D]'}">${r.pnl_pct>=0?t('profit'):t('loss')} ${Math.abs(r.pnl_pct)}%${pnlAmt!==null?`（${c}${fmtMoney(Math.abs(pnlAmt))}）`:''}</div>
-                        ${r.alpha_pct!==null&&r.alpha_pct!==undefined?`<div class="text-[10px] ${r.alpha_pct>=0?'text-[#2f9e53]/80':'text-[#E5484D]/80'}" title="同期${r.bench_name} ${r.hs300_pnl_pct}%">${r.alpha_pct>=0?t('beat', r.bench_name, r.alpha_pct):t('lag', r.bench_name, Math.abs(r.alpha_pct))}</div>`:''}
-                        <div class="flex gap-3 justify-end mt-1">
-                            <button onclick="goCheck('${x.code}')" class="text-[10px] text-[#E5484D] hover:text-[#C23237]">${t('recheck')}</button>
-                            <button onclick="removeFrom('sq_hold','${x.code}',refreshHold)" class="text-[10px] text-[#8A8578] hover:text-[#E5484D]">${t('sold')}</button>
-                        </div>
-                    </div>
-                </div>
-            </div>`;
-        }).join('') + `<div class="text-[10px] text-[#8A8578] mt-2">${t('checkedAt', d.checked_at)} · ${t('trendNote')} · ${USER ? t('savedCloud') : t('savedLocal')} · ${t('benchNote')}</div>`;
-
-        // 逐只画走势小图（横线 = 你的成本价）
-        w.forEach(async x => {
-            const r = byCode[x.code];
-            if (!r || r.last === undefined) return;
-            try {
-                const h = await apiFetch(`/api/serenity/history?code=${encodeURIComponent(x.code)}&points=60`);
-                if (h.error || !h.closes) return;
-                const el = document.getElementById(`spark-${x.code.replace(/\./g,'_')}`);
-                if (!el) return;
-                const up = h.closes[h.closes.length-1] >= x.entry;
-                new Chart(el, {
-                    type: 'line',
-                    data: { labels: h.closes.map((_,i)=>i), datasets: [
-                        { data: h.closes, borderColor: up?'#3FB55B':'#E5484D', borderWidth: 1.5,
-                          pointRadius: 0, tension: .3, fill: false },
-                        { data: h.closes.map(()=>x.entry), borderColor: getComputedStyle(document.documentElement).getPropertyValue('--chain-line').trim() || 'rgba(23,21,15,.28)',
-                          borderWidth: 1, borderDash: [4,4], pointRadius: 0 },
-                    ]},
-                    options: { responsive: true, maintainAspectRatio: false, animation: false,
-                        plugins: { legend: {display:false}, tooltip: {enabled:false} },
-                        scales: { x: {display:false}, y: {display:false} } }
-                });
-            } catch(e) {}
-        });
-    } catch (e) {
-        box.innerHTML = `<div class="text-[#E5484D] p-6">${t('failed', e.message)}</div>`;
+        tablesHtml += `
+          <div class="border border-[var(--line)] rounded-2xl p-5 mb-4 overflow-x-auto">
+            <div class="flex justify-between items-center mb-2">
+              <div class="font-bold text-sm">${mkName} <span class="text-[10px] text-[#8A8578] font-mono">${m.cur}</span></div>
+            </div>
+            <table class="pf-table">
+              <thead><tr>
+                <th>${t('pfColName')}</th><th>${t('pfColQty')}</th><th>${t('pfColAvg')}</th>
+                <th>${t('pfColLast')}</th><th>${t('pfColUnreal')}</th><th>${t('pfColReal')}</th>
+              </tr></thead>
+              <tbody>
+                ${rowsHtml}
+                <tr class="pf-sub">
+                  <td>${t('pfSubtotal')}</td><td></td><td></td>
+                  <td class="text-[10px] text-[#8A8578]">${t('pfCost')} ${money(m.cur, m.cost)}</td>
+                  <td>${signed(m.cur, m.unrealized)}${m.unreal_pct!==null?` <span class="text-[10px] ${m.unrealized>=0?'pos':'neg'}">${m.unrealized>=0?'+':''}${m.unreal_pct}%</span>`:''}</td>
+                  <td>${m.realized ? signed(m.cur, m.realized) : '—'}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>`;
     }
+
+    box.innerHTML = totalHtml + tablesHtml +
+        `<div class="text-[10px] text-[#8A8578] mt-2">${t('checkedAt', d.checked_at)} · ${USER ? t('savedCloud') : t('savedLocal')} · ${t('pfMethodNote')}</div>`;
+}
+
+function setPfBase(b) {
+    PF_BASE = b; localStorage.setItem('sq_pfbase', b);
+    refreshHold();
 }
 // 打开网站就把持仓汇总带出来（有持仓才查）
 window.addEventListener('DOMContentLoaded', () => { if (getList('sq_hold').length) refreshHold(); });
