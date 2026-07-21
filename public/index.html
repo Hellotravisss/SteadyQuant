@@ -518,6 +518,8 @@ const I18N = {
     holdEmpty: "还没记录交易。点右上角「+ 记一笔交易」，或去「买什么」查一只股后点「我已经买了」。",
     holdLoading: "正在查最新价格、算盈亏…",
     afBuy: "买入", afSell: "卖出", afNeedQty: "填一下数量（几股/几个）",
+    loginToUse: "登录后才能保存和查看你的数据",
+    gateBody: (w) => `「${w}」要把你的记录存到云端、多设备同步，所以需要先登录。登录只用邮箱/苹果/微信，几秒钟。`,
     afDate2: "日期", afPrice2: "成交价（每股，按标的本币）", afQty2: "数量（股/个）",
     afTip: "💡 美股填美元价、加股填加元价、A股填人民币价（券商成交单上的价）。总表会自动按汇率换算成一个币种。",
     txnBuyOk: (n,p,q) => `已记录买入 ${n}：${p} × ${q}`,
@@ -643,6 +645,8 @@ const I18N = {
     curCAD: "CAD", curUSD: "USD", curCNY: "CNY",
     aiReviewTitle: "🔍 independent review (a second AI whose only job is to poke holes in the first one)",
     afBuy: "buy", afSell: "sell", afNeedQty: "enter a quantity (shares/units)",
+    loginToUse: "Sign in to save and view your data",
+    gateBody: (w) => `"${w}" saves your records to the cloud and syncs across devices, so you need to sign in first. Takes a few seconds with email / Apple / WeChat.`,
     afDate2: "date", afPrice2: "price (per share, native currency)", afQty2: "quantity",
     afTip: "💡 Enter the trade price in the stock's own currency (USD for US, CAD for Canada, CNY for A-shares). The grand total converts everything at the latest FX.",
     txnBuyOk: (n,p,q) => `logged buy ${n}: ${p} × ${q}`,
@@ -870,6 +874,7 @@ async function submitLoginCode() {
       USER = { email: d.email, lang: LANG };
       renderAccount(); closeLogin();
       await mergeOnLogin();
+      refreshActivePanel();
       toast(t('loginOk'));
     }
   } catch { msg.textContent = t('netErr'); msg.style.color = 'var(--red1)'; }
@@ -878,7 +883,7 @@ async function submitLoginCode() {
 
 async function doLogout() {
   await fetch(ACC + '/api/auth/logout', { method: 'POST', credentials: 'include' }).catch(() => {});
-  USER = null; renderAccount(); toast(t('logoutOk'));
+  USER = null; renderAccount(); updateBadges(); refreshActivePanel(); toast(t('logoutOk'));
 }
 
 // 登录瞬间：本机有数据就问要不要合并，避免把老数据冲掉
@@ -920,13 +925,45 @@ async function pushCloud() {
   } catch {}
 }
 
+// 需要登录才能用的功能（要保存数据）：已经买了 / 想买什么
+function needLogin(action) {
+    if (USER) return false;
+    openLogin();
+    if (action) toast(t('loginToUse'));
+    return true;
+}
+// 未登录时在面板里显示"请登录"卡片，替代数据
+function gateCard(what) {
+    return `<div class="text-center py-10">
+        <img src="/hero-mascot.png" alt="" style="width:120px;margin:0 auto 16px;opacity:.9">
+        <div class="eyebrow" style="display:inline-block">sign in required</div>
+        <div class="text-sm text-[#4A463C] mt-3 mb-5 max-w-md mx-auto">${t('gateBody', what)}</div>
+        <button onclick="openLogin()" class="px-7 py-3 btn-red text-sm">${t('signIn')}</button>
+    </div>`;
+}
+
+function refreshActivePanel() {
+    if (document.getElementById('panel-hold').classList.contains('active'))
+        switchTab('hold', tabBtn('hold'));
+    else if (document.getElementById('panel-wish').classList.contains('active'))
+        switchTab('wish', tabBtn('wish'));
+}
+
 function switchTab(tab, el) {
     document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
     document.querySelectorAll('.tab-btn, .main-btn').forEach(b => b.classList.remove('active'));
     document.getElementById('panel-' + tab).classList.add('active');
     if (el) (el.closest('.main-btn') || el).classList.add('active');
-    if (tab === 'hold') refreshHold();
-    if (tab === 'wish') refreshWish();
+    if (tab === 'hold') {
+        if (USER) refreshHold();
+        else { document.getElementById('holdResult').innerHTML = gateCard(t('holdTitle'));
+               const s = document.getElementById('portfolioSummary'); if (s) s.innerHTML = '';
+               const f = document.getElementById('addForm'); if (f) f.classList.add('hidden'); }
+    }
+    if (tab === 'wish') {
+        if (USER) refreshWish();
+        else document.getElementById('wishResult').innerHTML = gateCard(t('wishTitle'));
+    }
 }
 
 /* ============ 通用：toast / 联想搜索 / 跨页跳转 ============ */
@@ -1254,6 +1291,7 @@ function setList(key, v) { localStorage.setItem(key, JSON.stringify(v)); pushClo
 
 function updateBadges() {
     const set = (id, n) => {
+        if (!USER) n = 0;
         const b = document.getElementById(id);
         if (b) b.innerHTML = n ? `<span class="text-xs px-2 py-0.5 rounded-full ml-1" style="background:var(--red1);color:#fff;font-family:var(--font-mono)">${n}</span>` : '';
     };
@@ -1294,6 +1332,7 @@ function saveHolding({code, name, entry, qty, added}) {
 }
 
 function addToHold() {
+    if (needLogin(true)) return;
     if (!lastCheck) return;
     const cur = lastCheck.price.cur;
     const entryStr = prompt(`你买 ${lastCheck.name} 的成本价是多少？（${cur}）`, lastCheck.price.last);
@@ -1309,6 +1348,7 @@ function addToHold() {
 
 /* ── 添加持仓表单 ── */
 function toggleAddForm() {
+    if (needLogin(true)) return;
     const f = document.getElementById('addForm');
     f.classList.toggle('hidden');
     if (!f.classList.contains('hidden')) {
@@ -1384,6 +1424,7 @@ async function submitAddForm() {
 }
 
 function addToWish() {
+    if (needLogin(true)) return;
     if (!lastCheck) return;
     const cur = lastCheck.price.cur;
     const suggest = Math.round(lastCheck.price.last * 0.9 * 100) / 100;
@@ -1408,6 +1449,7 @@ function removeFrom(key, code, refresh) {
 
 // 想买清单 → 已买（到价买入后一键转）
 function wishToHold(code) {
+    if (needLogin(true)) return;
     const item = getList('sq_wish').find(x => x.code === code);
     if (!item) return;
     const entryStr = prompt(`买入 ${item.name} 的成本价？`, item.target);
@@ -1537,7 +1579,7 @@ function setPfBase(b) {
     refreshHold();
 }
 // 打开网站就把持仓汇总带出来（有持仓才查）
-window.addEventListener('DOMContentLoaded', () => { if (getList('sq_hold').length) refreshHold(); });
+window.addEventListener('DOMContentLoaded', () => { if (USER && getList('sq_hold').length) refreshHold(); });
 
 async function refreshWish() {
     const w = getList('sq_wish');
