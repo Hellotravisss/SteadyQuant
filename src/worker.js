@@ -760,6 +760,106 @@ function llmStream(env, system, user, maxTokens = 8000, effort = "medium", webSe
   return streamAnthropic(env, system, user, maxTokens, effort, webSearch);
 }
 
+/* ───────── 预算 + 时间 规划（纯规则，秒出，零合规风险） ─────────
+   把"多少钱 + 打算放多久"翻译成：现实检查 + 仓位纪律 + 预期框架 + 下一步。
+   绝不推荐具体标的、不承诺回报——只给通用框架。 */
+function budgetPlan(amount, currency, months, S) {
+  if (!(amount > 0) || !(months > 0)) return { error: S.plan_bad_input };
+  const cur = CUR_SYM[currency] || (currency ? currency + " " : "¥");
+  // 金额归一到人民币量级，好判断"钱多钱少"（粗略汇率，只用于分档，不参与任何计算展示）
+  const toCny = { CNY: 1, USD: 7.2, CAD: 5.3, HKD: 0.92, EUR: 7.8, GBP: 9.1 };
+  const cnyLike = amount * (toCny[currency] || 1);
+
+  // 时间维度
+  let horizon, hbody;
+  if (months < 3) { horizon = S.plan_horizon_gamble; hbody = S.plan_gamble_body(months); }
+  else if (months < 12) { horizon = S.plan_horizon_short; hbody = S.plan_short_body(months); }
+  else if (months < 36) { horizon = S.plan_horizon_mid; hbody = S.plan_mid_body(months); }
+  else { horizon = S.plan_horizon_long; hbody = S.plan_long_body(months); }
+  const shortHorizon = months < 12;
+
+  // 仓位维度（按归一后的金额分档，给"只数"建议）
+  const fmtA = amount % 1 === 0 ? String(amount) : amount.toFixed(2);
+  let size;
+  if (cnyLike < 10000) size = S.plan_size_tiny(cur, fmtA, 2);
+  else if (cnyLike < 50000) size = S.plan_size_small(cur, fmtA, "3-5");
+  else size = S.plan_size_mid(cur, fmtA, "5-8");
+
+  return {
+    amount, currency, cur, months,
+    horizon, horizon_body: hbody,
+    size_title: S.plan_size_title, size_body: size,
+    stage_title: S.plan_stage_title, stage_body: S.plan_stage_body(cur, fmtA),
+    expect_title: S.plan_expect_title, expect_body: S.plan_expect_body,
+    next_title: S.plan_next_title,
+    next_body: shortHorizon ? S.plan_next_short : S.plan_next_long,
+    disclaimer: S.plan_disclaimer,
+  };
+}
+
+const PLAN_SYSTEM_ZH = `你是一位克制、诚实的理财教育助手，服务于普通个人投资者。用户给你一笔预算和一个时间期限，你帮他把"这笔钱、这段时间该用什么心态和框架"讲清楚。
+
+【铁律 · 不可违反】
+- 绝不推荐任何具体股票/基金/币种/标的，一个代码都不给。
+- 绝不承诺或暗示任何具体收益率、翻倍、稳赚。
+- 不做个性化投资建议——你给的是通用框架和风险教育。
+- 时间越短越要泼冷水：3个月以内直接说"这是赌博不是投资，可能亏光"；不要粉饰。
+- 反复强调"可能亏钱"这个事实，尤其对短期/小额/高杠杆。
+
+【要讲什么】
+1. 这个时间期限意味着什么（能不能熬过波动、靠运气还是靠基本面）。
+2. 这笔预算的仓位纪律（钱少就集中但研究透、分批建仓别一把梭、留现金）。
+3. 现实的收益预期（区间感 + "会亏"，不给具体数字）。
+4. 具体到"该怎么用 steady 这个工具"：先想方向→查一只股体检→贵就进想买清单等回调→买了记进已经买了守止损。
+5. 如果预算是外币（加币/美元），提醒他所在市场和汇率（比如加拿大人用加币买美股有汇率波动）。
+
+【风格】大白话、像个诚实的朋友劝你别冲动。中文母语。300-500字。结尾一句免责：仅供教育、非投资建议。`;
+
+const PLAN_SYSTEM_EN = `You are a restrained, honest personal-finance education assistant for ordinary retail investors. The user gives you a budget and a time horizon; you help them understand the mindset and framework that fit that money and that timeframe.
+
+【HARD RULES — never break】
+- Never recommend any specific stock/fund/coin/ticker. Not one symbol.
+- Never promise or imply any specific return, doubling, or "guaranteed" gains.
+- No personalized investment advice — you give general frameworks and risk education.
+- The shorter the horizon, the harder you push back: under 3 months, say plainly "this is gambling, not investing — you can lose it all." Don't sugarcoat.
+- Repeatedly state the fact that "you can lose money," especially for short/small/leveraged cases.
+
+【What to cover】
+1. What this horizon means (can it ride out volatility; luck vs fundamentals).
+2. Position discipline for this budget (small money → concentrate but research hard; scale in; keep cash).
+3. Realistic expectations (a sense of range + "you can lose," no specific numbers).
+4. Concretely how to use the 'steady' tool: pick a direction → check a stock → park pricey ones in wishlist → log buys in holdings and honor stops.
+5. If the budget is foreign currency, note their market and FX (e.g. a Canadian buying US stocks with CAD has FX risk).
+
+【Style】Plain language, like an honest friend talking you down from an impulse. 300-500 words. End with one disclaimer line: education only, not investment advice.`;
+
+function planSSE(env, amount, currency, months, extra, S, lang) {
+  const enc = new TextEncoder();
+  const send = (ctrl, obj) => ctrl.enqueue(enc.encode("data: " + JSON.stringify(obj) + "\n\n"));
+  const cur = CUR_SYM[currency] || currency;
+  const sys = lang === "en" ? PLAN_SYSTEM_EN : PLAN_SYSTEM_ZH;
+  const yrs = Math.round(months / 12 * 10) / 10;
+  const user = lang === "en"
+    ? `Budget: ${cur}${amount}. Horizon: ${months} months (~${yrs} years).${extra ? " Note: " + extra : ""} Give me an honest plan framework.`
+    : `预算：${cur}${amount}。打算放：${months} 个月（约 ${yrs} 年）。${extra ? "补充：" + extra : ""} 帮我讲讲该用什么框架和心态。`;
+
+  const stream = new ReadableStream({
+    async start(ctrl) {
+      try {
+        if (!env.DEEPSEEK_API_KEY && !env.ANTHROPIC_API_KEY) {
+          send(ctrl, { error: S.ai_nokey }); ctrl.close(); return;
+        }
+        for await (const text of llmStream(env, sys, user, 2500, "low")) send(ctrl, { text });
+        send(ctrl, { done: true });
+      } catch (e) {
+        send(ctrl, { error: String(e.message || e) });
+      }
+      ctrl.close();
+    },
+  });
+  return new Response(stream, { headers: { "Content-Type": "text/event-stream; charset=utf-8", "Cache-Control": "no-cache" } });
+}
+
 function analyzeSSE(env, query, market, S = pack("zh"), lang = "zh") {
   const enc = new TextEncoder();
   const send = (ctrl, obj) => ctrl.enqueue(enc.encode("data: " + JSON.stringify(obj) + "\n\n"));
@@ -829,6 +929,10 @@ export default {
         return json(await history(env, q("code"), parseInt(q("points", "60")), S));
       if (p === "/api/serenity/resolve") return json(await resolve(env, q("q"), S));
       if (p === "/api/serenity/verify_tickers") return json(await verifyTickers(env, q("codes"), S));
+      if (p === "/api/serenity/plan")
+        return json(budgetPlan(parseFloat(q("amount")), q("currency", "CNY"), parseInt(q("months")), S));
+      if (p === "/api/serenity/plan_ai")
+        return planSSE(env, parseFloat(q("amount")), q("currency", "CNY"), parseInt(q("months")), q("extra", ""), S, lang);
       if (p === "/api/serenity/analyze") return analyzeSSE(env, q("query"), q("market", S.mkt_a), S, lang);
       if (p === "/api/search") return json(await search(env, q("keyword")));
       if (p === "/api/scan")

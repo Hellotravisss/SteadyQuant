@@ -243,6 +243,32 @@
 
     <!-- ===================== 卡点体检 ===================== -->
     <div id="panel-check" class="panel active">
+        <!-- 预算 + 时间 规划（买之前先想清楚） -->
+        <div class="glass rounded-3xl p-8 mb-6">
+            <div class="eyebrow mb-1" data-i18n="planEyebrow">plan first</div>
+            <div class="mb-2 text-2xl font-bold" data-i18n="planTitle">有多少钱、打算放多久？先规划一下</div>
+            <div class="text-xs text-[#8A8578] mb-6" data-i18n="planSub">还没想好买什么？说说你的预算和时间，帮你想清楚该用什么心态、别踩什么坑——不推荐任何具体股票。</div>
+            <div class="flex flex-wrap gap-3 items-center">
+                <input id="planAmt" type="number" inputmode="decimal" class="px-4 py-3 rounded-2xl w-36" placeholder="2000" data-i18n-ph="planAmtPh"
+                       onkeydown="if(event.key==='Enter')doPlan()">
+                <select id="planCur" class="px-3 py-3 rounded-2xl">
+                    <option value="CNY">CNY ¥</option>
+                    <option value="CAD">CAD C$</option>
+                    <option value="USD">USD $</option>
+                    <option value="HKD">HKD</option>
+                </select>
+                <select id="planMonths" class="px-3 py-3 rounded-2xl">
+                    <option value="3" data-i18n="planM3">3 个月</option>
+                    <option value="12" data-i18n="planM12">1 年</option>
+                    <option value="36" selected data-i18n="planM36">3 年</option>
+                    <option value="60" data-i18n="planM60">5 年+</option>
+                </select>
+                <button onclick="doPlan()" class="px-7 py-3 btn-red" data-i18n="planBtn">帮我规划</button>
+            </div>
+            <input id="planExtra" class="w-full mt-3 px-4 py-3 rounded-2xl text-sm" placeholder="（可选）补充一句，比如：我在加拿大、只想买美股" data-i18n-ph="planExtraPh">
+            <div id="planResult" class="mt-6"></div>
+        </div>
+
         <div class="glass rounded-3xl p-8">
             <div class="eyebrow mb-1">stock check</div>
             <div class="mb-2 text-2xl font-bold" data-i18n="checkTitle">查一只股：现在能不能碰？</div>
@@ -450,6 +476,15 @@ const I18N = {
     navHold: "已经买了", navHoldSub: "盈亏一目了然，该卖的时候亮红灯",
     navWish: "想买什么", navWishSub: "看中但嫌贵的，跌到你要的价提醒你",
     advTools: "// 高级工具 ▾", advScan: "一键选股", advRisk: "风险审查", advBt: "组合回测",
+    // 预算规划
+    planEyebrow: "plan first",
+    planTitle: "有多少钱、打算放多久？先规划一下",
+    planSub: "还没想好买什么？说说你的预算和时间，帮你想清楚该用什么心态、别踩什么坑——不推荐任何具体股票。",
+    planAmtPh: "预算金额，如 2000",
+    planMonthsPh: "打算放多久",
+    planM3: "3 个月", planM12: "1 年", planM36: "3 年", planM60: "5 年+",
+    planBtn: "帮我规划",
+    planExtraPh: "（可选）补充一句，比如：我在加拿大、只想买美股",
     // 体检
     checkTitle: "查一只股：现在能不能碰？",
     checkSub: "输入股票名字或代码，用真实行情帮你判断：价格贵不贵、有没有坑、什么时候该走",
@@ -560,6 +595,14 @@ const I18N = {
     navHold: "what I own", navHoldSub: "P&L at a glance, red light when it's time to sell",
     navWish: "what I want", navWishSub: "too pricey for now — we'll ping you at your price",
     advTools: "// advanced ▾", advScan: "screener", advRisk: "risk review", advBt: "backtest",
+    planEyebrow: "plan first",
+    planTitle: "how much, and for how long? plan it first",
+    planSub: "Not sure what to buy yet? Tell me your budget and time frame and I'll help you figure out the right mindset and traps to avoid — no specific stock recommended.",
+    planAmtPh: "budget, e.g. 2000",
+    planMonthsPh: "how long",
+    planM3: "3 months", planM12: "1 year", planM36: "3 years", planM60: "5 years+",
+    planBtn: "plan for me",
+    planExtraPh: "(optional) add a note, e.g. I'm in Canada, only want US stocks",
     checkTitle: "check a stock: can I touch it right now?",
     checkSub: "Type a name or ticker. Real prices, plain answers: is it expensive, are there traps, when should you leave.",
     checkPh: "US ticker (AAPL) · Canada add .TO · crypto BTC / ETH · A-shares by name",
@@ -923,6 +966,72 @@ function linkifyCodes(html) {
 
 /* ============ 卡点体检 ============ */
 let lastCheck = null;
+
+/* ── 预算 + 时间 规划 ── */
+async function doPlan() {
+    const amount = parseFloat(document.getElementById('planAmt').value);
+    const currency = document.getElementById('planCur').value;
+    const months = parseInt(document.getElementById('planMonths').value);
+    const extra = document.getElementById('planExtra').value.trim();
+    const box = document.getElementById('planResult');
+    if (!(amount > 0)) { box.innerHTML = `<div class="text-[#E5484D] text-sm">${t('planBadInput')||'填一下预算金额'}</div>`; return; }
+    box.innerHTML = `<div class="py-8 text-center text-[#E5484D]">charging…</div>`;
+    let d;
+    try {
+        const r = await fetch(`/api/serenity/plan?amount=${amount}&currency=${currency}&months=${months}&lang=${LANG}`);
+        d = await r.json();
+    } catch (e) { box.innerHTML = `<div class="text-[#E5484D] p-4">${e.message}</div>`; return; }
+    if (d.error) { box.innerHTML = `<div class="text-[#E5484D] p-4">${d.error}</div>`; return; }
+
+    const sec = (title, body) => `<div class="mt-4"><div class="text-xs font-bold text-[#8A8578] mb-1">${title}</div><div class="text-sm leading-relaxed">${body}</div></div>`;
+    box.innerHTML = `
+      <div class="border border-[var(--line)] rounded-2xl p-6">
+        <div class="text-lg font-bold">${d.horizon}</div>
+        <div class="text-sm leading-relaxed mt-1">${d.horizon_body}</div>
+        ${sec(d.size_title, d.size_body)}
+        ${sec(d.stage_title, d.stage_body)}
+        ${sec(d.expect_title, d.expect_body)}
+        ${sec(d.next_title, d.next_body)}
+        <div class="mt-5 pt-4 border-t border-[var(--line)] text-[10px] text-[#8A8578]">${d.disclaimer}</div>
+        <button onclick="doPlanAI(${amount},'${currency}',${months})" id="planAiBtn"
+                class="mt-4 px-6 py-3 text-sm rounded-2xl" style="background:rgba(229,72,77,.12);color:#E5484D;border:1px solid rgba(229,72,77,.4);cursor:pointer;font-family:var(--font-mono)">
+          🧠 ${t('planAiBtn')||'让 AI 结合我的预算详细规划'}
+        </button>
+        <div id="planAiResult" class="ai-md mt-4 text-sm leading-relaxed"></div>
+      </div>`;
+}
+
+async function doPlanAI(amount, currency, months) {
+    const extra = document.getElementById('planExtra').value.trim();
+    const btn = document.getElementById('planAiBtn');
+    const out = document.getElementById('planAiResult');
+    btn.disabled = true; btn.style.opacity = .5;
+    out.textContent = 'charging…';
+    const esc = s => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    const md = t => linkifyCodes(esc(t).replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>').replace(/^[-·•] (.*)$/gm,'<li>$1</li>').replace(/\n/g,'<br>'));
+    let raw = '';
+    try {
+        const url = `/api/serenity/plan_ai?amount=${amount}&currency=${currency}&months=${months}&extra=${encodeURIComponent(extra)}&lang=${LANG}`;
+        const res = await fetch(url);
+        const reader = res.body.getReader(), dec = new TextDecoder();
+        let buf = '';
+        out.textContent = '';
+        while (true) {
+            const {done, value} = await reader.read();
+            if (done) break;
+            buf += dec.decode(value, {stream:true});
+            const parts = buf.split('\n\n'); buf = parts.pop();
+            for (const part of parts) {
+                if (!part.startsWith('data: ')) continue;
+                const msg = JSON.parse(part.slice(6));
+                if (msg.text) { raw += msg.text; out.innerHTML = md(raw); }
+                if (msg.error) out.innerHTML = `<div class="text-[#E5484D]">${msg.error}</div>`;
+            }
+        }
+    } catch (e) {
+        out.innerHTML = `<div class="text-[#E5484D]">${e.message}</div>`;
+    } finally { btn.disabled = false; btn.style.opacity = 1; }
+}
 
 async function doCheck() {
     let code = document.getElementById('checkCode').value.trim().toUpperCase();
