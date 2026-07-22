@@ -59,15 +59,17 @@ async function yahooChart(symbol) {
     );
     const r = (await res.json()).chart.result[0];
     const quote = r.indicators.quote[0];
-    const closes = [];
-    const dates = [];
+    const closes = [], highs = [], lows = [], dates = [];
     for (let i = 0; i < quote.close.length; i++) {
       if (quote.close[i] != null) {
         closes.push(quote.close[i]);
+        // 高低价偶有 null：退回收盘价（当天真实波幅按 0 算，宁可低估不编数）
+        highs.push(quote.high?.[i] ?? quote.close[i]);
+        lows.push(quote.low?.[i] ?? quote.close[i]);
         dates.push(fmtDate(new Date(r.timestamp[i] * 1000)));
       }
     }
-    return { closes, dates, meta: r.meta || {} };
+    return { closes, highs, lows, dates, meta: r.meta || {} };
   } catch {
     return null;
   }
@@ -87,10 +89,17 @@ async function tencentDaily(code) {
     const d = (await res.json()).data?.[sym];
     const rows = d?.qfqday || d?.day;
     if (!rows?.length) return null;
-    const out = { dates: [], closes: [] };
+    // 腾讯行格式 [日期, 开, 收, 高, 低, 量, ...]
+    const out = { dates: [], closes: [], highs: [], lows: [] };
     for (const r of rows) {
       const c = parseFloat(r[2]);
-      if (!isNaN(c)) { out.dates.push(String(r[0]).replace(/-/g, "")); out.closes.push(c); }
+      if (!isNaN(c)) {
+        out.dates.push(String(r[0]).replace(/-/g, ""));
+        out.closes.push(c);
+        const h = parseFloat(r[3]), l = parseFloat(r[4]);
+        out.highs.push(isNaN(h) ? c : h);
+        out.lows.push(isNaN(l) ? c : l);
+      }
     }
     return out.closes.length >= 30 ? out : null;
   } catch { return null; }
@@ -98,10 +107,11 @@ async function tencentDaily(code) {
 
 async function tushareDaily(env, code) {
   const daily = await tushare(env, "daily",
-    { ts_code: code, start_date: daysAgo(480), end_date: fmtDate(new Date()) }, "trade_date,close");
+    { ts_code: code, start_date: daysAgo(480), end_date: fmtDate(new Date()) }, "trade_date,close,high,low");
   if (!daily?.items || daily.items.length < 30) return null;
   const rows = daily.items.filter((r) => r[1] != null).sort((a, b) => (a[0] < b[0] ? -1 : 1));
-  return { dates: rows.map((r) => r[0]), closes: rows.map((r) => Number(r[1])) };
+  return { dates: rows.map((r) => r[0]), closes: rows.map((r) => Number(r[1])),
+    highs: rows.map((r) => Number(r[2] ?? r[1])), lows: rows.map((r) => Number(r[3] ?? r[1])) };
 }
 
 /** 统一日线序列：A股走 腾讯→Tushare 回退链，海外走 Yahoo。返回 {dates, closes, currency} */
@@ -112,7 +122,8 @@ async function dailySeries(env, code) {
   }
   const y = await yahooChart(code);
   if (!y || y.closes.length < 30) return null;
-  return { dates: y.dates.slice(-320), closes: y.closes.slice(-320), currency: y.meta.currency || "USD" };
+  return { dates: y.dates.slice(-320), closes: y.closes.slice(-320),
+    highs: y.highs.slice(-320), lows: y.lows.slice(-320), currency: y.meta.currency || "USD" };
 }
 
 /* ── 汇率：解决"用加币买美股"这类跨币种记账 ──
@@ -163,7 +174,7 @@ async function stockList(env) {
 
 /* ───────── 水位标尺（skill 硬规则：全部真实价格） ───────── */
 
-function computePA(closes, currency, S = pack("zh")) {
+function computePA(closes, currency, S = pack("zh"), highs = null, lows = null) {
   if (!closes || closes.length < 30) return null;
   const last = closes[closes.length - 1];
   const win = closes.slice(-120);
@@ -191,8 +202,40 @@ function computePA(closes, currency, S = pack("zh")) {
   else if (rangePos < 30 && ret1m !== null && ret1m > -5) { stageKey = "basing"; stage = S.stg_basing; }
   else { stageKey = "neutral"; stage = S.stg_neutral; }
 
-  const r2 = (x) => Math.round(x * 100) / 100;
-  const r1 = (x) => (x === null ? null : Math.round(x * 10) / 10);
+  /* ── 波动统计（借 Kronos 的"概率路径"思想，用真实历史波动率实现，非预测模型）──
+     · 年化波动率：近 120 日对数收益标准差 × √252
+     · 波动区间：假设零漂移（不猜方向），1周/1月/3月 的 ±1σ(68%) / ±2σ(95%) 价格区间
+     · ATR14：真实波幅均值（高低价参与），用于按标的自己的脾气定止损提醒线 */
+  const rets = [];
+  const volWin = closes.slice(-121);
+  for (let i = 1; i < volWin.length; i++) rets.push(Math.log(volWin[i] / volWin[i - 1]));
+  let sigmaD = null, volAnnual = null, bands = null;
+  if (rets.length >= 20) {
+    const mean = rets.reduce((a, b) => a + b, 0) / rets.length;
+    sigmaD = Math.sqrt(rets.reduce((a, r) => a + (r - mean) ** 2, 0) / (rets.length - 1));
+    volAnnual = sigmaD * Math.sqrt(252) * 100;
+    const band = (h) => ({
+      lo1: last * Math.exp(-sigmaD * Math.sqrt(h)), hi1: last * Math.exp(sigmaD * Math.sqrt(h)),
+      lo2: last * Math.exp(-2 * sigmaD * Math.sqrt(h)), hi2: last * Math.exp(2 * sigmaD * Math.sqrt(h)),
+    });
+    bands = { w1: band(5), m1: band(21), m3: band(63) };
+  }
+  let atr = null, atrPct = null, stopAtrPct = null;
+  if (highs && lows && highs.length === closes.length && closes.length >= 15) {
+    const trs = [];
+    for (let i = closes.length - 14; i < closes.length; i++) {
+      const pc = closes[i - 1];
+      trs.push(Math.max(highs[i] - lows[i], Math.abs(highs[i] - pc), Math.abs(lows[i] - pc)));
+    }
+    atr = trs.reduce((a, b) => a + b, 0) / trs.length;
+    atrPct = (atr / last) * 100;
+    // 止损提醒距离 = 2.5×ATR，钳在 8%~25%：波动小的股别被日常呼吸震出局，波动大的币别把亏损放太深
+    stopAtrPct = Math.min(25, Math.max(8, 2.5 * atrPct));
+  }
+
+  const r2 = (x) => (x == null ? null : Math.round(x * 100) / 100);
+  const r1 = (x) => (x == null ? null : Math.round(x * 10) / 10);
+  const rb = (b) => (b ? { lo1: r2(b.lo1), hi1: r2(b.hi1), lo2: r2(b.lo2), hi2: r2(b.hi2) } : null);
   return {
     last: r2(last),
     cur: CUR_SYM[currency] || currency + " ",
@@ -208,13 +251,17 @@ function computePA(closes, currency, S = pack("zh")) {
     stage, stageKey,
     data_points: closes.length,
     win_days: win.length, // 水位实际回看的交易日数（新股不足 120 时据此如实标注，不谎称"近6个月"）
+    vol_annual_pct: r1(volAnnual),
+    bands: bands ? { w1: rb(bands.w1), m1: rb(bands.m1), m3: rb(bands.m3) } : null,
+    atr_pct: r1(atrPct),
+    stop_atr_pct: r1(stopAtrPct),
   };
 }
 
 async function priceAnalysis(env, code, S = pack("zh")) {
   const s = await dailySeries(env, code);
   if (!s) return null;
-  return computePA(s.closes.slice(-140), s.currency, S);
+  return computePA(s.closes.slice(-140), s.currency, S, s.highs?.slice(-140), s.lows?.slice(-140));
 }
 
 /* ───────── 红旗 / 判据 / 判定 / 证伪 / 风控 ───────── */
@@ -311,7 +358,7 @@ async function stockCheck(env, code, principal = 2000, S = pack("zh")) {
     const name = y.meta.shortName || y.meta.longName || code;
     const market = isCrypto ? S.mkt_crypto
       : code.endsWith(".TO") || y.meta.currency === "CAD" ? S.mkt_ca : S.mkt_us;
-    const pa = computePA(y.closes.slice(-140), y.meta.currency || "USD", S);
+    const pa = computePA(y.closes.slice(-140), y.meta.currency || "USD", S, y.highs?.slice(-140), y.lows?.slice(-140));
     if (!pa) return { error: S.err_price_thin2 };
     // 海外/币的 basic 为空是"没接数据"而非"真亏损"，去掉误导性的 PE 缺失红旗
     const flags = redFlagScan({}, pa, S).filter((f) => f.text !== S.flag_pe_neg);
@@ -434,7 +481,7 @@ async function watchCheck(env, items, S = pack("zh")) {
     const added = parts[3] ? parts[3].replace(/-/g, "") : null;
     const costCur = (parts[4] || "").toUpperCase() || null; // 你实际付款的币种（如加币买美股）
     const series = await dailySeries(env, code);
-    const pa = series ? computePA(series.closes.slice(-140), series.currency, S) : null;
+    const pa = series ? computePA(series.closes.slice(-140), series.currency, S, series.highs?.slice(-140), series.lows?.slice(-140)) : null;
     if (!pa) return { code, error: S.err_no_price };
 
     // 跨币种记账：成本按你付的币计（对得上券商账单），
@@ -601,6 +648,8 @@ async function portfolio(env, body, S = pack("zh")) {
       realized: r2(realized), unrealized: r2(unrealized),
       total_pnl: r2(realized + (unrealized || 0)),
       unreal_pct: costBasis > 0 && unrealized != null ? Math.round(unrealized / costBasis * 1000) / 10 : null,
+      // 止损提醒距离：按该股自己的波动定（2.5×ATR，钳 8~25%），拿不到 ATR 退回一刀切 15%
+      stop_pct: pa?.stop_atr_pct ?? 15,
       no_price: last == null, fx_missing: fxMiss, oversell, txn_count: txns.length,
       closed_wins: closedWins, closed_trades: closedTrades,
     };
@@ -666,6 +715,55 @@ async function portfolio(env, body, S = pack("zh")) {
     closed_trades: tTrades,
   };
   return { stocks, markets, total, base, checked_at: nowStr() };
+}
+
+/* ── Kronos 概率预测代理：把日线 OHLC 发给自托管的 Kronos 推理服务（HF Space），
+   返回 p10/p50/p90 分位路径。KRONOS_API_URL 未配置时明确告知未启用。
+   实验性功能：输出永远是区间+免责声明，绝不当"答案"呈现。 ── */
+async function kronosForecast(env, code, S = pack("zh")) {
+  if (!env.KRONOS_API_URL) return { ok: false, reason: "not_configured" };
+  code = code.trim().toUpperCase();
+  const s = await dailySeries(env, code);
+  if (!s) return { ok: false, reason: "no_data" };
+  const n = Math.min(400, s.closes.length);
+  if (n < 64) return { ok: false, reason: "too_short" };
+  const off = s.closes.length - n;
+  const bars = [];
+  for (let i = off; i < s.closes.length; i++) {
+    bars.push({ date: s.dates[i], close: s.closes[i],
+      high: s.highs?.[i] ?? s.closes[i], low: s.lows?.[i] ?? s.closes[i] });
+  }
+  try {
+    // gradio 两步 REST：先提交拿 event_id，再读 SSE 结果（HF 免费 CPU + 冷启动可能要 2 分钟）
+    const base = env.KRONOS_API_URL.replace(/\/+$/, "");
+    const submit = await fetch(base + "/gradio_api/call/forecast", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ data: [JSON.stringify({ bars, pred_len: 21 })] }),
+      signal: AbortSignal.timeout(30000),
+    });
+    if (!submit.ok) return { ok: false, reason: "service_error", status: submit.status };
+    const { event_id: eid } = await submit.json();
+    if (!eid) return { ok: false, reason: "service_error" };
+    const res = await fetch(`${base}/gradio_api/call/forecast/${eid}`, {
+      signal: AbortSignal.timeout(150000),
+    });
+    if (!res.ok) return { ok: false, reason: "service_error", status: res.status };
+    // SSE 文本：取最后一行 data: ["<json>"]
+    const text = await res.text();
+    const lines = text.split("\n").filter((l) => l.startsWith("data:"));
+    if (!lines.length) return { ok: false, reason: "service_error" };
+    const payload = JSON.parse(lines[lines.length - 1].slice(5).trim());
+    const d = JSON.parse(Array.isArray(payload) ? payload[0] : payload);
+    if (!d.ok) return { ok: false, reason: d.reason || "service_error" };
+    const r2 = (a) => a.map((x) => Math.round(x * 100) / 100);
+    // 带上近 60 天历史，前端一张图画"过去实线 + 未来扇形"
+    return { ok: true, code, cur: CUR_SYM[s.currency] || "$",
+      hist_dates: s.dates.slice(-60), hist_closes: r2(s.closes.slice(-60)),
+      dates: d.dates, p10: r2(d.p10), p50: r2(d.p50), p90: r2(d.p90),
+      samples: d.samples, last: Math.round(d.last_close * 100) / 100 };
+  } catch {
+    return { ok: false, reason: "timeout" };
+  }
 }
 
 async function history(env, code, points = 60, S = pack("zh")) {
@@ -1084,7 +1182,9 @@ export default {
       if (p === "/api/data" && request.method === "PUT") return auth.putData(env, request);
 
       if (p === "/api/serenity/stock_check")
-        return json(await stockCheck(env, q("code"), parseFloat(q("principal", "2000")), S));
+        return json({ ...(await stockCheck(env, q("code"), parseFloat(q("principal", "2000")), S)),
+          forecast_enabled: !!env.KRONOS_API_URL });
+      if (p === "/api/serenity/forecast") return json(await kronosForecast(env, q("code"), S));
       if (p === "/api/serenity/watch_check") return json(await watchCheck(env, q("items"), S));
       if (p === "/api/serenity/wish_check") return json(await wishCheck(env, q("items"), S));
       if (p === "/api/serenity/portfolio" && request.method === "POST")

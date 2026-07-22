@@ -1,0 +1,9 @@
+spaces
+torch
+numpy
+pandas
+einops
+safetensors
+huggingface_hub
+matplotlib
+tqdm
