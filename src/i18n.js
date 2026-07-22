@@ -37,6 +37,8 @@ export const L = {
     // 判定
     v_pricey_right: "🟢 贵但可能对",
     v_pricey_right_h: "高水位但估值未失控 —— 动量龙头别轻易 fade；确认盈利增速跟得上涨幅再定",
+    v_cyc_top: "🟡 高位低 PE，先别当便宜",
+    v_cyc_top_h: "价格在半年高位、PE 却很低 —— 周期股在盈利顶点时 PE 反而最低，这可能是「盈利见顶」的价值陷阱而非便宜。先确认盈利可持续再说，别把低 PE 当安全垫",
     v_real_top: "🔴 真贴顶",
     v_real_top_h: "高水位 + 纯重估（基本面跟不上）—— 再涨是博傻，回避",
     v_ambush: "🟢 经典埋伏区",
@@ -144,6 +146,8 @@ export const L = {
     flag_crypto: "Crypto trades 24/7 with no circuit breakers and swings far harder than stocks — your stop can be blown through overnight, so size much smaller than a stock",
     v_pricey_right: "🟢 pricey but possibly right",
     v_pricey_right_h: "High in the range, but valuation hasn't run away — don't fade a momentum leader; confirm earnings growth keeps up with the rally first",
+    v_cyc_top: "🟡 low PE at a high — not necessarily cheap",
+    v_cyc_top_h: "Near a 6-month high yet the PE is very low — for cyclicals the PE is lowest exactly at the earnings peak, so this can be a 'peak-earnings' value trap, not a bargain. Confirm earnings are sustainable before treating the low PE as a cushion",
     v_real_top: "🔴 genuinely topped out",
     v_real_top_h: "High in the range and pure re-rating (fundamentals aren't keeping up) — further upside is greater-fool territory. Avoid",
     v_ambush: "🟢 classic ambush zone",

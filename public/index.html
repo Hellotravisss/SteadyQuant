@@ -8,7 +8,8 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <meta name="description" content="给普通人用的看股工具：查一只股能不能碰、盯持仓止损、等想买的价。A股/美股/加股/加密货币，真实行情，大白话结论。仅供研究教育，非投资建议。">
     <meta name="theme-color" content="#F7F1E7" media="(prefers-color-scheme: light)">
-    <meta name="theme-color" content="#171512" media="(prefers-color-scheme: dark)">
+    <!-- 夜间模式暂时下线：页面固定白天，浏览器栏也统一浅色，避免"暗栏浅页"割裂。恢复夜间时改回 #171512 -->
+    <meta name="theme-color" content="#F7F1E7" media="(prefers-color-scheme: dark)">
     <link rel="icon" href="/icon.svg" type="image/svg+xml">
     <link rel="apple-touch-icon" href="/icon.svg">
     <link rel="manifest" href="/manifest.json">
@@ -132,19 +133,24 @@
            这段内联脚本必须在 <style> 之后、body 渲染之前同步执行，避免"先亮后暗"的闪烁。 */
         window.LBSTheme = (function(){
           const KEY = 'sq_theme';
+          // 夜间模式暂时下线（配色待重做）：ENABLED=false 时全站固定白天模式，
+          // 切换按钮隐藏、系统深色偏好也不跟随。所有夜间代码保留，改回 true 即恢复。
+          const ENABLED = false;
           const root = document.documentElement;
           const mq = window.matchMedia ? matchMedia('(prefers-color-scheme: dark)') : null;
           const systemAware = !!(mq && mq.media && mq.media.indexOf('prefers-color-scheme') !== -1);
           function timeIsNight(){ const h = new Date().getHours(); return h >= 19 || h < 7; }
           function apply(){
+            const btn = document.getElementById('themeBtn');
+            if (!ENABLED) { root.setAttribute('data-theme', 'light'); if (btn) btn.style.display = 'none'; return; }
             const stored = localStorage.getItem(KEY); // 'light' | 'dark' | null(=auto)
             if (stored === 'light' || stored === 'dark') root.setAttribute('data-theme', stored);
             else if (systemAware) root.removeAttribute('data-theme'); // 交给 CSS 的 prefers-color-scheme
             else root.setAttribute('data-theme', timeIsNight() ? 'dark' : 'light'); // 老浏览器兜底
-            const btn = document.getElementById('themeBtn');
             if (btn) btn.textContent = stored || 'auto';
           }
           function cycle(){
+            if (!ENABLED) return;
             const stored = localStorage.getItem(KEY);
             const next = stored === null ? 'dark' : stored === 'dark' ? 'light' : null;
             if (next === null) localStorage.removeItem(KEY); else localStorage.setItem(KEY, next);
@@ -174,8 +180,8 @@
             <div class="text-right text-sm" id="portfolioSummary"></div>
             <button onclick="toggleLang()" id="langBtn" class="text-[11px] px-3 py-1.5 rounded-full"
                     style="font-family:var(--font-mono);border:1px solid var(--line);color:var(--dim)">EN</button>
-            <button onclick="openLogin()" id="accountBtn" class="text-[11px] px-3 py-1.5 rounded-full"
-                    style="font-family:var(--font-mono);border:1px solid var(--line);color:var(--dim)">sign in</button>
+            <button onclick="openLogin()" id="accountBtn" data-i18n="signIn" class="text-[11px] px-3 py-1.5 rounded-full"
+                    style="font-family:var(--font-mono);border:1px solid var(--line);color:var(--dim)">登录</button>
         </div>
     </div>
 
@@ -280,6 +286,7 @@
                     <option value="HKD">HKD</option>
                 </select>
                 <select id="planMonths" class="px-3 py-3 rounded-2xl">
+                    <option value="1" data-i18n="planM1">1 个月</option>
                     <option value="3" data-i18n="planM3">3 个月</option>
                     <option value="12" data-i18n="planM12">1 年</option>
                     <option value="36" selected data-i18n="planM36">3 年</option>
@@ -361,7 +368,7 @@
                     <button type="button" id="afSideBuy" onclick="setAfSide('buy')" class="af-side px-5 py-2 rounded-xl text-sm active" data-i18n="afBuy">买入</button>
                     <button type="button" id="afSideSell" onclick="setAfSide('sell')" class="af-side px-5 py-2 rounded-xl text-sm" data-i18n="afSell">卖出</button>
                 </div>
-                <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
+                <div class="grid grid-cols-1 md:grid-cols-5 gap-3">
                     <div>
                         <div class="text-[10px] text-[#8A8578] mb-1" data-i18n="afStock">股票名字或代码</div>
                         <input id="afStock" class="w-full px-4 py-3 rounded-xl text-sm" placeholder="茅台 / NVDA / SHOP.TO / BTC"
@@ -372,8 +379,17 @@
                         <input id="afDate" type="date" class="w-full px-4 py-3 rounded-xl text-sm">
                     </div>
                     <div>
-                        <div class="text-[10px] text-[#8A8578] mb-1" data-i18n="afPrice2">成交价（每股，按标的本币）</div>
+                        <div class="text-[10px] text-[#8A8578] mb-1" data-i18n="afPrice2">成交价（每股）</div>
                         <input id="afPrice" type="number" step="any" class="w-full px-4 py-3 rounded-xl text-sm" placeholder="1250.5">
+                    </div>
+                    <div>
+                        <div class="text-[10px] text-[#8A8578] mb-1" data-i18n="afCur2">成交货币（必选）</div>
+                        <select id="afCur" class="w-full px-4 py-3 rounded-xl text-sm">
+                            <option value="" data-i18n="afCurPick">选币种…</option>
+                            <option value="CNY">CNY ¥</option>
+                            <option value="USD">USD $</option>
+                            <option value="CAD">CAD C$</option>
+                        </select>
                     </div>
                     <div>
                         <div class="text-[10px] text-[#8A8578] mb-1" data-i18n="afQty2">数量（股/个）</div>
@@ -381,7 +397,7 @@
                     </div>
                 </div>
                 <div class="text-[10px] text-[#8A8578] mt-2" data-i18n="afTip">
-                    💡 美股填美元价、加股填加元价、A股填人民币价（就是券商成交单上的价）。总表会自动按汇率换算成一个币种给你看。
+                    💡 你实际付款用的是什么币，就选什么币、填券商成交单上那个价。比如用加币在 Wealthsimple 买美股，就选 CAD、填加币成本价——盈亏按加币算，跟你账单对得上。总表再按汇率合成一个币种。
                 </div>
                 <div class="flex gap-3 mt-4 items-center flex-wrap">
                     <button onclick="submitAddForm()" id="afBtn" class="px-6 py-3 btn-red text-sm" data-i18n="afSubmit">确认添加</button>
@@ -499,7 +515,7 @@ const I18N = {
     planSub: "还没想好买什么？说说你的预算和时间，帮你想清楚该用什么心态、别踩什么坑——不推荐任何具体股票。",
     planAmtPh: "预算金额，如 2000",
     planMonthsPh: "打算放多久",
-    planM3: "3 个月", planM12: "1 年", planM36: "3 年", planM60: "5 年+",
+    planM1: "1 个月", planM3: "3 个月", planM12: "1 年", planM36: "3 年", planM60: "5 年+",
     planBtn: "帮我规划",
     planExtraPh: "（可选）补充一句，比如：我在加拿大、只想买美股",
     // 体检
@@ -531,13 +547,15 @@ const I18N = {
     bannerText: "登录后可保存你的持仓和想买清单，多设备自动同步。查股、AI 报告、预算规划无需登录。",
     bannerBtn: "登录 / 注册",
     gateBody: (w) => `「${w}」要把你的记录存到云端、多设备同步，所以需要先登录。登录只用邮箱/苹果/微信，几秒钟。`,
-    afDate2: "日期", afPrice2: "成交价（每股，按标的本币）", afQty2: "数量（股/个）",
-    afTip: "💡 美股填美元价、加股填加元价、A股填人民币价（券商成交单上的价）。总表会自动按汇率换算成一个币种。",
+    afDate2: "日期", afPrice2: "成交价（每股）", afQty2: "数量（股/个）",
+    afCur2: "成交货币（必选）", afCurPick: "选币种…", afNoCur: "先选成交价用的是什么货币",
+    afTip: "💡 你实际付款用的是什么币，就选什么币、填券商成交单上那个价。比如用加币在 Wealthsimple 买美股，就选 CAD、填加币成本价——盈亏按加币算，跟你账单对得上。总表再按汇率合成一个币种。",
     txnBuyOk: (n,p,q) => `已记录买入 ${n}：${p} × ${q}`,
     txnSellOk: (n,p,q) => `已记录卖出 ${n}：${p} × ${q}`,
     pfInvested: "投入成本", pfValue: "当前市值", pfUnreal: "未实现盈亏", pfRealized: "已实现盈亏",
     pfTotalPnl: "合计盈亏", pfWinRate: "平仓胜率", pfClosed: (n) => `${n} 笔平仓`,
-    pfFxWarn: "⚠️ 部分汇率暂时拿不到，总表按 1:1 估算，仅供参考",
+    pfFxWarn: "⚠️ 部分市场汇率暂时拿不到，未并入总额（不会拿错汇率硬凑）",
+    pfPaidIn: (c) => `${c} 记账`, pfFxMiss: "汇率暂缺",
     pfOversell: "卖超持仓", pfAddTxn: "再记一笔", pfRemove: "清除", pfCleared: "已清仓",
     pfColName: "名称", pfColQty: "持仓", pfColAvg: "成本均价", pfColLast: "现价",
     pfColUnreal: "未实现盈亏", pfColReal: "已实现",
@@ -575,7 +593,7 @@ const I18N = {
     watchOut: "要小心的地方", iBoughtIt: "✅ 我已经买了（帮我盯盈亏和止损）",
     wantIt: "🌟 想买，等便宜点（到价提醒我）", whatIsIt: "💡 这公司是干嘛的？让 AI 讲讲",
     proDetails: "📊 查看专业细节（价格位置 / 判据打分 / 离场规则）▾",
-    waterLine: (l, s) => `水位标尺（近 6 个月）· ${l} · ${s}`,
+    waterLine: (l, s, n) => `水位标尺（${n && n < 100 ? '近 ' + n + ' 个交易日' : '近 6 个月'}）· ${l} · ${s}`,
     offHigh: "距高点", m1: "1月", m3: "3月", sma: "SMA50", above: "上方 ✓", below: "下方 ✗",
     mcap: "市值", flagsTitle: "红旗扫描（命中即降级）",
     noFlags: "✓ 未命中自动红旗（定性红旗仍需自查：增发稀释/单一客户/蹭热点）",
@@ -635,7 +653,7 @@ const I18N = {
     planSub: "Not sure what to buy yet? Tell me your budget and time frame and I'll help you figure out the right mindset and traps to avoid — no specific stock recommended.",
     planAmtPh: "budget, e.g. 2000",
     planMonthsPh: "how long",
-    planM3: "3 months", planM12: "1 year", planM36: "3 years", planM60: "5 years+",
+    planM1: "1 month", planM3: "3 months", planM12: "1 year", planM36: "3 years", planM60: "5 years+",
     planBtn: "plan for me",
     planExtraPh: "(optional) add a note, e.g. I'm in Canada, only want US stocks",
     checkTitle: "check a stock: can I touch it right now?",
@@ -660,13 +678,15 @@ const I18N = {
     bannerText: "Sign in to save your holdings and wishlist and sync across devices. Checking stocks, AI reports and budget planning need no login.",
     bannerBtn: "sign in / sign up",
     gateBody: (w) => `"${w}" saves your records to the cloud and syncs across devices, so you need to sign in first. Takes a few seconds with email / Apple / WeChat.`,
-    afDate2: "date", afPrice2: "price (per share, native currency)", afQty2: "quantity",
-    afTip: "💡 Enter the trade price in the stock's own currency (USD for US, CAD for Canada, CNY for A-shares). The grand total converts everything at the latest FX.",
+    afDate2: "date", afPrice2: "price (per share)", afQty2: "quantity",
+    afCur2: "trade currency (required)", afCurPick: "pick…", afNoCur: "pick the currency you actually paid in",
+    afTip: "💡 Pick the currency you actually paid in and enter the price from your broker's confirmation. Buying US stocks with CAD on Wealthsimple? Pick CAD and enter the CAD cost — P&L is then in CAD, matching your statement. The grand total merges everything at the latest FX.",
     txnBuyOk: (n,p,q) => `logged buy ${n}: ${p} × ${q}`,
     txnSellOk: (n,p,q) => `logged sell ${n}: ${p} × ${q}`,
     pfInvested: "cost basis", pfValue: "market value", pfUnreal: "unrealized P&L", pfRealized: "realized P&L",
     pfTotalPnl: "total P&L", pfWinRate: "win rate", pfClosed: (n) => `${n} closed`,
-    pfFxWarn: "⚠️ Some FX rates unavailable; total estimated at 1:1 — for reference only",
+    pfFxWarn: "⚠️ Some markets' FX rates are unavailable and were left out of the total (no wrong-rate guessing)",
+    pfPaidIn: (c) => `in ${c}`, pfFxMiss: "fx n/a",
     pfOversell: "sold > held", pfAddTxn: "add txn", pfRemove: "remove", pfCleared: "closed out",
     pfColName: "name", pfColQty: "qty", pfColAvg: "avg cost", pfColLast: "price",
     pfColUnreal: "unrealized P&L", pfColReal: "realized",
@@ -705,7 +725,7 @@ const I18N = {
     watchOut: "what to watch out for", iBoughtIt: "✅ I already bought this (watch my P&L and stop)",
     wantIt: "🌟 want it, waiting for cheaper (ping me at my price)", whatIsIt: "💡 what does this company even do? ask the AI",
     proDetails: "📊 show the technical detail (price level / criteria / exit rules) ▾",
-    waterLine: (l, s) => `price level (6 months) · ${l} · ${s}`,
+    waterLine: (l, s, n) => `price level (${n && n < 100 ? 'last ' + n + ' trading days' : '6 months'}) · ${l} · ${s}`,
     offHigh: "off the high", m1: "1mo", m3: "3mo", sma: "SMA50", above: "above ✓", below: "below ✗",
     mcap: "mkt cap", flagsTitle: "red flags (any hit = downgrade)",
     noFlags: "✓ No automatic red flags. Still check the qualitative ones yourself: dilution, single-customer risk, bandwagon plays.",
@@ -762,8 +782,6 @@ function applyI18n() {
   document.querySelectorAll('[data-i18n-html]').forEach(el => { el.innerHTML = t(el.dataset.i18nHtml); });
   const lb = document.getElementById('langBtn');
   if (lb) lb.textContent = LANG === 'zh' ? 'EN' : '中文';
-  const auto = document.querySelector('#afCur option[value=""]');
-  if (auto) auto.textContent = t('afCurAuto');
   updateBadges();
   // 已渲染的动态内容跟着换语言
   if (lastCheck) doCheck();
@@ -903,46 +921,75 @@ async function submitLoginCode() {
 
 async function doLogout() {
   await fetch(ACC + '/api/auth/logout', { method: 'POST', credentials: 'include' }).catch(() => {});
-  USER = null; renderAccount(); updateBadges(); refreshActivePanel(); toast(t('logoutOk'));
+  USER = null;
+  // 清掉本机业务数据，否则下一个在同一浏览器登录的用户会把上一个用户的持仓合并进自己云端（串号/隐私泄漏）
+  localStorage.removeItem('sq_hold'); localStorage.removeItem('sq_wish'); localStorage.removeItem('sq_dirty');
+  renderAccount(); updateBadges(); refreshActivePanel(); toast(t('logoutOk'));
 }
 
-// 登录瞬间：本机有数据就问要不要合并，避免把老数据冲掉
+// 同步期间抑制自动推送，避免 setList 触发的中间态请求乱序把云端覆盖成半成品
+let SYNCING = false;
+const txnKey = (t) => [t.side, t.date, t.price, t.qty].join('|');
+
+// 登录瞬间：本地 + 云端合并，避免把任何一边的数据冲掉
 async function mergeOnLogin() {
-  const localHold = getList('sq_hold'), localWish = getList('sq_wish');
+  const localHold = getHold(), localWish = getList('sq_wish');   // getHold() 已归一化为台账形态
   const localCount = localHold.length + localWish.length;
   let cloud = { hold: [], wish: [] };
   try {
     const r = await fetch('/api/data');
     const d = await r.json();
-    if (d.ok) cloud = { hold: d.hold || [], wish: d.wish || [] };
+    if (d.ok) cloud = { hold: (d.hold || []).map(normHold), wish: d.wish || [] };
   } catch {}
 
-  // 静默合并：本地 + 云端取并集（同代码以本地为准，因为是这台设备刚编辑的）。
-  // 不弹窗——合并不丢数据，普通用户无需理解"合并还是覆盖"这种技术选择。
+  // 持仓：同 code 合并 txns 数组（按 side+date+price+qty 去重并集），而非整只覆盖——
+  // 否则两台设备买同一只股时，一方的交易流水会被整条丢弃，成本/盈亏算错。
+  const holdMap = {};
+  for (const h of [...cloud.hold, ...localHold]) {
+    let ex = holdMap[h.code];
+    if (!ex) { ex = holdMap[h.code] = { code: h.code, name: h.name, stop: h.stop || null, txns: [] }; }
+    const seen = new Set(ex.txns.map(txnKey));
+    for (const tx of (h.txns || [])) { const k = txnKey(tx); if (!seen.has(k)) { seen.add(k); ex.txns.push(tx); } }
+    if (h.name) ex.name = h.name;
+    if (h.stop != null) ex.stop = h.stop;
+  }
+  const hold = Object.values(holdMap);
   const byCode = (arr) => Object.fromEntries(arr.map(x => [x.code, x]));
-  const hold = Object.values({ ...byCode(cloud.hold), ...byCode(localHold) });
   const wish = Object.values({ ...byCode(cloud.wish), ...byCode(localWish) });
+
+  SYNCING = true;
   setList('sq_hold', hold); setList('sq_wish', wish);
-  if (localCount) await pushCloud();  // 只有本地确有数据才回推，省一次写
+  SYNCING = false;
+  if (localCount) await pushCloud();  // 本地确有数据才回推一次
   updateBadges();
   if (document.getElementById('panel-hold').classList.contains('active')) refreshHold();
 }
 
 async function pullCloud() {
+  // 有未推送成功的本地改动 → 先补推，别用云端旧数据覆盖本地（防离线编辑被刷掉）
+  if (localStorage.getItem('sq_dirty') === '1') { await pushCloud(); return; }
   try {
     const r = await fetch('/api/data');
     const d = await r.json();
-    if (d.ok) { setList('sq_hold', d.hold || []); setList('sq_wish', d.wish || []); updateBadges(); }
+    if (d.ok) {
+      SYNCING = true;
+      setList('sq_hold', d.hold || []); setList('sq_wish', d.wish || []);
+      SYNCING = false;
+      updateBadges();
+    }
   } catch {}
 }
 
-// 每次本地改动后推云端（未登录静默跳过）
+// 每次本地改动后推云端（未登录/同步中静默跳过）。失败标脏，下次加载重推且不被云端覆盖。
 async function pushCloud() {
-  if (!USER) return;
+  if (!USER || SYNCING) return;
   try {
-    await fetch('/api/data', { method: 'PUT', headers: {'Content-Type':'application/json'},
+    const r = await fetch('/api/data', { method: 'PUT', credentials: 'include',
+      headers: {'Content-Type':'application/json'},
       body: JSON.stringify({ hold: getList('sq_hold'), wish: getList('sq_wish') }) });
-  } catch {}
+    if (!r.ok) throw new Error('http ' + r.status);
+    localStorage.removeItem('sq_dirty');
+  } catch { localStorage.setItem('sq_dirty', '1'); }
 }
 
 // 需要登录才能用的功能（要保存数据）：已经买了 / 想买什么
@@ -1240,7 +1287,7 @@ ${t('whatIsIt')}</button>
         <summary>${t('proDetails')}</summary>
         <div class="space-y-5">
         <div class="border border-[#E4DAC7] rounded-2xl p-5">
-            <div class="text-xs font-bold text-[#8A8578] mb-3">${t('waterLine', p.level, p.stage)}</div>
+            <div class="text-xs font-bold text-[#8A8578] mb-3">${t('waterLine', p.level, p.stage, p.win_days)}</div>
             <div class="relative h-3 bg-gradient-to-r from-[#3FB55B]/30 via-[#E4DAC7] to-[#E5484D]/40 rounded-full">
                 <div class="absolute -top-1 w-1.5 h-5 bg-[#17150F] rounded" style="left:${pos}%"></div>
             </div>
@@ -1334,13 +1381,13 @@ function normHold(x) {
 }
 function getHold() { return getList('sq_hold').map(normHold); }
 
-// 追加一笔交易；同 code 合并进一个台账
-function addTxn({code, name, side, date, price, qty}) {
+// 追加一笔交易；同 code 合并进一个台账。cur = 用户实付币种（CNY/USD/CAD），不传则后端按标的本币算
+function addTxn({code, name, side, date, price, qty, cur}) {
     const list = getHold();
     let h = list.find(x => x.code === code);
     if (!h) { h = { code, name, stop:null, txns:[] }; list.push(h); }
     if (name) h.name = name;
-    h.txns.push({ side, date: date || new Date().toLocaleDateString('sv'), price, qty: qty || 0 });
+    h.txns.push({ side, date: date || new Date().toLocaleDateString('sv'), price, qty: qty || 0, ...(cur ? { cur } : {}) });
     if (side === 'buy') h.stop = Math.round(price * 0.85 * 100) / 100; // 止损线 = 最近买入价 85%
     setList('sq_hold', list);
     updateBadges();
@@ -1359,8 +1406,10 @@ function addToHold() {
     if (entryStr === null) return;
     const entry = parseFloat(entryStr);
     if (!entry || entry <= 0) { toast(t('afBadPrice')); return; }
-    const qtyStr = prompt(`买了多少股？（可不填，直接确定跳过）`, '');
-    const qty = qtyStr ? parseFloat(qtyStr) : null;
+    const qtyStr = prompt(LANG === 'en' ? `How many shares/units of ${lastCheck.name}?` : `买了多少股 ${lastCheck.name}？`, '');
+    if (qtyStr === null) return;
+    const qty = parseFloat(qtyStr);
+    if (!qty || qty <= 0) { toast(t('afNeedQty')); return; }   // 数量必填：否则台账算不出成本/盈亏
     const stop = saveHolding({code: lastCheck.code, name: lastCheck.name, entry, qty, cur});
     toast(t('holdSaved', lastCheck.name, cur, entry, qty ? ' × ' + qty + t('shares') : '')
        + ` <span class="code-link ml-2" onclick="switchTab('hold', tabBtn('hold'))">${t('goLook')}</span>`);
@@ -1378,33 +1427,21 @@ function toggleAddForm() {
     document.getElementById('afMsg').textContent = '';
 }
 
-// 输完股票自动预选币种（A股→CNY / 加股→CAD / 其余→USD），用户可改成自己实付的币
-async function previewCur() {
-    const sel = document.getElementById('afCur');
-    if (!sel) return;
-    const stock = document.getElementById('afStock').value.trim();
-    if (!stock || sel.value) return;
-    try {
-        const r = await apiFetch(`/api/serenity/resolve?q=${encodeURIComponent(stock)}&lang=${LANG}`);
-        if (!r.ok) return;
-        const guess = r.cur === '¥' ? 'CNY' : r.cur === 'C$' ? 'CAD' : 'USD';
-        if (!sel.value) sel.value = guess;
-    } catch {}
-}
-
 let afSide = 'buy';
 function setAfSide(s) {
     afSide = s;
     document.getElementById('afSideBuy').classList.toggle('active', s === 'buy');
     document.getElementById('afSideSell').classList.toggle('active', s === 'sell');
 }
-// 用某只股预填表单（从台账行的"再记一笔"进）
-function addFormFor(code, name) {
+// 用某只股预填表单（从台账行的"再记一笔"进）。cur = 该持仓已有的记账币，预选上避免同一只股混币
+function addFormFor(code, name, cur) {
     const f = document.getElementById('addForm');
     f.classList.remove('hidden');
     document.getElementById('afDate').value = new Date().toLocaleDateString('sv');
     document.getElementById('afStock').value = name || code;
     document.getElementById('afStock').dataset.code = code;
+    const cs = document.getElementById('afCur');
+    if (cs) cs.value = ['CNY','USD','CAD'].includes(cur) ? cur : '';
     document.getElementById('afPrice').focus();
     document.getElementById('afMsg').textContent = '';
     f.scrollIntoView({behavior:'smooth', block:'center'});
@@ -1415,11 +1452,13 @@ async function submitAddForm() {
     const stock = stockEl.value.trim();
     const date = document.getElementById('afDate').value;
     const price = parseFloat(document.getElementById('afPrice').value);
+    const cur = document.getElementById('afCur').value;
     const qty = parseFloat(document.getElementById('afQty').value) || null;
     const msg = document.getElementById('afMsg');
     const btn = document.getElementById('afBtn');
     if (!stock) { msg.textContent = t('afNeed'); return; }
     if (!price || price <= 0) { msg.textContent = t('afBadPrice'); return; }
+    if (!cur) { msg.textContent = t('afNoCur'); return; }   // 币种必选：用户自己确认成交价是什么币，不猜
     if (!qty || qty <= 0) { msg.textContent = t('afNeedQty'); return; }
     btn.disabled = true; msg.textContent = t('afAdding');
     try {
@@ -1430,11 +1469,12 @@ async function submitAddForm() {
             if (!r.ok) { msg.textContent = t('afNotFound', stock); btn.disabled = false; return; }
             code = r.code; name = r.name; market = r.market;
         }
-        addTxn({ code, name, side: afSide, date, price, qty });
+        addTxn({ code, name, side: afSide, date, price, qty, cur });
         msg.textContent = '';
         toggleAddForm();
         stockEl.value = ''; stockEl.dataset.code = '';
         document.getElementById('afPrice').value = ''; document.getElementById('afQty').value = '';
+        document.getElementById('afCur').value = '';
         setAfSide('buy');
         toast(t(afSide === 'buy' ? 'txnBuyOk' : 'txnSellOk', name, price, qty));
         refreshHold();
@@ -1475,12 +1515,14 @@ function wishToHold(code) {
     const entryStr = prompt(`买入 ${item.name} 的成本价？`, item.target);
     if (entryStr === null) return;
     const entry = parseFloat(entryStr);
-    if (!entry || entry <= 0) return;
-    const qtyStr = prompt(`买了多少股？（可不填，直接确定跳过）`, '');
-    const qty = qtyStr ? parseFloat(qtyStr) : null;
+    if (!entry || entry <= 0) { toast(t('afBadPrice')); return; }
+    const qtyStr = prompt(LANG === 'en' ? `How many shares/units of ${item.name}?` : `买了多少股 ${item.name}？`, '');
+    if (qtyStr === null) return;
+    const qty = parseFloat(qtyStr);
+    if (!qty || qty <= 0) { toast(t('afNeedQty')); return; }   // 数量必填
     saveHolding({ code: item.code, name: item.name, entry, qty, cur: item.cur });
     removeFrom('sq_wish', code, refreshWish);
-    toast(`${item.name} 已从「想买」转入「已经买了」`);
+    toast(LANG === 'en' ? `${item.name} moved to "holdings"` : `${item.name} 已从「想买」转入「已经买了」`);
 }
 
 const fmtMoney = n => LANG === 'zh'
@@ -1548,23 +1590,25 @@ async function refreshHold() {
         let rowsHtml = '';
         for (const s of rows) {
             const held = s.hold_qty > 0;
+            const sc = s.cur;   // 每行按该股自己的记账币（实付币）显示，跟用户账单对得上
             const stopHit = held && s.last && s.avg_cost && s.last < s.avg_cost * 0.85;
             const nameCell = `<div class="font-bold">${s.name} <span class="font-mono text-[10px] text-[#8A8578]">${s.code}</span>
+                ${s.paid_cur?`<span class="ml-1 text-[10px] px-2 py-0.5 rounded-full bg-[#2f9e53]/12 text-[#2f9e53]">${t('pfPaidIn', s.paid_cur)}</span>`:''}
                 ${stopHit?`<span class="ml-1 text-[10px] px-2 py-0.5 rounded-full bg-[#E5484D]/10 text-[#E5484D]">${t('stopHit')}</span>`:''}
-                ${s.no_price?`<span class="ml-1 text-[10px] text-[#8A8578]">${t('noData')}</span>`:''}
+                ${s.no_price?`<span class="ml-1 text-[10px] text-[#8A8578]">${s.fx_missing?t('pfFxMiss'):t('noData')}</span>`:''}
                 ${s.oversell?`<span class="ml-1 text-[10px] text-[#E5484D]">${t('pfOversell')}</span>`:''}</div>
                 <div class="text-[10px] text-[#8A8578] mt-0.5">
-                  <span class="code-link" onclick="addFormFor('${s.code}','${(s.name||'').replace(/'/g,'')}')">${t('pfAddTxn')}</span> ·
+                  <span class="code-link" onclick="addFormFor('${s.code}','${(s.name||'').replace(/'/g,'')}','${s.currency}')">${t('pfAddTxn')}</span> ·
                   <span class="code-link" onclick="goCheck('${s.code}')">${t('recheck')}</span> ·
                   <span class="code-link" onclick="removeFrom('sq_hold','${s.code}',refreshHold)">${t('pfRemove')}</span>
                 </div>`;
             rowsHtml += `<tr>
                 <td>${nameCell}</td>
                 <td>${held ? s.hold_qty : '<span class="text-[#8A8578]">'+t('pfCleared')+'</span>'}</td>
-                <td>${held ? m.cur+s.avg_cost : '—'}</td>
-                <td>${s.last!=null ? m.cur+s.last : '—'}</td>
-                <td>${held && s.unrealized!=null ? signed(m.cur, s.unrealized)+(s.unreal_pct!==null?` <span class="text-[10px] ${s.unrealized>=0?'pos':'neg'}">${s.unrealized>=0?'+':''}${s.unreal_pct}%</span>`:'') : '—'}</td>
-                <td>${s.realized ? signed(m.cur, s.realized) : '—'}</td>
+                <td>${held ? sc+s.avg_cost : '—'}</td>
+                <td>${s.last!=null ? sc+s.last : '—'}</td>
+                <td>${held && s.unrealized!=null ? signed(sc, s.unrealized)+(s.unreal_pct!==null?` <span class="text-[10px] ${s.unrealized>=0?'pos':'neg'}">${s.unrealized>=0?'+':''}${s.unreal_pct}%</span>`:'') : '—'}</td>
+                <td>${s.realized ? signed(sc, s.realized) : '—'}</td>
             </tr>`;
         }
         tablesHtml += `

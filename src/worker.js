@@ -9,8 +9,12 @@ import { pack } from "./i18n.js";
 
 const CUR_SYM = { CNY: "¥", USD: "$", CAD: "C$" };
 const isAshare = (c) => /^\d{6}\.(SH|SZ)$/.test(c);
-// 常见币简写白名单（避免 UNI/LINK 等股票代码被币抢先识别）
-const CRYPTO_SHORTHAND = new Set(["BTC","ETH","SOL","DOGE","XRP","BNB","ADA","LTC","DOT","AVAX","SHIB","TRX","MATIC","PEPE"]);
+// 常见币简写白名单：命中即先按 <X>-USD 试加密货币。含与股票代码同名者（LINK/UNI/APT…），
+// 面向"币友"用户默认识别为币；MATIC 已改名 POL，两者都列。
+const CRYPTO_SHORTHAND = new Set([
+  "BTC","ETH","SOL","DOGE","XRP","BNB","ADA","LTC","DOT","AVAX","SHIB","TRX","PEPE",
+  "LINK","UNI","ATOM","NEAR","FIL","APT","ARB","OP","SUI","INJ","AAVE","MKR","POL","MATIC","TON","ICP","HBAR","RENDER",
+]);
 const json = (obj, status = 200) =>
   new Response(JSON.stringify(obj), {
     status,
@@ -128,17 +132,19 @@ async function fxSeries(from, to) {
   }
   return fxCache[key];
 }
-/** 取某日汇率：优先当日，没有就用该日之前最近的一天（休市/时差） */
+/** 取某日汇率：优先当日，没有就用该日之前最近的一天（休市/时差）。
+   拉取失败（map 为 null）或查询日早于整个序列 → 返回 null（绝不用 1 或方向错误的汇率兜底，
+   调用方据此报错/跳过，避免把「拉不到汇率」伪装成「汇率正好=1」）。 */
 function fxAt(map, date) {
-  if (!map) return 1;
+  if (!map) return null;
   const dates = Object.keys(map).sort();
   if (!dates.length) return null;
   let pick = null;
   for (const d of dates) { if (d <= date) pick = d; else break; }
-  return map[pick || dates[0]];
+  return pick ? map[pick] : null; // date 早于序列起点 → null（不硬套之后某天的汇率）
 }
 const fxLatest = (map) => {
-  if (!map) return 1;
+  if (!map) return null;
   const dates = Object.keys(map).sort();
   return dates.length ? map[dates[dates.length - 1]] : null;
 };
@@ -179,9 +185,10 @@ function computePA(closes, currency, S = pack("zh")) {
 
   let stage, stageKey;
   if (ret1m !== null && ret1m > 15 && rangePos > 80) { stageKey = "extended"; stage = S.stg_extended; }
+  // 近1月大跌先判 falling，别被"3月还涨"的 momentum 抢先吞掉（否则暴跌股被判"趋势健康"、绕过接飞刀保护）
+  else if (ret1m !== null && ret1m < -10) { stageKey = "falling"; stage = S.stg_falling; }
   else if (aboveSma50 && ret3m !== null && ret3m > 0 && rangePos > 50) { stageKey = "momentum"; stage = S.stg_momentum; }
   else if (rangePos < 30 && ret1m !== null && ret1m > -5) { stageKey = "basing"; stage = S.stg_basing; }
-  else if (ret1m !== null && ret1m < -10) { stageKey = "falling"; stage = S.stg_falling; }
   else { stageKey = "neutral"; stage = S.stg_neutral; }
 
   const r2 = (x) => Math.round(x * 100) / 100;
@@ -200,6 +207,7 @@ function computePA(closes, currency, S = pack("zh")) {
     level, levelKey,
     stage, stageKey,
     data_points: closes.length,
+    win_days: win.length, // 水位实际回看的交易日数（新股不足 120 时据此如实标注，不谎称"近6个月"）
   };
 }
 
@@ -247,12 +255,16 @@ function twoAxisVerdict(pa, basic, S = pack("zh")) {
   const highWater = pa.range_pos_6mo_pct >= 70;
   const pe = basic.pe;
 
-  if (pe == null && Object.keys(basic).length === 0) {
+  // 无估值数据（缺 pe 且缺 pb）→ 温和🟡，别把"缺数据"冒充"坏基本面"给 🔴
+  if (pe == null && basic.pb == null) {
     if (highWater) return { code: "yellow", label: S.v_high_noval, hint: S.v_high_noval_h };
     return { code: "yellow", label: S.v_cheap_noval, hint: S.v_cheap_noval_h };
   }
 
   const fundOk = pe != null && pe > 0 && pe < 40;
+  // 高水位 + 极低 PE：可能是周期股盈利见顶的价值陷阱（顶部盈利虚高→PE反低），不给"别 fade"的绿灯
+  if (highWater && pe != null && pe > 0 && pe < 15)
+    return { code: "yellow", label: S.v_cyc_top, hint: S.v_cyc_top_h };
   if (highWater && fundOk) return { code: "green", label: S.v_pricey_right, hint: S.v_pricey_right_h };
   if (highWater && !fundOk) return { code: "red", label: S.v_real_top, hint: S.v_real_top_h };
   if (!highWater && fundOk) return { code: "green", label: S.v_ambush, hint: S.v_ambush_h };
@@ -465,10 +477,13 @@ async function watchCheck(env, items, S = pack("zh")) {
       if (bench) {
         const bDates = Object.keys(bench).sort();
         const base = bDates.find((d) => d >= added);
-        if (base && bDates.length) {
+        // base 必须真正对齐建仓日：added 早于整个基准窗口 → 数据不足，不出 alpha
+        // （否则拿"多年个股收益"减"仅约1年大盘收益"，超额被严重夸大）
+        const aligned = base && bDates.length && added >= bDates[0];
+        const fxEntry = needFx ? fxAt(fx, added) : 1;
+        if (aligned && fxEntry) {
           idxPnl = (bench[bDates[bDates.length - 1]] / bench[base] - 1) * 100;
-          const entryQuote = needFx ? entry / fxAt(fx, added) : entry;
-          const pnlQuote = (pa.last / entryQuote - 1) * 100;
+          const pnlQuote = (pa.last / (entry / fxEntry) - 1) * 100;
           alpha = pnlQuote - idxPnl;
         }
       }
@@ -499,7 +514,8 @@ async function wishCheck(env, items, S = pack("zh")) {
     return {
       code, target, last: pa.last, cur: pa.cur || "¥",
       hit: pa.last <= target,
-      gap_pct: Math.round((pa.last / target - 1) * 1000) / 10,
+      // "还差 X% 跌到目标" = 还需下跌多少，分母用现价：(1 - 目标/现价)
+      gap_pct: Math.round((1 - target / pa.last) * 1000) / 10,
       level: pa.level, stage: pa.stage, ret_1m_pct: pa.ret_1m_pct,
     };
   }));
@@ -520,79 +536,121 @@ async function portfolio(env, body, S = pack("zh")) {
   const base = ["CNY", "USD", "CAD", "HKD"].includes(body?.base) ? body.base : "CNY";
   if (!items.length) return { stocks: [], markets: [], total: null, base, checked_at: nowStr() };
 
-  // 每只股：拉现价 + 按流水算盈亏
+  // 每只股：拉现价 + 按流水算盈亏。
+  // 记账币（acctCur）= 用户在每笔成交里手动选的「实付币种」；全笔一致就用它（跟券商账单对得上），
+  // 混填或旧数据无币种则退回标的本币。所有成本/盈亏都在记账币里算，现价从本币按今日汇率折进记账币，
+  // 保证同一次减法里币种一致（绝不拿本币现价减外币成本）。
   const stocks = await Promise.all(items.map(async (it) => {
     const code = String(it.code || "").toUpperCase();
     const market = MARKET_OF(code);
+    const natCur = CUR_OF_MARKET[market]; // 标的本币（现价所用币种）
     const txns = (Array.isArray(it.txns) ? it.txns : [])
       .filter((t) => t && (t.side === "buy" || t.side === "sell") && t.price > 0 && t.qty > 0)
       .sort((a, b) => (String(a.date) < String(b.date) ? -1 : 1));
-    // 移动平均法
+    const curs = new Set(txns.map((t) => t.cur || natCur));
+    const acctCur = curs.size === 1 ? [...curs][0] : natCur;
+    // 把一笔成交价折进记账币：同币直接用；极少见的混币按成交日汇率折（取不到退今日、再退原值）
+    const toAcct = async (t) => {
+      const c = t.cur || natCur;
+      if (c === acctCur) return t.price;
+      const s = await fxSeries(c, acctCur);
+      // 汇率序列的日期键是 YYYYMMDD，前端成交日是 YYYY-MM-DD，去掉横杠再比
+      const r = fxAt(s, String(t.date).replace(/-/g, "")) ?? fxLatest(s);
+      return r ? t.price * r : t.price;
+    };
+    // 移动平均法。战绩按"一轮完整平仓（持仓从>0 回到0）"计一次，用整轮累计盈亏判胜负，
+    // 避免把一个仓位的分批卖出记成多次战绩、虚增胜率场次。
     let held = 0, avg = 0, realized = 0, bought = 0, sold = 0, buyCost = 0;
-    let closedWins = 0, closedTrades = 0, oversell = false;
+    let closedWins = 0, closedTrades = 0, oversell = false, roundPnl = 0;
     for (const t of txns) {
+      const price = await toAcct(t);
       if (t.side === "buy") {
         const nq = held + t.qty;
-        avg = nq > 0 ? (held * avg + t.qty * t.price) / nq : 0;
-        held = nq; bought += t.qty; buyCost += t.qty * t.price;
+        avg = nq > 0 ? (held * avg + t.qty * price) / nq : 0;
+        held = nq; bought += t.qty; buyCost += t.qty * price;
       } else {
         const sq = Math.min(t.qty, held);
         if (t.qty > held + 1e-9) oversell = true;
         if (sq > 0) {
-          const pnl = sq * (t.price - avg);
-          realized += pnl; held -= sq; sold += sq;
-          closedTrades++; if (pnl > 0) closedWins++;
+          const pnl = sq * (price - avg);
+          realized += pnl; roundPnl += pnl; held -= sq; sold += sq;
+          if (held <= 1e-9) { closedTrades++; if (roundPnl > 0) closedWins++; roundPnl = 0; }
         }
       }
     }
     const pa = await priceAnalysis(env, code, S);
-    const last = pa ? pa.last : null;
-    const cur = pa ? pa.cur : (CUR_SYM[CUR_OF_MARKET[market]] || "$");
+    const lastNat = pa ? pa.last : null; // 现价（本币）
+    // 现价折进记账币：本币==记账币则 1:1；否则用今日汇率。折不到就当「暂无价」（市值按成本占位，不造假盈亏）
+    let fxNA = 1, fxMiss = false;
+    if (acctCur !== natCur) {
+      fxNA = fxLatest(await fxSeries(natCur, acctCur));
+      if (fxNA == null) fxMiss = true;
+    }
+    const last = lastNat != null && fxNA != null ? lastNat * fxNA : null;
     const costBasis = held * avg;
     const value = last != null ? held * last : null;
     const unrealized = value != null ? value - costBasis : null;
     const r2 = (x) => (x == null ? null : Math.round(x * 100) / 100);
     return {
-      code, name: it.name || code, market, cur,
-      currency: CUR_OF_MARKET[market],
-      hold_qty: r2(held), avg_cost: r2(avg), last,
+      code, name: it.name || code, market,
+      currency: acctCur, cur: CUR_SYM[acctCur] || acctCur,
+      native_currency: natCur, paid_cur: acctCur !== natCur ? acctCur : null,
+      hold_qty: r2(held), avg_cost: r2(avg), last: r2(last),
       bought_qty: r2(bought), sold_qty: r2(sold),
       cost_basis: r2(costBasis), value: r2(value),
       realized: r2(realized), unrealized: r2(unrealized),
       total_pnl: r2(realized + (unrealized || 0)),
       unreal_pct: costBasis > 0 && unrealized != null ? Math.round(unrealized / costBasis * 1000) / 10 : null,
-      no_price: last == null, oversell, txn_count: txns.length,
+      no_price: last == null, fx_missing: fxMiss, oversell, txn_count: txns.length,
       closed_wins: closedWins, closed_trades: closedTrades,
     };
   }));
 
-  // 分市场小计（本币）
-  const mkMap = {};
-  for (const s of stocks) {
-    const m = (mkMap[s.market] ||= {
-      market: s.market, currency: s.currency, cur: CUR_SYM[s.currency] || s.cur,
-      cost: 0, value: 0, realized: 0, unrealized: 0, closed_wins: 0, closed_trades: 0,
-    });
-    m.cost += s.cost_basis || 0;
-    m.value += s.value || 0;
-    m.realized += s.realized || 0;
-    m.unrealized += s.unrealized || 0;
-    m.closed_wins += s.closed_wins; m.closed_trades += s.closed_trades;
-  }
-  const markets = Object.values(mkMap).map((m) => {
+  // 分市场小计。表内币种（dispCur）= 该市场各股记账币若一致则用之（即用户实付币），否则退回本币。
+  // 无价股：成本照记（用户真投了钱）、市值按成本占位（浮盈亏记0），这样"已投入/市值"始终同源、
+  // 不会因某只暂无价而凭空显示假亏损；单独计数供前端提示。
+  const mkStocks = {};
+  for (const s of stocks) (mkStocks[s.market] ||= []).push(s);
+  const markets = [];
+  for (const [market, arr] of Object.entries(mkStocks)) {
+    const accts = new Set(arr.map((s) => s.currency));
+    const dispCur = accts.size === 1 ? [...accts][0] : CUR_OF_MARKET[market];
+    let cost = 0, value = 0, realized = 0, unrealized = 0;
+    let wins = 0, trades = 0, noPrice = 0, fxMiss = false;
+    for (const s of arr) {
+      // 同市场混币（极少见）时把该股按今日汇率折进 dispCur，绝不 1:1 硬加异币
+      let rate = 1;
+      if (s.currency !== dispCur) {
+        rate = fxLatest(await fxSeries(s.currency, dispCur));
+        if (rate == null) { fxMiss = true; rate = 1; }
+      }
+      const c = (s.cost_basis || 0) * rate;
+      cost += c;
+      if (s.no_price) { value += c; noPrice++; } // 无价 → 市值按成本占位、浮盈亏不计
+      else { value += (s.value || 0) * rate; unrealized += (s.unrealized || 0) * rate; }
+      realized += (s.realized || 0) * rate;
+      wins += s.closed_wins; trades += s.closed_trades;
+      if (s.fx_missing) fxMiss = true;
+    }
     const r2 = (x) => Math.round(x * 100) / 100;
-    return { ...m, cost: r2(m.cost), value: r2(m.value), realized: r2(m.realized),
-      unrealized: r2(m.unrealized), total_pnl: r2(m.realized + m.unrealized),
-      unreal_pct: m.cost > 0 ? Math.round(m.unrealized / m.cost * 1000) / 10 : null };
-  });
+    markets.push({
+      market, currency: dispCur, cur: CUR_SYM[dispCur] || dispCur,
+      cost: r2(cost), value: r2(value), realized: r2(realized), unrealized: r2(unrealized),
+      total_pnl: r2(realized + unrealized),
+      unreal_pct: cost > 0 ? Math.round(unrealized / cost * 1000) / 10 : null,
+      closed_wins: wins, closed_trades: trades, no_price: noPrice, fx_missing: fxMiss,
+    });
+  }
 
-  // 总表：各市场换算到 base
-  let tCost = 0, tValue = 0, tReal = 0, tUnreal = 0, tWins = 0, tTrades = 0, fxOk = true;
+  // 总表：各市场换算到 base。汇率拉不到的市场直接不并入总额并标 fx_ok=false，
+  // 绝不用 1:1 兜底把异币种相加（否则美元被当人民币，总账系统性失真且不报警）。
+  let tCost = 0, tValue = 0, tReal = 0, tUnreal = 0, tWins = 0, tTrades = 0, tNoPrice = 0, fxOk = true;
   for (const m of markets) {
+    tNoPrice += m.no_price || 0;
     let rate = 1;
     if (m.currency !== base) {
       rate = fxLatest(await fxSeries(m.currency, base));
-      if (!rate) { fxOk = false; rate = 1; }
+      if (rate == null) { fxOk = false; continue; } // 汇率不可用 → 跳过该市场，不并入
     }
     tCost += m.cost * rate; tValue += m.value * rate;
     tReal += m.realized * rate; tUnreal += m.unrealized * rate;
@@ -600,7 +658,7 @@ async function portfolio(env, body, S = pack("zh")) {
   }
   const r2 = (x) => Math.round(x * 100) / 100;
   const total = {
-    base, cur: CUR_SYM[base] || base, fx_ok: fxOk,
+    base, cur: CUR_SYM[base] || base, fx_ok: fxOk, no_price: tNoPrice,
     cost: r2(tCost), value: r2(tValue), realized: r2(tReal), unrealized: r2(tUnreal),
     total_pnl: r2(tReal + tUnreal),
     unreal_pct: tCost > 0 ? Math.round(tUnreal / tCost * 1000) / 10 : null,
