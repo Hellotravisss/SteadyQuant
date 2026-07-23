@@ -594,16 +594,17 @@ const I18N = {
     wantIt: "🌟 想买，等便宜点（到价提醒我）", whatIsIt: "💡 这公司是干嘛的？让 AI 讲讲",
     proDetails: "📊 查看专业细节（价格位置 / 判据打分 / 离场规则）▾",
     waterLine: (l, s, n) => `水位标尺（${n && n < 100 ? '近 ' + n + ' 个交易日' : '近 6 个月'}）· ${l} · ${s}`,
-    volTitle: "波动现实检查（按它自己的历史波动算）",
     volSub: (v) => `年化波动率 ${v}%。下面是纯统计区间——不预测方向，只告诉你正常情况下它能晃多远：`,
     volW1: "1 周后", volM1: "1 个月后", volM3: "3 个月后",
     volNote: "深色带 = 约 68% 概率落在里面，浅色带 = 约 95%。区间越宽，越说明没人能算准点位——仓位和止损才是你能控制的。",
     atrStop: (pct, c, px) => `🎯 按它的脾气（真实波幅 ATR）：止损提醒线建议设在成本价下方 <b>${pct}%</b>。若现价买入，大约 <b>${c}${px}</b>。波动大的标的留宽些、波动小的收紧些，别用一个数套所有股。`,
-    krTitle: "Kronos 模型预测（实验）",
-    krSub: "开源 K 线基础模型 Kronos-small 采样多条未来路径，给出概率区间。免费 CPU 推理，一次约 1~2 分钟（服务休眠时更久）。",
-    krRun: "跑一次预测（21 个交易日）",
-    krRunning: "推理中… 免费 CPU 较慢，请稍等",
-    krHist: "近 60 日", krMedian: "路径中位", krBand: "p10~p90 区间",
+    secPrice: "现在贵不贵？",
+    secFuture: "未来一个月会怎样？",
+    krLoading: "AI 模型正在算方向倾向（几秒钟）…",
+    krRetry: "再试一次",
+    krDir_up: "模型倾向：偏涨", krDir_down: "模型倾向：偏跌", krDir_flat: "模型倾向：横着走",
+    krDirNote: "回测方向命中约七成，当参考不当答案",
+    krHist: "近 60 日", krMedian: "模型中位路径", krBand: "大概率落在",
     krDisc: (n) => `⚠️ ${n} 条采样路径的统计区间，是"模型觉得可能"而非"会发生"。模型不知道明天的新闻。仅供研究，别按它下单。`,
     krFail_not_configured: "预测服务未配置（KRONOS_API_URL）",
     krFail_no_data: "拿不到这只标的的日线数据",
@@ -742,16 +743,17 @@ const I18N = {
     wantIt: "🌟 want it, waiting for cheaper (ping me at my price)", whatIsIt: "💡 what does this company even do? ask the AI",
     proDetails: "📊 show the technical detail (price level / criteria / exit rules) ▾",
     waterLine: (l, s, n) => `price level (${n && n < 100 ? 'last ' + n + ' trading days' : '6 months'}) · ${l} · ${s}`,
-    volTitle: "volatility reality check (from its own history)",
     volSub: (v) => `annualized volatility ${v}%. Pure statistics — no direction call, just how far it normally swings:`,
     volW1: "1 week", volM1: "1 month", volM3: "3 months",
     volNote: "dark band ≈ 68% probability range, light band ≈ 95%. The wider the range, the clearer it is that nobody can call the exact price — position size and stops are what you actually control.",
     atrStop: (pct, c, px) => `🎯 By its own temperament (ATR): set your stop-loss alert about <b>${pct}%</b> below cost. Buying at the current price, that's roughly <b>${c}${px}</b>. Volatile assets need wider stops, calm ones tighter — one number doesn't fit all.`,
-    krTitle: "Kronos model forecast (experimental)",
-    krSub: "Open-source K-line foundation model Kronos-small samples multiple future paths into a probability band. Free CPU inference takes ~1–2 min (longer if the service is waking up).",
-    krRun: "run forecast (21 trading days)",
-    krRunning: "inferring… free CPU is slow, hang on",
-    krHist: "last 60d", krMedian: "median path", krBand: "p10–p90 band",
+    secPrice: "is it expensive right now?",
+    secFuture: "what might the next month look like?",
+    krLoading: "AI model is estimating direction (a few seconds)…",
+    krRetry: "retry",
+    krDir_up: "model lean: upward", krDir_down: "model lean: downward", krDir_flat: "model lean: sideways",
+    krDirNote: "~70% direction hit rate in backtest — a reference, not an answer",
+    krHist: "last 60d", krMedian: "model median path", krBand: "likely range",
     krDisc: (n) => `⚠️ A statistical band from ${n} sampled paths — what the model finds plausible, not what will happen. It doesn't know tomorrow's news. Research only; don't trade on it.`,
     krFail_not_configured: "forecast service not configured (KRONOS_API_URL)",
     krFail_no_data: "couldn't fetch daily data for this ticker",
@@ -1205,48 +1207,57 @@ async function doPlanAI(amount, currency, months) {
     } finally { btn.disabled = false; btn.style.opacity = 1; }
 }
 
-/* ── 波动现实检查卡：借 Kronos 概率路径的呈现思想，用该股自己的历史波动率算区间。
-   不猜方向（零漂移）——重点是让人看清"区间有多宽"，而不是给一个点位。 ── */
-function volCard(p) {
+/* ── 「未来一个月」合并卡：一张卡回答"接下来可能怎么走"。
+   三层信息，从可信到参考：
+   ① 统计区间（该股真实波动率算的 ±1σ/2σ，秒出、永远有）
+   ② Kronos 模型方向+扇形（自动后台跑，回来无缝叠加；只给方向倾向，不给点位）
+   ③ ATR 止损建议（你唯一能控制的东西，放最后压轴） ── */
+function futureCard(p, d) {
     const c = p.cur;
     const rows = [['w1', t('volW1')], ['m1', t('volM1')], ['m3', t('volM3')]];
-    // 用 3 个月 ±2σ 作为整条标尺的范围，三行区间画在同一比例上，宽窄一眼可比
     const full = p.bands.m3, fLo = full.lo2, fHi = full.hi2, span = fHi - fLo || 1;
     const px = (v) => Math.min(100, Math.max(0, (v - fLo) / span * 100));
     const rowsHtml = rows.map(([k, label]) => {
         const b = p.bands[k];
-        return `<div class="flex items-center gap-3 text-xs">
+        const hot = k === 'm1'; // 1 个月是主角（和 Kronos 预测同一时间跨度），加粗突出
+        return `<div class="flex items-center gap-3 text-xs ${hot?'font-bold':''}" style="${hot?'':'opacity:.75'}">
             <span class="w-14 shrink-0 text-[#8A8578]">${label}</span>
-            <div class="relative flex-1 h-4 rounded-full" style="background:var(--cloud)">
-                <div class="absolute h-4 rounded-full" style="left:${px(b.lo2)}%;width:${px(b.hi2)-px(b.lo2)}%;background:color-mix(in srgb, #E5484D 12%, transparent)"></div>
-                <div class="absolute h-4 rounded-full" style="left:${px(b.lo1)}%;width:${px(b.hi1)-px(b.lo1)}%;background:color-mix(in srgb, #E5484D 28%, transparent)"></div>
-                <div class="absolute top-[-2px] w-0.5 h-5" style="left:${px(p.last)}%;background:var(--ink)"></div>
+            <div class="relative flex-1 ${hot?'h-5':'h-3.5'} rounded-full" style="background:var(--cloud)">
+                <div class="absolute inset-y-0 rounded-full" style="left:${px(b.lo2)}%;width:${px(b.hi2)-px(b.lo2)}%;background:color-mix(in srgb, #E5484D 12%, transparent)"></div>
+                <div class="absolute inset-y-0 rounded-full" style="left:${px(b.lo1)}%;width:${px(b.hi1)-px(b.lo1)}%;background:color-mix(in srgb, #E5484D 28%, transparent)"></div>
+                <div class="absolute top-[-2px] bottom-[-2px] w-0.5" style="left:${px(p.last)}%;background:var(--ink)"></div>
             </div>
             <span class="w-40 shrink-0 text-right font-mono text-[10px]" style="color:var(--ink)">${c}${b.lo1} ~ ${c}${b.hi1}</span>
         </div>`;
     }).join('');
     return `
-        <div class="border border-[#E4DAC7] rounded-2xl p-5">
-            <div class="text-xs font-bold text-[#8A8578] mb-1">${t('volTitle')}</div>
+        <div class="border border-[#E4DAC7] rounded-2xl p-6" id="futureCard">
+            <div class="text-sm font-bold mb-1">${t('secFuture')}</div>
             <div class="text-[10px] text-[#8A8578] mb-3">${t('volSub', p.vol_annual_pct)}</div>
             <div class="space-y-2">${rowsHtml}</div>
-            <div class="text-[10px] text-[#8A8578] mt-3">${t('volNote')}</div>
-            ${p.stop_atr_pct ? `<div class="text-xs mt-3 pt-3" style="border-top:1px dashed var(--line)">
+            <div class="text-[10px] text-[#8A8578] mt-2">${t('volNote')}</div>
+            ${d && d.forecast_enabled ? `<div id="krResult" class="mt-4 pt-4" style="border-top:1px dashed var(--line)">
+                <div class="text-[10px] text-[#8A8578]">🔮 ${t('krLoading')}</div>
+            </div>` : ''}
+            ${p.stop_atr_pct ? `<div class="text-xs mt-4 pt-4" style="border-top:1px dashed var(--line)">
                 ${t('atrStop', p.stop_atr_pct, c, (Math.round(p.last * (1 - p.stop_atr_pct / 100) * 100) / 100))}
             </div>` : ''}
         </div>`;
 }
 
-/* ── Kronos 概率预测：调自托管推理服务，画"历史实线 + 未来 p10~p90 扇形"。
-   实验性功能，永远带免责声明，永远呈现为区间。 ── */
+/* ── Kronos 概率预测：查股后自动后台跑，回来把方向倾向+扇形叠进「未来一个月」卡。
+   实验性功能，永远带免责声明，只给方向倾向和区间，绝不给点位。 ── */
 async function runForecast(code) {
-    const btn = document.getElementById('krBtn');
     const box = document.getElementById('krResult');
-    if (!btn || !box) return;
-    btn.disabled = true; btn.textContent = t('krRunning');
+    if (!box) return;
+    box.innerHTML = `<div class="text-[10px] text-[#8A8578]">🔮 ${t('krLoading')}</div>`;
     try {
         const d = await apiFetch(`/api/serenity/forecast?code=${encodeURIComponent(code)}&lang=${LANG}`);
-        if (!d.ok) { box.innerHTML = `<div class="text-xs text-[#E5484D] mt-3">${t('krFail_' + (d.reason || 'timeout'))}</div>`; return; }
+        if (!d.ok) {
+            box.innerHTML = `<div class="text-[10px] text-[#8A8578]">${t('krFail_' + (d.reason || 'timeout'))}
+                <span class="code-link ml-1" onclick="runForecast('${code}')">${t('krRetry')}</span></div>`;
+            return;
+        }
         const hist = d.hist_closes, W = 640, H = 200, PAD = 6;
         const all = [...hist, ...d.p10, ...d.p90];
         const yMin = Math.min(...all), yMax = Math.max(...all), ySpan = yMax - yMin || 1;
@@ -1261,22 +1272,27 @@ async function runForecast(code) {
             + [...d.p10].reverse().map((v, i) => `L${X(h0 + d.p10.length - i).toFixed(1)},${Y(v).toFixed(1)}`).join('') + ' Z';
         const med = `M${X(h0).toFixed(1)},${Y(hist[h0]).toFixed(1)} ` + d.p50.map((v, i) => `L${X(h0 + 1 + i).toFixed(1)},${Y(v).toFixed(1)}`).join('');
         const lastP50 = d.p50[d.p50.length - 1], chg = Math.round((lastP50 / d.last - 1) * 1000) / 10;
+        // 方向倾向：中位路径终点 vs 现价，±1.5% 内算"横着走"
+        const dir = chg > 1.5 ? 'up' : chg < -1.5 ? 'down' : 'flat';
+        const dirIcon = { up: '↗', down: '↘', flat: '→' }[dir];
+        const dirColor = { up: '#2f9e53', down: '#E5484D', flat: '#8A8578' }[dir];
         box.innerHTML = `
-            <svg viewBox="0 0 ${W} ${H}" class="w-full mt-3" style="max-height:220px">
+            <div class="text-sm font-bold" style="color:${dirColor}">${dirIcon} ${t('krDir_' + dir)}
+                <span class="text-[10px] font-normal text-[#8A8578] ml-1">${t('krDirNote')}</span></div>
+            <svg viewBox="0 0 ${W} ${H}" class="w-full mt-2" style="max-height:200px">
                 <path d="${fan}" fill="#E5484D" opacity=".14"/>
                 <path d="${line(hist, 0)}" fill="none" stroke="var(--ink)" stroke-width="1.6"/>
                 <path d="${med}" fill="none" stroke="#E5484D" stroke-width="1.4" stroke-dasharray="4 3"/>
                 <line x1="${X(h0)}" y1="${PAD}" x2="${X(h0)}" y2="${H - PAD}" stroke="var(--line)" stroke-dasharray="2 3"/>
             </svg>
             <div class="flex flex-wrap gap-x-5 gap-y-1 text-[10px] text-[#8A8578] mt-1">
-                <span>━ ${t('krHist')}</span><span style="color:#E5484D">╌ ${t('krMedian')} ${d.cur}${lastP50} (${chg>=0?'+':''}${chg}%)</span>
+                <span>━ ${t('krHist')}</span><span style="color:#E5484D">╌ ${t('krMedian')} (${chg>=0?'+':''}${chg}%)</span>
                 <span>▒ ${t('krBand')} ${d.cur}${d.p10[d.p10.length-1]} ~ ${d.cur}${d.p90[d.p90.length-1]}</span>
             </div>
-            <div class="text-[10px] text-[#E5484D] mt-2">${t('krDisc', d.samples)}</div>`;
+            <div class="text-[10px] text-[#8A8578] mt-2">${t('krDisc', d.samples)}</div>`;
     } catch (e) {
-        box.innerHTML = `<div class="text-xs text-[#E5484D] mt-3">${t('failed', e.message)}</div>`;
-    } finally {
-        btn.disabled = false; btn.textContent = t('krRun');
+        box.innerHTML = `<div class="text-[10px] text-[#8A8578]">${t('failed', e.message)}
+            <span class="code-link ml-1" onclick="runForecast('${code}')">${t('krRetry')}</span></div>`;
     }
 }
 
@@ -1308,6 +1324,8 @@ async function doCheck() {
         if (d.error) { box.innerHTML = `<div class="text-[#E5484D] p-6">${d.error}</div>`; return; }
         lastCheck = d;
         box.innerHTML = renderCheck(d);
+        // Kronos 预测自动后台跑（配置了推理服务且有波动数据时），回来叠进「未来一个月」卡
+        if (d.forecast_enabled && d.price?.bands) runForecast(d.code);
     } catch (e) {
         box.innerHTML = `<div class="text-[#E5484D] p-6">${t('failed', e.message)}</div>`;
     }
@@ -1389,12 +1407,10 @@ ${t('whatIsIt')}</button>
             </div>
         </div>
 
-        <!-- 专业细节（默认折叠） -->
-        <details class="pro border border-[#E4DAC7] rounded-2xl p-5">
-        <summary>${t('proDetails')}</summary>
-        <div class="space-y-5">
-        <div class="border border-[#E4DAC7] rounded-2xl p-5">
-            <div class="text-xs font-bold text-[#8A8578] mb-3">${t('waterLine', p.level, p.stage, p.win_days)}</div>
+        <!-- 现在贵不贵？水位标尺（主视图，新手最易懂的一张图） -->
+        <div class="border border-[#E4DAC7] rounded-2xl p-6">
+            <div class="text-sm font-bold mb-1">${t('secPrice')}</div>
+            <div class="text-[10px] text-[#8A8578] mb-3">${t('waterLine', p.level, p.stage, p.win_days)}</div>
             <div class="relative h-3 bg-gradient-to-r from-[#3FB55B]/30 via-[#E4DAC7] to-[#E5484D]/40 rounded-full">
                 <div class="absolute -top-1 w-1.5 h-5 bg-[#17150F] rounded" style="left:${pos}%"></div>
             </div>
@@ -1403,7 +1419,7 @@ ${t('whatIsIt')}</button>
                 <span class="font-bold" style="color:var(--ink)">${p.cur}${p.last} · ${p.range_pos_6mo_pct}%</span>
                 <span>${p.cur}${p.high_6mo}</span>
             </div>
-            <div class="flex gap-6 mt-3 text-xs text-[#4A463C]">
+            <div class="flex flex-wrap gap-x-6 gap-y-1 mt-3 text-xs text-[#4A463C]">
                 <span>${t('offHigh')} <b>${p.pct_off_6mo_high}%</b></span>
                 <span>${t('m1')} <b class="${p.ret_1m_pct>=0?'text-[#2f9e53]':'text-[#E5484D]'}">${p.ret_1m_pct}%</b></span>
                 <span>${t('m3')} <b class="${p.ret_3m_pct>=0?'text-[#2f9e53]':'text-[#E5484D]'}">${p.ret_3m_pct}%</b></span>
@@ -1413,15 +1429,13 @@ ${t('whatIsIt')}</button>
             </div>
         </div>
 
-        ${p.bands ? volCard(p) : ''}
-        ${d.forecast_enabled ? `
-        <div class="border border-[#E4DAC7] rounded-2xl p-5" id="kronosCard">
-            <div class="text-xs font-bold text-[#8A8578] mb-1">${t('krTitle')}</div>
-            <div class="text-[10px] text-[#8A8578] mb-3">${t('krSub')}</div>
-            <button onclick="runForecast('${d.code}')" id="krBtn" class="px-5 py-2.5 rounded-xl text-xs" style="border:1px solid var(--line)">${t('krRun')}</button>
-            <div id="krResult"></div>
-        </div>` : ''}
+        <!-- 未来一个月？统计区间 + Kronos 自动预测 + 止损建议，三合一（主视图） -->
+        ${p.bands ? futureCard(p, d) : ''}
 
+        <!-- 专业细节（默认折叠）：红旗 / 检查清单 / 卖出纪律 -->
+        <details class="pro border border-[#E4DAC7] rounded-2xl p-5">
+        <summary>${t('proDetails')}</summary>
+        <div class="space-y-5 mt-4">
         <div class="grid md:grid-cols-2 gap-5">
             <div class="border border-[#E4DAC7] rounded-2xl p-5 space-y-2">
                 <div class="text-xs font-bold text-[#8A8578]">${t('flagsTitle')}</div>

@@ -44,16 +44,18 @@ class CustomKlineDataset(Dataset):
             df['month'] = df['timestamps'].dt.month
             feats = df[self.feature_list + self.time_feature_list].ffill().values.astype(np.float32)
 
-            # per-file time split: first train_ratio -> train, next val_ratio -> val, rest -> test
+            # per-file time split. Daily bars are short relative to window (573), so a strict
+            # ratio slice leaves val < window. Instead: train = first train_ratio of rows;
+            # val = the trailing (window + 60) rows, i.e. walk-forward — every val PREDICTION
+            # target lies in the untrained tail, while its lookback may overlap train (standard).
             n = len(feats)
             t_end = int(n * train_ratio)
-            v_end = int(n * (train_ratio + val_ratio))
             if data_type == 'train':
                 seg = feats[:t_end]
             elif data_type == 'val':
-                seg = feats[t_end:v_end]
+                seg = feats[-(self.window + 60):]
             else:
-                seg = feats[v_end:]
+                seg = feats[t_end:]
             if len(seg) < self.window:
                 continue
             fid = len(self.frames)
