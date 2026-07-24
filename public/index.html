@@ -600,6 +600,7 @@ const I18N = {
     planAmtPh: "预算金额，如 2000",
     planMonthsPh: "打算放多久",
     planM1: "1 个月", planM3: "3 个月", planM12: "1 年", planM36: "3 年", planM60: "5 年+",
+    planBadInput: "预算和时间填一下（比如 2000 加币、3 年）", planAiBtn: "让 AI 结合我的预算详细规划",
     planBtn: "帮我规划",
     planExtraPh: "（可选）补充一句，比如：我在加拿大、只想买美股",
     // 体检
@@ -735,7 +736,8 @@ const I18N = {
     chMarket: "钱押在哪几个市场？", chStock: "个股集中度（一只占半条命就该警惕）",
     chPnl: "谁在赚钱、谁在拖后腿（各自记账币）", chCurve: "组合 90 天走势：市值线 vs 成本线",
     chCurveLoading: "在按流水回放你的组合走势…", chCurveNone: "流水太短，攒几天再来看",
-    chCurveVal: "市值", chCurveCost: "投入成本", chToday: "今天",
+    chCurveVal: "市值", chCurveCost: "投入成本", chToday: "今天", chOthers: (n) => `其他 ${n} 只`,
+    krNeedLogin: "模型预测登录后可见（GPU 有配额，登录墙防盗刷）",
     stopReset: (a) => `已恢复自动止损线（按它的波动，当前 -${a}%）`,
     stopHitLong: "跌破防线，重审长线逻辑",
     evStopLong: (c, s2) => `已跌破防线：较成本 ${c}%（防线 -${s2}%，已按长线放宽）。这不是催你卖——是催你重新审视：当初拿两三年的理由还成立吗？成立就拿住，不成立才走。`,
@@ -821,6 +823,7 @@ const I18N = {
     planAmtPh: "budget, e.g. 2000",
     planMonthsPh: "how long",
     planM1: "1 month", planM3: "3 months", planM12: "1 year", planM36: "3 years", planM60: "5 years+",
+    planBadInput: "fill in budget and horizon (e.g. 2000 CAD, 3 years)", planAiBtn: "let AI plan in detail with my budget",
     planBtn: "plan for me",
     planExtraPh: "(optional) add a note, e.g. I'm in Canada, only want US stocks",
     checkTitle: "check a stock: can I touch it right now?",
@@ -953,7 +956,8 @@ const I18N = {
     chMarket: "where is your money parked?", chStock: "concentration (one stock = half your life? beware)",
     chPnl: "who's earning, who's dragging (each in its own currency)", chCurve: "90-day curve: value vs cost",
     chCurveLoading: "replaying your ledger…", chCurveNone: "ledger too short — come back in a few days",
-    chCurveVal: "value", chCurveCost: "cost", chToday: "today",
+    chCurveVal: "value", chCurveCost: "cost", chToday: "today", chOthers: (n) => `${n} others`,
+    krNeedLogin: "model forecast unlocks after sign-in (GPU quota is limited)",
     dbTitle: "⚔️ bull vs bear (two AIs argue)",
     dbSub: "A bull lawyer argues to buy, a bear lawyer (from a different AI vendor) tears it apart, then a judge names their real disagreements — which are exactly what you should verify. Uses recent headlines.",
     dbRun: "start the trial (~1 min)",
@@ -1194,13 +1198,12 @@ async function mergeOnLogin() {
   // 持仓：同 code 合并 txns 数组（按 side+date+price+qty 去重并集），而非整只覆盖——
   // 否则两台设备买同一只股时，一方的交易流水会被整条丢弃，成本/盈亏算错。
   const holdMap = {};
-  for (const h of [...cloud.hold, ...localHold]) {
+  for (const h of [...cloud.hold, ...localHold]) {   // 云在前本地在后 → 本地(较新)字段覆盖
     let ex = holdMap[h.code];
-    if (!ex) { ex = holdMap[h.code] = { code: h.code, name: h.name, stop: h.stop || null, txns: [] }; }
+    if (!ex) { ex = holdMap[h.code] = { ...h, stop: h.stop || null, txns: [] }; } // 展开保留 horizon/stopPct/未来字段
     const seen = new Set(ex.txns.map(txnKey));
     for (const tx of (h.txns || [])) { const k = txnKey(tx); if (!seen.has(k)) { seen.add(k); ex.txns.push(tx); } }
-    if (h.name) ex.name = h.name;
-    if (h.stop != null) ex.stop = h.stop;
+    for (const [k2, v2] of Object.entries(h)) if (k2 !== 'txns' && v2 != null) ex[k2] = v2;
   }
   const hold = Object.values(holdMap);
   const byCode = (arr) => Object.fromEntries(arr.map(x => [x.code, x]));
@@ -1235,7 +1238,7 @@ async function pushCloud() {
   try {
     const r = await fetch('/api/data', { method: 'PUT', credentials: 'include',
       headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({ hold: getList('sq_hold'), wish: getList('sq_wish') }) });
+      body: JSON.stringify({ hold: getList('sq_hold'), wish: getList('sq_wish'), ts: Date.now() }) });
     if (!r.ok) throw new Error('http ' + r.status);
     localStorage.removeItem('sq_dirty');
   } catch { localStorage.setItem('sq_dirty', '1'); }
@@ -1359,7 +1362,10 @@ async function buildToday() {
         }
         // 持有意图到期 → 复盘提醒（当初自己说的，系统只是替你记着）
         for (const h of hold) {
-            if (hzExpired(h)) events.push({lv:1, html:`🗓 <b>${h.name||h.code}</b> ${t('evHorizonDue', t('hz_' + h.horizon))}`, code:h.code});
+            // 只提醒仍持有的（净持仓>0）——已清仓的问"留还是走"是对空气喊话，与巡检邮件同口径
+            let heldQty = 0;
+            for (const tx of (h.txns || [])) heldQty += tx.side === 'buy' ? (tx.qty||0) : -(tx.qty||0);
+            if (heldQty > 0 && hzExpired(h)) events.push({lv:1, html:`🗓 <b>${h.name||h.code}</b> ${t('evHorizonDue', t('hz_' + h.horizon))}`, code:h.code});
         }
         // 心愿单：到价/接近
         if (wishL.length) {
@@ -1588,6 +1594,11 @@ async function runForecast(code) {
     box.innerHTML = loaderHTML('🔮 ' + t('krLoading')); mountLoaders(box);
     try {
         const d = await apiFetch(`/api/serenity/forecast?code=${encodeURIComponent(code)}&lang=${LANG}`);
+        if (d.login_required) {
+            box.innerHTML = `<div class="text-[10px] text-[#8A8578]">🔒 ${t('krNeedLogin')}
+                <span class="code-link ml-1" onclick="openLogin()">${t('signIn')}</span></div>`;
+            return;
+        }
         if (!d.ok) {
             box.innerHTML = `<div class="text-[10px] text-[#8A8578]">${t('krFail_' + (d.reason || 'timeout'))}
                 <span class="code-link ml-1" onclick="runForecast('${code}')">${t('krRetry')}</span></div>`;
@@ -1699,7 +1710,8 @@ async function runDebate(code) {
                 if (m.bear) { bear += m.bear; const el = document.getElementById('dbBear'); if (el) el.innerHTML = mdRender(bear); }
                 if (m.judge) { judge += m.judge; const el = document.getElementById('dbJudge'); if (el) el.innerHTML = mdRender(judge); }
                 if (m.bear_fallback) box.innerHTML += `<div class="text-[10px] text-[#8A8578]">${t('dbFallback')}</div>`;
-                if (m.error) box.innerHTML += `<div class="text-xs text-[#E5484D] mt-3">${m.error}</div>`;
+                if (m.error) { const le = box.querySelector('.ai-loader'); if (le) le.remove();
+                    box.innerHTML += `<div class="text-xs text-[#E5484D] mt-3">${m.error}${m.login_required?` <span class=\"code-link\" onclick=\"openLogin()\">${t('signIn')}</span>`:''}</div>`; }
                 if (m.done) box.innerHTML += `<div class="text-[10px] text-[#8A8578] mt-4">${t('dbDisc')}</div>`;
             }
         }
@@ -1939,13 +1951,15 @@ const HZ_MONTHS = { '1m': 1, '3m': 3, '1y': 12, '3y': 36 };
 const HZ_STOP_FACTOR = { '1m': 0.8, '3m': 1.0, '1y': 1.4, '3y': 1.8, 'hold': 2.2 };
 const hzStopFactor = h => (h && HZ_STOP_FACTOR[h.horizon]) || 1.0;
 const hzIsLong = h => !!(h && ['1y','3y','hold'].includes(h.horizon));
-function hzExpired(h) {   // 最近一次买入日期 + 意图月数 < 今天 → 到期该复盘
+function hzExpired(h) {   // 最近买入 + 意图月数 ≤ 今天，且只在到期后 0~6 天内提醒（不永久轰炸）
     if (!h || !h.horizon || !HZ_MONTHS[h.horizon]) return false;
     const buys = (h.txns || []).filter(t => t.side === 'buy' && t.date).map(t => t.date).sort();
     if (!buys.length) return false;
-    const d = new Date(buys[buys.length - 1]);
-    d.setMonth(d.getMonth() + HZ_MONTHS[h.horizon]);
-    return d < new Date();
+    const m2 = String(buys[buys.length - 1]).match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (!m2) return false;
+    const due = new Date(Date.UTC(+m2[1], +m2[2]-1 + HZ_MONTHS[h.horizon], +m2[3]));
+    const over = todayNum() - Math.floor(due.getTime() / 86400000);
+    return over >= 0 && over <= 6;
 }
 function editHorizon(ev, code) {
     ev.stopPropagation();
@@ -1974,10 +1988,17 @@ function editHorizon(ev, code) {
 // 长线仓位三档：inplan(计划内不打扰) / checkup(季度例行体检) / disaster(灾难线才报警)
 const DISASTER_MULT = 1.6, DISASTER_CAP = 60;
 function longDisasterPct(stopEff) { return Math.min(DISASTER_CAP, Math.round(stopEff * DISASTER_MULT * 10) / 10); }
+function dayNum(str) {   // 'YYYY-MM-DD' → UTC 日序数（避开本地时区 ±1 天坑）
+    const m2 = String(str).match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (!m2) return null;
+    return Math.floor(Date.UTC(+m2[1], +m2[2]-1, +m2[3]) / 86400000);
+}
+function todayNum() { const n = new Date(); return Math.floor(Date.UTC(n.getFullYear(), n.getMonth(), n.getDate()) / 86400000); }
 function daysSinceLastBuy(h) {
     const buys = (h?.txns || []).filter(t => t.side === 'buy' && t.date).map(t => t.date).sort();
     if (!buys.length) return null;
-    return Math.floor((Date.now() - new Date(buys[buys.length - 1]).getTime()) / 86400000);
+    const d0 = dayNum(buys[buys.length - 1]);
+    return d0 == null ? null : Math.max(0, todayNum() - d0);
 }
 function isQuarterCheckup(h) {   // 持有每满 91 天的 0~2 天窗口内提醒一次
     const d = daysSinceLastBuy(h);
@@ -2405,11 +2426,15 @@ function drawPortfolioCharts(d) {
     const el1 = document.getElementById('chMarket');
     if (el1) el1.innerHTML = donutSVG(mkParts) || `<div class="text-[10px] text-[#8A8578]">—</div>`;
     // 个股：市值 × 该市场→base 的近似权重
-    const stParts = held.map(s => {
+    const stAll = held.map(s => {
         const m = d.markets.find(x => x.market === s.market);
         const fx = mFx(d, m);
         return fx ? { label: `${s.name}`, value: (s.value||0) * fx } : null;
-    }).filter(Boolean).sort((a,b)=>b.value-a.value).slice(0,8);
+    }).filter(Boolean).sort((a,b)=>b.value-a.value);
+    // >8 只时聚合成"其他 N 只"——占比必须是全组合口径，截断会虚高集中度
+    const stParts = stAll.length > 8
+        ? [...stAll.slice(0, 7), { label: t('chOthers', stAll.length - 7), value: stAll.slice(7).reduce((a,x)=>a+x.value,0) }]
+        : stAll;
     const el2 = document.getElementById('chStock');
     if (el2) el2.innerHTML = donutSVG(stParts) || `<div class="text-[10px] text-[#8A8578]">—</div>`;
     // 盈亏条（各自记账币，标币种，不跨币加总——每根条自己说自己的话）
@@ -2675,13 +2700,13 @@ async function doAnalyze() {
                     renderChain(raw);   // 终稿完成：画供应链图谱
                     verifyTickers(raw); // 并对代码做真实行情对账（最后一道保险）
                 }
-                if (msg.error) box.innerHTML += `<div class="text-[#E5484D] mt-4">${msg.error}</div>`;
+                if (msg.error) box.innerHTML += `<div class="text-[#E5484D] mt-4">${msg.error}${msg.login_required?` <span class=\"code-link\" onclick=\"openLogin()\">${t('signIn')}</span>`:''}</div>`;
             }
         }
     } catch (e) {
         box.innerHTML = `<div class="text-[#E5484D]">生成失败：${e.message}（Vercel 免费版有函数时长限制，报告太长可能被截断）</div>`;
     } finally {
-        btn.disabled = false; btn.textContent = '生成报告';
+        btn.disabled = false; btn.textContent = t('aiBtn');
     }
 }
 

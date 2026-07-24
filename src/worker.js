@@ -132,16 +132,20 @@ const fxCache = {};
 async function fxSeries(from, to) {
   if (from === to) return null;
   const key = `${from}${to}`;
-  if (!(key in fxCache)) {
-    fxCache[key] = (async () => {
+  // TTL：成功缓存4小时（汇率会动），失败只缓2分钟（临时故障别永久钉死成null）
+  const hit = fxCache[key];
+  if (hit && Date.now() - hit.t < (hit.failed ? 120_000 : 14_400_000)) return hit.p;
+  {
+    const pr = (async () => {
       const y = await yahooChart(`${key}=X`);
-      if (!y?.closes?.length) return null;
+      if (!y?.closes?.length) { fxCache[key] = { t: Date.now(), failed: true, p: Promise.resolve(null) }; return null; }
       const map = {};
       y.dates.forEach((d, i) => (map[d] = y.closes[i]));
       return map;
     })();
+    fxCache[key] = { t: Date.now(), failed: false, p: pr };
+    return pr;
   }
-  return fxCache[key];
 }
 /** 取某日汇率：优先当日，没有就用该日之前最近的一天（休市/时差）。
    拉取失败（map 为 null）或查询日早于整个序列 → 返回 null（绝不用 1 或方向错误的汇率兜底，
@@ -581,7 +585,7 @@ const MARKET_OF = (code) =>
 const CUR_OF_MARKET = { "A股": "CNY", "美股": "USD", "加拿大": "CAD", "港股": "HKD", "加密货币": "USD" };
 
 async function portfolio(env, body, S = pack("zh")) {
-  const items = Array.isArray(body?.items) ? body.items : [];
+  const items = (Array.isArray(body?.items) ? body.items : []).slice(0, 25); // 上限防子请求爆炸/放大滥用
   const base = ["CNY", "USD", "CAD", "HKD"].includes(body?.base) ? body.base : "CNY";
   if (!items.length) return { stocks: [], markets: [], total: null, base, checked_at: nowStr() };
 
@@ -599,13 +603,15 @@ async function portfolio(env, body, S = pack("zh")) {
     const curs = new Set(txns.map((t) => t.cur || natCur));
     const acctCur = curs.size === 1 ? [...curs][0] : natCur;
     // 把一笔成交价折进记账币：同币直接用；极少见的混币按成交日汇率折（取不到退今日、再退原值）
+    let txnFxMiss = false; // 混币成交折算失败标记 → 汇入 fx_missing，前端亮"汇率暂缺"
     const toAcct = async (t) => {
       const c = t.cur || natCur;
       if (c === acctCur) return t.price;
       const s = await fxSeries(c, acctCur);
       // 汇率序列的日期键是 YYYYMMDD，前端成交日是 YYYY-MM-DD，去掉横杠再比
       const r = fxAt(s, String(t.date).replace(/-/g, "")) ?? fxLatest(s);
-      return r ? t.price * r : t.price;
+      if (r == null) { txnFxMiss = true; return t.price; } // 仍用原值兜底但明确报警，不再无声
+      return t.price * r;
     };
     // 移动平均法。战绩按"一轮完整平仓（持仓从>0 回到0）"计一次，用整轮累计盈亏判胜负，
     // 避免把一个仓位的分批卖出记成多次战绩、虚增胜率场次。
@@ -652,7 +658,7 @@ async function portfolio(env, body, S = pack("zh")) {
       unreal_pct: costBasis > 0 && unrealized != null ? Math.round(unrealized / costBasis * 1000) / 10 : null,
       // 止损提醒距离：按该股自己的波动定（2.5×ATR，钳 8~25%），拿不到 ATR 退回一刀切 15%
       stop_pct: pa?.stop_atr_pct ?? 15,
-      no_price: last == null, fx_missing: fxMiss, oversell, txn_count: txns.length,
+      no_price: last == null, fx_missing: fxMiss || txnFxMiss, oversell, txn_count: txns.length,
       closed_wins: closedWins, closed_trades: closedTrades,
     };
   }));
@@ -871,7 +877,7 @@ async function stockNews(env, code, count = 8) {
    成本线 = Σ 移动平均成本 × 持有量（记账币→base 同样按当日汇率）。
    拉不到价/汇率的股当天跳过（两条线同口径跳过，不做假账）。 ── */
 async function portfolioHistory(env, body, S = pack("zh")) {
-  const items = (Array.isArray(body?.items) ? body.items : []).slice(0, 30);
+  const items = (Array.isArray(body?.items) ? body.items : []).slice(0, 20);
   const base = ["CNY", "USD", "CAD", "HKD"].includes(body?.base) ? body.base : "CNY";
   if (!items.length) return { dates: [], value: [], cost: [], base };
 
@@ -894,10 +900,22 @@ async function portfolioHistory(env, body, S = pack("zh")) {
     stocks.push({ code, txns, natCur, acctCur, priceMap, dates: s.dates.map((d) => d.replace(/-/g, "")) });
     if (natCur !== base) fxNeed.add(natCur);
     if (acctCur !== base) fxNeed.add(acctCur);
+    for (const t of txns) { const c = t.cur || natCur; if (c !== acctCur) fxNeed.add(`${c}>${acctCur}`); } // 混币折算对
   }
   if (!stocks.length) return { dates: [], value: [], cost: [], base };
   const fxMaps = {};
-  for (const c of fxNeed) fxMaps[c] = await fxSeries(c, base);
+  for (const c of fxNeed) {
+    if (c.includes(">")) { const [a, b] = c.split(">"); fxMaps[c] = await fxSeries(a, b); }
+    else fxMaps[c] = await fxSeries(c, base);
+  }
+  // 与 portfolio() 的 toAcct 同口径：成交价按成交日汇率折进记账币后再进移动平均
+  const txnToAcct = (t, natCur, acctCur, d) => {
+    const c = t.cur || natCur;
+    if (c === acctCur) return t.price;
+    const m2 = fxMaps[`${c}>${acctCur}`];
+    const r = fxAt(m2, d) ?? fxLatest(m2);
+    return r ? t.price * r : null; // 汇率缺失 → 该股当日跳过（宁缺毋假账）
+  };
   const toBase = (amt, cur, date) => {
     if (cur === base) return amt;
     const r = fxAt(fxMaps[cur], date) ?? fxLatest(fxMaps[cur]);
@@ -912,12 +930,17 @@ async function portfolioHistory(env, body, S = pack("zh")) {
     let v = 0, c = 0;
     for (const st of stocks) {
       // 回放 d 及之前的流水 → 持有量 + 移动平均成本（记账币）
-      let held = 0, avg = 0;
+      let held = 0, avg = 0, fxBroken = false;
       for (const t of st.txns) {
-        if (String(t.date).replace(/-/g, "") > d) break;
-        if (t.side === "buy") { const nq = held + t.qty; avg = nq > 0 ? (held * avg + t.qty * t.price) / nq : 0; held = nq; }
-        else held = Math.max(0, held - t.qty);
+        const td = String(t.date).replace(/-/g, "");
+        if (td > d) break;
+        if (t.side === "buy") {
+          const px2 = txnToAcct(t, st.natCur, st.acctCur, td);
+          if (px2 == null) { fxBroken = true; break; }
+          const nq = held + t.qty; avg = nq > 0 ? (held * avg + t.qty * px2) / nq : 0; held = nq;
+        } else held = Math.max(0, held - t.qty);
       }
+      if (fxBroken) continue;
       if (held <= 0) continue;
       // 当日或之前最近收盘
       let px = st.priceMap[d];
@@ -1168,7 +1191,7 @@ const EN_DIRECTIVE = `
 
 async function* streamDeepseek(env, system, user, maxTokens = 8000, model = "deepseek-chat") {
   const res = await fetch("https://api.deepseek.com/chat/completions", {
-    method: "POST",
+    method: "POST", signal: AbortSignal.timeout(300000),
     headers: { Authorization: `Bearer ${env.DEEPSEEK_API_KEY}`, "Content-Type": "application/json" },
     body: JSON.stringify({
       model, stream: true, max_tokens: maxTokens,
@@ -1199,7 +1222,7 @@ async function* streamDeepseek(env, system, user, maxTokens = 8000, model = "dee
    换个厂商的模型当对手，视角基因不同，比同一个模型自问自答更能吵出东西 */
 async function* streamKimi(env, system, user, maxTokens = 3000) {
   const res = await fetch("https://api.moonshot.cn/v1/chat/completions", {
-    method: "POST",
+    method: "POST", signal: AbortSignal.timeout(180000),
     headers: { Authorization: `Bearer ${env.KIMI_API_KEY}`, "Content-Type": "application/json" },
     body: JSON.stringify({
       model: env.KIMI_MODEL || "moonshot-v1-8k", stream: true, max_tokens: maxTokens,
@@ -1346,9 +1369,9 @@ function planSSE(env, amount, currency, months, extra, S, lang) {
         for await (const text of llmStream(env, sys, user, 2500, "medium")) send(ctrl, { text });
         send(ctrl, { done: true });
       } catch (e) {
-        send(ctrl, { error: String(e.message || e) });
+        try { send(ctrl, { error: String(e.message || e) }); } catch {}
       }
-      ctrl.close();
+      try { ctrl.close(); } catch {}
     },
   });
   return new Response(stream, { headers: { "Content-Type": "text/event-stream; charset=utf-8", "Cache-Control": "no-cache" } });
@@ -1426,9 +1449,9 @@ function debateSSE(env, code, S = pack("zh"), lang = "zh") {
 
         send(ctrl, { done: true });
       } catch (e) {
-        send(ctrl, { error: String(e.message || e) });
+        try { send(ctrl, { error: String(e.message || e) }); } catch {}
       }
-      ctrl.close();
+      try { ctrl.close(); } catch {}
     },
   });
   return new Response(stream, {
@@ -1515,9 +1538,9 @@ function analyzeSSE(env, query, market, S = pack("zh"), lang = "zh") {
           send(ctrl, { text });
         send(ctrl, { done: true });
       } catch (e) {
-        send(ctrl, { error: String(e.message || e) });
+        try { send(ctrl, { error: String(e.message || e) }); } catch {}
       }
-      ctrl.close();
+      try { ctrl.close(); } catch {}
     },
   });
   return new Response(stream, {
@@ -1539,10 +1562,15 @@ function analyzeSSE(env, query, market, S = pack("zh"), lang = "zh") {
    记账币与本币不同（如加币买美股）时按最新汇率折算后再比，与持仓表同口径。 */
 async function runPatrol(env) {
   const S = pack("zh");
+  // 免费版每次调用 ~50 个子请求上限。粗算预算：超了就停，宁可下次再巡剩下的用户，
+  // 也别让整个 cron 爆掉导致所有人都收不到。价格/汇率缓存跨用户复用，正常规模远用不满。
+  let subreqBudget = 42;
+  const spend = (n = 1) => { subreqBudget -= n; return subreqBudget > 0; };
   const rows = (await env.DB.prepare("SELECT user_id, hold, wish FROM user_data").all()).results || [];
   const paCache = new Map(); // 同一只股多个用户持有时只拉一次
   const getPA = (code) => {
-    if (!paCache.has(code)) paCache.set(code, priceAnalysis(env, String(code).toUpperCase(), S).catch(() => null));
+    code = String(code).toUpperCase();
+    if (!paCache.has(code)) { spend(1); paCache.set(code, priceAnalysis(env, code, S).catch(() => null)); }
     return paCache.get(code);
   };
   // 模型 21 天中位涨跌（只为触发警报的股调用；跨用户缓存；失败返回 null 不阻塞）
@@ -1572,8 +1600,13 @@ async function runPatrol(env) {
   };
 
   for (const row of rows) {
+    if (subreqBudget <= 5) { console.log(`patrol: subrequest budget exhausted, ${rows.indexOf(row)}/${rows.length} users done`); break; }
     let hold = [], wish = [];
     try { hold = JSON.parse(row.hold || "[]"); wish = JSON.parse(row.wish || "[]"); } catch { continue; }
+    // 旧格式兜底（与前端 normHold 同规则）：{entry,qty} → 合成一笔买入台账，老用户也能收到止损邮件
+    hold = hold.map((h) => (h && !Array.isArray(h.txns) && h.entry
+      ? { ...h, txns: [{ side: "buy", date: h.added || "2026-01-01", price: h.entry, qty: h.qty || 0 }] }
+      : h));
     const events = [];
 
     for (const h of hold) {
@@ -1608,7 +1641,7 @@ async function runPatrol(env) {
       const name = h.name || h.code;
       if (isLong) {
         // 长线三档：灾难线才报警；季度例行体检温和提醒；计划内回撤不打扰
-        const disPct = Math.min(60, stopPct * 100 * 1.6);
+        const disPct = Math.min(60, Math.round(stopPct * 100 * 1.6 * 10) / 10); // 与前端 longDisasterPct 同口径取整
         const buys2 = txns.filter((t) => t.side === "buy" && t.date).map((t) => t.date).sort();
         const daysHeld = buys2.length ? Math.floor((Date.now() - new Date(buys2[buys2.length - 1]).getTime()) / 86400000) : null;
         if (chg <= -disPct / 100) {
@@ -1633,7 +1666,8 @@ async function runPatrol(env) {
         if (buys.length) {
           const due = new Date(buys[buys.length - 1]);
           due.setMonth(due.getMonth() + HZM[h.horizon]);
-          if (due < new Date()) {
+          const overd = Math.floor((Date.now() - due.getTime()) / 86400000);
+          if (overd >= 0 && overd <= 6) {
             const hzName = { "1m": "一个月", "3m": "几个月", "1y": "一年左右", "3y": "两三年" }[h.horizon];
             events.push(`🗓 ${name}（${h.code}）当初买入时打算拿${hzName}——时间到了。复盘一下：当初的理由兑现了吗？留还是走？`);
           }
@@ -1666,7 +1700,7 @@ async function runPatrol(env) {
     </div>`;
     try {
       await fetch("https://api.resend.com/emails", {
-        method: "POST",
+        method: "POST", signal: AbortSignal.timeout(10000),
         headers: { Authorization: `Bearer ${env.RESEND_API_KEY}`, "Content-Type": "application/json" },
         body: JSON.stringify({
           from: "steady · 定风波 <steady@lowbattery.studio>",
@@ -1694,6 +1728,13 @@ export default {
       // ── 登录 / 同步 ──
       // 登录/发码/登出已移交账号中心 accounts.lowbattery.studio；
       // quant 只保留"查身份"和自己的业务数据
+      // ── P0 防滥用：烧钱的 AI 端点必须登录（自用+朋友产品，登录墙即最简防线）──
+      const needUser = async () => await auth.currentUser(env, request);
+      const gated = async (fn) => {
+        const u = await needUser();
+        if (!u) return json({ error: S.gate_login, login_required: true }, 401);
+        return fn();
+      };
       if (p === "/api/auth/me") return auth.me(env, request);
       if (p === "/api/data" && request.method === "GET") return auth.getData(env, request);
       if (p === "/api/data" && request.method === "PUT") return auth.putData(env, request);
@@ -1701,18 +1742,20 @@ export default {
       if (p === "/api/serenity/stock_check")
         return json({ ...(await stockCheck(env, q("code"), parseFloat(q("principal", "2000")), S)),
           forecast_enabled: !!env.KRONOS_API_URL });
-      if (p === "/api/serenity/forecast") return json(await kronosForecast(env, q("code"), S));
+      // forecast 烧的是自家 HF GPU 配额，也上登录墙（Workers 无状态，内存限流拦不住分布式实例）
+      if (p === "/api/serenity/forecast")
+        return gated(async () => json(await kronosForecast(env, q("code"), S)));
       if (p === "/api/serenity/news") return json(await stockNews(env, q("code")));
-      if (p === "/api/serenity/debate") return debateSSE(env, q("code"), S, lang);
+      if (p === "/api/serenity/debate") return gated(() => debateSSE(env, q("code"), S, lang));
       if (p === "/api/serenity/pulse") return json(await marketPulse(env, S));
       if (p === "/api/serenity/parse_trade" && request.method === "POST")
-        return json(await parseTrade(env, await request.json().catch(() => ({})), S));
+        return gated(async () => json(await parseTrade(env, await request.json().catch(() => ({})), S)));
       if (p === "/api/serenity/portfolio_history" && request.method === "POST")
-        return json(await portfolioHistory(env, await request.json().catch(() => ({})), S));
+        return gated(async () => json(await portfolioHistory(env, await request.json().catch(() => ({})), S)));
       if (p === "/api/serenity/watch_check") return json(await watchCheck(env, q("items"), S));
       if (p === "/api/serenity/wish_check") return json(await wishCheck(env, q("items"), S));
       if (p === "/api/serenity/portfolio" && request.method === "POST")
-        return json(await portfolio(env, await request.json().catch(() => ({})), S));
+        return gated(async () => json(await portfolio(env, await request.json().catch(() => ({})), S)));
       if (p === "/api/serenity/history")
         return json(await history(env, q("code"), parseInt(q("points", "60")), S));
       if (p === "/api/serenity/resolve") return json(await resolve(env, q("q"), S));
@@ -1720,8 +1763,8 @@ export default {
       if (p === "/api/serenity/plan")
         return json(budgetPlan(parseFloat(q("amount")), q("currency", "CNY"), parseInt(q("months")), S));
       if (p === "/api/serenity/plan_ai")
-        return planSSE(env, parseFloat(q("amount")), q("currency", "CNY"), parseInt(q("months")), q("extra", ""), S, lang);
-      if (p === "/api/serenity/analyze") return analyzeSSE(env, q("query"), q("market", S.mkt_a), S, lang);
+        return gated(() => planSSE(env, parseFloat(q("amount")), q("currency", "CNY"), parseInt(q("months")), q("extra", ""), S, lang));
+      if (p === "/api/serenity/analyze") return gated(() => analyzeSSE(env, q("query"), q("market", S.mkt_a), S, lang));
       if (p === "/api/search") return json(await search(env, q("keyword")));
       if (p === "/api/scan")
         return json(await scan(env, parseFloat(q("principal", "2000")), q("risk", "stable"), S));

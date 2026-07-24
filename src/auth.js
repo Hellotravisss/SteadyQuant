@@ -72,7 +72,14 @@ export async function putData(env, request) {
   if (payload[0].length + payload[1].length > 100000)
     return json({ ok: false, error: "payload too large" }, 413);
 
-  const now = Date.now();
+  // 乱序防护：客户端带 ts（发起快照的时刻），比库里已存的更旧就拒收——
+  // 防止两次快照在网络上乱序到达时，旧数据覆盖新数据
+  if (body.ts) {
+    const cur = await env.DB.prepare("SELECT updated_at FROM user_data WHERE user_id = ?").bind(user.id).first();
+    if (cur && Number(cur.updated_at) > Number(body.ts))
+      return json({ ok: true, skipped: "stale_snapshot" }); // 静默跳过，客户端不用重试
+  }
+  const now = body.ts ? Number(body.ts) : Date.now();
   await env.DB.prepare(
     `INSERT INTO user_data (user_id, hold, wish, updated_at) VALUES (?, ?, ?, ?)
      ON CONFLICT(user_id) DO UPDATE SET hold=excluded.hold, wish=excluded.wish, updated_at=excluded.updated_at`
