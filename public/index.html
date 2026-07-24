@@ -685,6 +685,8 @@ const I18N = {
     chCurveLoading: "在按流水回放你的组合走势…", chCurveNone: "流水太短，攒几天再来看",
     chCurveVal: "市值", chCurveCost: "投入成本", chToday: "今天",
     stopReset: (a) => `已恢复自动止损线（按它的波动，当前 -${a}%）`,
+    stopHitLong: "跌破防线，重审长线逻辑",
+    evStopLong: (c, s2) => `已跌破防线：较成本 ${c}%（防线 -${s2}%，已按长线放宽）。这不是催你卖——是催你重新审视：当初拿两三年的理由还成立吗？成立就拿住，不成立才走。`,
     dbTitle: "⚔️ 多空对辩（两个 AI 吵一架）",
     dbSub: "多头律师只准找买入理由，空头律师（另一家的 AI）只准拆台，最后法官指出双方分歧点——分歧点就是你该去核实的事。结合最近新闻。",
     dbRun: "开庭（约 1 分钟）",
@@ -878,6 +880,8 @@ const I18N = {
     stopPrompt: (a) => `Stop alert distance: how many % below cost?\nLeave blank = back to auto (volatility-based, currently ${a}%)`,
     stopChanged: (p) => `stop alert set manually to -${p}% — you drew this line, honor it if it breaks`,
     stopReset: (a) => `back to auto stop (by its volatility, currently -${a}%)`,
+    stopHitLong: "below the line — recheck the long thesis",
+    evStopLong: (c, s2) => `Below the defense line: ${c}% vs cost (line -${s2}%, already widened for a long horizon). Not a sell prompt — a thesis check: does your multi-year reason still hold? If yes, hold; if not, that's the exit.`,
     chMarket: "where is your money parked?", chStock: "concentration (one stock = half your life? beware)",
     chPnl: "who's earning, who's dragging (each in its own currency)", chCurve: "90-day curve: value vs cost",
     chCurveLoading: "replaying your ledger…", chCurveNone: "ledger too short — come back in a few days",
@@ -1254,8 +1258,9 @@ async function buildToday() {
                 if (!(s.hold_qty > 0) || s.last == null || !s.avg_cost) continue;
                 const lh2 = hold.find(x => x.code === s.code);
                 const chg = s.last / s.avg_cost - 1;
-                const stop = ((lh2 && lh2.stopPct > 0) ? lh2.stopPct : (s.stop_pct || 15)) / 100;
-                if (chg <= -stop) events.push({lv:0, html:`🔴 <b>${s.name}</b> ${t('evStop', (chg*100).toFixed(1), (stop*100).toFixed(1))}`, code:s.code});
+                const stop = ((lh2 && lh2.stopPct > 0) ? lh2.stopPct
+                    : Math.min(45, (s.stop_pct || 15) * hzStopFactor(lh2))) / 100;
+                if (chg <= -stop) events.push({lv:0, html:`🔴 <b>${s.name}</b> ${hzIsLong(lh2)?t('evStopLong',(chg*100).toFixed(1),(stop*100).toFixed(1)):t('evStop', (chg*100).toFixed(1), (stop*100).toFixed(1))}`, code:s.code});
                 else if (chg <= -stop + 0.03) events.push({lv:1, html:`🟡 <b>${s.name}</b> ${t('evNearStop', ((chg+stop)*100).toFixed(1))}`, code:s.code});
             }
             const t2 = d.total;
@@ -1826,6 +1831,10 @@ const CUR_SYMS = { CAD: 'C$', USD: '$', CNY: '¥', HKD: 'HK$' };
 
 /* ── "打算拿多久"：档位→月数；到期/没想好 的持仓表标签与复盘提醒 ── */
 const HZ_MONTHS = { '1m': 1, '3m': 3, '1y': 12, '3y': 36 };
+// 止损距离按持有期缩放：短线收紧、长线放宽（长线仓位要允许更深的呼吸）
+const HZ_STOP_FACTOR = { '1m': 0.8, '3m': 1.0, '1y': 1.4, '3y': 1.8, 'hold': 2.2 };
+const hzStopFactor = h => (h && HZ_STOP_FACTOR[h.horizon]) || 1.0;
+const hzIsLong = h => !!(h && ['1y','3y','hold'].includes(h.horizon));
 function hzExpired(h) {   // 最近一次买入日期 + 意图月数 < 今天 → 到期该复盘
     if (!h || !h.horizon || !HZ_MONTHS[h.horizon]) return false;
     const buys = (h.txns || []).filter(t => t.side === 'buy' && t.date).map(t => t.date).sort();
@@ -2156,14 +2165,15 @@ async function refreshHold() {
             const hz = held ? hzState(lh) : null;                    // {label, cls} 或 null
             const sc = s.cur;   // 每行按该股自己的记账币（实付币）显示，跟用户账单对得上
             // 止损距离：手动设置优先，否则自动(后端 2.5×ATR 钳 8~25%)，兜底 15%
-            const stopEff = (lh && lh.stopPct > 0) ? lh.stopPct : (s.stop_pct || 15);
+            const stopEff = (lh && lh.stopPct > 0) ? lh.stopPct
+                : Math.min(45, Math.round((s.stop_pct || 15) * hzStopFactor(lh) * 10) / 10);
             const stopManual = !!(lh && lh.stopPct > 0);
             const stopHit = held && s.last && s.avg_cost && s.last < s.avg_cost * (1 - stopEff / 100);
             const nameCell = `<div class="font-bold">${s.name} <span class="font-mono text-[10px] text-[#8A8578]">${s.code}</span>
                 ${s.paid_cur?`<span class="ml-1 text-[10px] px-2 py-0.5 rounded-full bg-[#2f9e53]/12 text-[#2f9e53]">${t('pfPaidIn', s.paid_cur)}</span>`:''}
                 ${hz?`<span class="ml-1 text-[10px] px-2 py-0.5 rounded-full cursor-pointer ${hz.cls}" title="${t('hzEditTip')}" onclick="editHorizon(event,'${s.code}')">${hz.label} ✎</span>`:''}
                 ${held?`<span class="ml-1 text-[10px] px-2 py-0.5 rounded-full cursor-pointer ${stopManual?'bg-[#E5484D]/10 text-[#C23237]':'bg-[#F7F1E7] text-[#8A8578]'}" title="${t('stopEditTip')}" onclick="editStop(event,'${s.code}',${s.stop_pct||15})">🛡 -${stopEff}%${stopManual?'·'+t('stopManual'):''} ✎</span>`:''}
-                ${stopHit?`<span class="ml-1 text-[10px] px-2 py-0.5 rounded-full bg-[#E5484D]/10 text-[#E5484D]">${t('stopHit')}</span>`:''}
+                ${stopHit?`<span class="ml-1 text-[10px] px-2 py-0.5 rounded-full bg-[#E5484D]/10 text-[#E5484D]">${hzIsLong(lh)?t('stopHitLong'):t('stopHit')}</span>`:''}
                 ${s.no_price?`<span class="ml-1 text-[10px] text-[#8A8578]">${s.fx_missing?t('pfFxMiss'):t('noData')}</span>`:''}
                 ${s.oversell?`<span class="ml-1 text-[10px] text-[#E5484D]">${t('pfOversell')}</span>`:''}</div>
                 <div class="text-[10px] text-[#8A8578] mt-0.5">

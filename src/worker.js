@@ -1516,12 +1516,17 @@ async function runPatrol(env) {
         if (rate == null) continue; // 汇率拿不到 → 宁可不报，不报错账
       }
       const lastAcct = pa.last * rate;
-      // 手动止损优先（用户在持仓表自己画的线），否则 ATR 自动
-      const stopPct = (h.stopPct > 0 ? h.stopPct : (pa.stop_atr_pct ?? 15)) / 100;
+      // 手动止损优先；自动线按持有期缩放（短线收紧、长线放宽，封顶45%）
+      const HZF = { "1m": 0.8, "3m": 1.0, "1y": 1.4, "3y": 1.8, "hold": 2.2 };
+      const isLong = ["1y", "3y", "hold"].includes(h.horizon);
+      const stopPct = (h.stopPct > 0 ? h.stopPct
+        : Math.min(45, (pa.stop_atr_pct ?? 15) * (HZF[h.horizon] || 1))) / 100;
       const chg = lastAcct / avg - 1;
       const name = h.name || h.code;
       if (chg <= -stopPct)
-        events.push(`🔴 ${name}（${h.code}）已跌破你的止损提醒线：现价较成本 ${(chg * 100).toFixed(1)}%（提醒线 -${(stopPct * 100).toFixed(1)}%）。当初的买入理由还在吗？不在就该走了。`);
+        events.push(isLong
+          ? `🔴 ${name}（${h.code}）已跌破防线：较成本 ${(chg * 100).toFixed(1)}%（防线 -${(stopPct * 100).toFixed(1)}%，已按长线放宽）。不是催你卖——是催你重审：当初拿长线的理由还成立吗？成立拿住，不成立才走。`
+          : `🔴 ${name}（${h.code}）已跌破你的止损提醒线：现价较成本 ${(chg * 100).toFixed(1)}%（提醒线 -${(stopPct * 100).toFixed(1)}%）。当初的买入理由还在吗？不在就该走了。`);
       else if (chg <= -stopPct + 0.03)
         events.push(`🟡 ${name}（${h.code}）距离止损提醒线只剩 ${((chg + stopPct) * 100).toFixed(1)}%（现 ${(chg * 100).toFixed(1)}%）。提前想好：跌破了执行吗？`);
       // 持有意图到期 → 复盘提醒（当初用户自己设的持有期）
