@@ -513,6 +513,41 @@ function animEnter(sel, dist = 14) {
     anime({ targets: els, opacity: [0, 1], translateY: [dist, 0],
             duration: 460, delay: anime.stagger(60), easing: 'easeOutQuad' });
 }
+/* ── 等待动画：跳动的 K 线柱（涨涨跌跌，很配这个网站）+ 阶段文字 + 思考秒表 ── */
+function loaderHTML(text, withTimer = false) {
+    const bars = Array.from({length: 7}, (_, i) =>
+        `<rect x="${i * 7}" y="10" width="4" rx="1.5" height="12" fill="${i % 3 === 2 ? '#E5484D' : '#2f9e53'}"/>`).join('');
+    return `<div class="ai-loader flex items-center gap-3 py-3">
+        <svg class="ld-bars" width="47" height="26" viewBox="0 0 47 26">${bars}</svg>
+        <span class="text-xs text-[#8A8578] ld-text">${text}</span>
+        ${withTimer ? `<span class="text-[10px] font-mono text-[#8A8578] ld-sec" data-t0="${Date.now()}"></span>` : ''}
+    </div>`;
+}
+function mountLoaders(rootEl) {
+    const root = rootEl || document;
+    root.querySelectorAll('.ld-bars:not([data-live])').forEach(svg => {
+        svg.dataset.live = '1';
+        const bars = svg.querySelectorAll('rect');
+        if (!MOTION) return;
+        (function cycle() {
+            if (!document.contains(svg)) return;
+            anime({ targets: bars,
+                height: () => anime.random(5, 24),
+                y: (el) => 26 - parseFloat(el.getAttribute('height') || 12) - anime.random(0, 3),
+                duration: 460, delay: anime.stagger(55),
+                easing: 'easeInOutQuad', complete: cycle });
+        })();
+    });
+    root.querySelectorAll('.ld-sec:not([data-live])').forEach(el => {
+        el.dataset.live = '1';
+        const t0 = parseInt(el.dataset.t0);
+        const iv = setInterval(() => {
+            if (!document.contains(el)) { clearInterval(iv); return; }
+            el.textContent = Math.floor((Date.now() - t0) / 1000) + 's';
+        }, 500);
+    });
+}
+
 function animDraw(rootSel, dur = 900) {
     if (!MOTION || document.hidden) return;
     document.querySelectorAll(rootSel + ' path[stroke], ' + rootSel + ' circle[stroke]').forEach((el, i) => {
@@ -1511,7 +1546,7 @@ function futureCard(p, d) {
             <div class="space-y-2">${rowsHtml}</div>
             <div class="text-[10px] text-[#8A8578] mt-2">${t('volNote')}</div>
             ${d && d.forecast_enabled ? `<div id="krResult" class="mt-4 pt-4" style="border-top:1px dashed var(--line)">
-                <div class="text-[10px] text-[#8A8578]">🔮 ${t('krLoading')}</div>
+                ${loaderHTML('🔮 ' + t('krLoading'))}
             </div>` : ''}
             ${p.stop_atr_pct ? `<div class="text-xs mt-4 pt-4" style="border-top:1px dashed var(--line)">
                 ${t('atrStop', p.stop_atr_pct, c, (Math.round(p.last * (1 - p.stop_atr_pct / 100) * 100) / 100))}
@@ -1524,7 +1559,7 @@ function futureCard(p, d) {
 async function runForecast(code) {
     const box = document.getElementById('krResult');
     if (!box) return;
-    box.innerHTML = `<div class="text-[10px] text-[#8A8578]">🔮 ${t('krLoading')}</div>`;
+    box.innerHTML = loaderHTML('🔮 ' + t('krLoading')); mountLoaders(box);
     try {
         const d = await apiFetch(`/api/serenity/forecast?code=${encodeURIComponent(code)}&lang=${LANG}`);
         if (!d.ok) {
@@ -1614,7 +1649,7 @@ async function runDebate(code) {
             <div class="text-xs font-bold mb-2" style="color:${color}">${title}</div>
             <div id="${id}" class="text-sm leading-relaxed" style="color:var(--ink)"></div>
         </div>`;
-    box.innerHTML = '';
+    box.innerHTML = loaderHTML(t('dbRunning'), true); mountLoaders(box);
     let bull = '', bear = '', judge = '';
     try {
         const res = await fetch(`/api/serenity/debate?code=${encodeURIComponent(code)}&lang=${LANG}`);
@@ -1631,7 +1666,7 @@ async function runDebate(code) {
                 if (!part.startsWith('data: ')) continue;
                 const m = JSON.parse(part.slice(6));
                 if (m.meta && !m.meta.dual) box.innerHTML += `<div class="text-[10px] text-[#8A8578] mt-3">${t('dbSingle')}</div>`;
-                if (m.phase === 'bull') box.innerHTML += seg('dbBull', t('dbBull'), '#2f9e53');
+                if (m.phase === 'bull') { const l1 = box.querySelector('.ai-loader'); if (l1) l1.remove(); box.innerHTML += seg('dbBull', t('dbBull'), '#2f9e53'); }
                 if (m.phase === 'bear') box.innerHTML += seg('dbBear', t('dbBear'), '#E5484D');
                 if (m.phase === 'judge') box.innerHTML += seg('dbJudge', t('dbJudge'), 'var(--ink)');
                 if (m.bull) { bull += m.bull; const el = document.getElementById('dbBull'); if (el) el.innerHTML = mdRender(bull); }
@@ -1654,7 +1689,7 @@ async function doCheck() {
     if (!code) return;
     document.getElementById('checkEmpty').style.display = 'none';
     const box = document.getElementById('checkResult');
-    box.innerHTML = `<div class="py-12 text-center text-[#E5484D]">${t('checking')}</div>`;
+    box.innerHTML = `<div class="py-10 flex justify-center">${loaderHTML(t('checking'))}</div>`; mountLoaders(box);
     try {
         // 纯字母代码 = 美股/加股（AAPL / SHOP.TO）；数字+.HK = 港股（0700.HK）。直接查，不走A股搜索
         const overseas = (/^[A-Z][A-Z0-9.\-]{0,9}$/.test(code) || /^\d{1,5}\.HK$/.test(code))
@@ -1679,6 +1714,7 @@ async function doCheck() {
         lastCheck = d;
         box.innerHTML = renderCheck(d);
         animEnter('#checkResult .space-y-5 > *', 16);
+        mountLoaders(document.getElementById('checkResult'));
         // Kronos 预测自动后台跑（配置了推理服务且有波动数据时），回来叠进「未来一个月」卡
         if (d.forecast_enabled && d.price?.bands) runForecast(d.code);
         loadNews(d.code); // 最近头条自动加载，没有就不露脸
@@ -2027,7 +2063,7 @@ async function parseShot(file) {
     if (!file) return;
     const btn = document.getElementById('shotBtn');
     const msg = document.getElementById('shotMsg');
-    btn.disabled = true; msg.textContent = t('shotReading');
+    btn.disabled = true; msg.innerHTML = loaderHTML(t('shotReading'), true); mountLoaders(msg.parentElement);
     try {
         // 压缩：最长边 1400px、JPEG 0.85（识别够用，省流量省 token）
         const img = await new Promise((ok, no) => {
@@ -2184,7 +2220,7 @@ async function refreshHold() {
         if (sumEl) sumEl.innerHTML = '';
         return;
     }
-    box.innerHTML = `<div class="py-8 text-center text-[#2f9e53]">${t('holdLoading')}</div>`;
+    box.innerHTML = `<div class="py-6 flex justify-center">${loaderHTML(t('holdLoading'))}</div>`; mountLoaders(box);
     let d;
     try {
         const res = await fetch('/api/serenity/portfolio', {
@@ -2418,7 +2454,7 @@ async function refreshWish() {
     const w = getList('sq_wish');
     const box = document.getElementById('wishResult');
     if (!w.length) { box.innerHTML = `<div class="text-[#8A8578] text-sm">${t('wishEmpty')}</div>`; return; }
-    box.innerHTML = `<div class="py-8 text-center text-[#E5484D]">${t('wishLoading')}</div>`;
+    box.innerHTML = `<div class="py-6 flex justify-center">${loaderHTML(t('wishLoading'))}</div>`; mountLoaders(box);
     const items = w.map(x => `${x.code}:${x.target}`).join(',');
     try {
         const d = await apiFetch(`/api/serenity/wish_check?items=${encodeURIComponent(items)}&lang=${LANG}`);
@@ -2580,10 +2616,10 @@ async function doAnalyze() {
             for (const part of parts) {
                 if (!part.startsWith('data: ')) continue;
                 const msg = JSON.parse(part.slice(6));
-                if (msg.stage === 'scout') main.innerHTML = `<div class="text-xs text-[#8A8578]">🔍 ${t('aiScouting')}</div>`;
-                if (msg.stage === 'quotes') main.innerHTML += `<div class="text-xs text-[#8A8578] mt-1">📡 ${t('aiQuoting')}</div>`;
+                if (msg.stage === 'scout') { main.innerHTML = loaderHTML('🔍 ' + t('aiScouting')); mountLoaders(main); }
+                if (msg.stage === 'quotes') { const l0 = main.querySelector('.ld-text'); if (l0) l0.textContent = '📡 ' + t('aiQuoting'); }
                 if (msg.scout) main.innerHTML += `<div class="text-xs mt-2 flex flex-wrap gap-1.5">${msg.scout.map(c=>`<span class="px-2.5 py-1 rounded-full text-[10px]" style="background:var(--cloud);border:1px solid var(--line)">${c.name||''} <span class="font-mono">${c.code}</span></span>`).join('')}</div>`;
-                if (msg.stage === 'report') { raw = ''; main.innerHTML += `<div class="text-xs text-[#8A8578] mt-1 mb-3">✍️ ${t('aiWriting')}</div>`; }
+                if (msg.stage === 'report') { raw = ''; main.insertAdjacentHTML('beforeend', loaderHTML('🧠 ' + t('aiWriting'), true)); mountLoaders(main); }
                 if (msg.text) { raw += msg.text; main.innerHTML = mdRender(raw); }
                 if (msg.phase === 'review') {
                     reviewing = true;
