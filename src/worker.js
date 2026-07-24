@@ -1476,25 +1476,35 @@ function analyzeSSE(env, query, market, S = pack("zh"), lang = "zh") {
           }
         } catch { /* 候选圈定失败 → 退回单段式，不阻塞报告 */ }
 
-        // ── 第三步：带着真数据写正式报告 ──
-        send(ctrl, { stage: "report" });
-        const report = [];
+        // ── 第三步：初稿（深度思考，内部，不给用户看）──
+        send(ctrl, { stage: "draft" });
         const sys = SERENITY_SYSTEM + (lang === "en" ? EN_DIRECTIVE : "");
         const userMsg = snaps
           ? `市场范围：${market}。请分析：${query}\n\n【系统抓取的候选实时行情（此刻真实数据，正文引用价格/水位/阶段必须以此为准；除此之外不得写任何其他时效数字）】\n${snaps}\n\n你可以淘汰快照中不合格的候选、也可以补充快照外的标的（但补充的标的正文不得写具体价格）。水位高/阶段 extended 的候选要如实提示追高风险。`
           : `市场范围：${market}。请分析：${query}`;
-        for await (const text of llmStream(env, sys, userMsg, 8000, "medium", true)) {
-          report.push(text);
-          send(ctrl, { text });
-        }
-        send(ctrl, { phase: "review" });
+        let draft = "";
+        for await (const text of llmStream(env, sys, userMsg, 8000, "medium", true)) draft += text;
+
+        // ── 第四步：独立复核（内部挑刺，用户看不到脏活）──
+        send(ctrl, { stage: "review" });
+        let critique = "";
         try {
           for await (const text of llmStream(env, REVIEWER_SYSTEM + (lang === "en" ? EN_DIRECTIVE : ""),
-            `用户的原始问题：${query}\n\n待复核的报告：\n${report.join("")}`, 1800, "low"))
-            send(ctrl, { review: text });
-        } catch (re) {
-          send(ctrl, { review: S.ai_review_fail(re.message) });
-        }
+            `用户的原始问题：${query}\n\n待复核的报告：\n${draft}`, 1800, "low")) critique += text;
+        } catch { /* 复核失败不阻塞终稿 */ }
+
+        // ── 第五步：终稿（吸收审查意见修订后，才流式给用户）──
+        send(ctrl, { stage: "final" });
+        const EDITOR_SYSTEM = `你是终稿主编。给你一份分析初稿和一份独立审查意见，产出直接面向读者的终稿：
+① 审查指出编造/无来源/自相矛盾的数字和论断——删除或改为定性表述，绝不保留
+② 快照（初稿引用的实时行情）之外的任何时效数字一律删除
+③ 审查意见里"读者需自行核实"的点，改写成正文里的风险提示（不得出现"请自行核实哪个数据"这种甩锅句式）
+④ 保留初稿的结构、深度、supply-chain 逻辑和全部合格内容；语言风格不变
+⑤ 终稿绝不提及"初稿/审查/修订"的存在——读者只看到一份自信且诚实的报告
+⑥ 保留初稿里的 chain 图谱数据块（三个反引号包裹的那段 JSON，若有则原样保留），代码括号格式保持`;
+        for await (const text of llmStream(env, EDITOR_SYSTEM,
+          `【初稿】\n${draft}\n\n【独立审查意见】\n${critique || "（审查缺席，按规则②③自行把关时效数字）"}\n\n请输出终稿。`, 8000, "low"))
+          send(ctrl, { text });
         send(ctrl, { done: true });
       } catch (e) {
         send(ctrl, { error: String(e.message || e) });

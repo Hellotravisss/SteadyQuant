@@ -334,7 +334,7 @@
                 <span data-i18n="scanEntryLead">更喜欢用数字硬筛？</span>
                 <span class="code-link" onclick="switchTab('scan', tabBtn('check'))" data-i18n="scanEntry">一键选股（A股 · 估值粗筛 + 走势复评两轮制）→</span>
             </div>
-            <div class="text-[10px] text-[#8A8578] mt-2"><span data-i18n="aiWarn">报告分三步生成：AI 圈定候选 → 系统抓取此刻实时行情 → AI 结合真实数据分析 · 仅供研究教育，非投资建议 · 点报告里的</span> <span class="code-link" data-i18n="tickerWord">股票代码</span> <span data-i18n="aiWarn2">可直接点击跳转体检</span></div>
+            <div class="text-[10px] text-[#8A8578] mt-2"><span data-i18n="aiWarn">报告四步出炉：圈定候选 → 抓实时行情 → 深度思考初稿 → 独立 AI 审查后修订成终稿（你只看修订后的版本）· 仅供研究教育，非投资建议 · 点报告里的</span> <span class="code-link" data-i18n="tickerWord">股票代码</span> <span data-i18n="aiWarn2">可直接点击跳转体检</span></div>
             <div id="aiResult" class="ai-md mt-8 text-sm leading-relaxed text-[#4A463C]"></div>
         </div>
 
@@ -601,7 +601,7 @@ const I18N = {
     aiSub: '告诉我你看好什么方向（比如"机器人"），AI 会顺着产业链往上游找那些还没被大家炒起来的公司，并把风险一起讲清楚',
     aiPh: "你看好什么方向？比如：机器人 / 芯片国产替代 / AI 算力",
     aiBtn: "生成报告", aiBtnBusy: "生成中…", aiTryThese: "试试这些主题：",
-    aiWarn: "报告分三步生成：AI 圈定候选 → 系统抓取此刻实时行情 → AI 结合真实数据分析 · 仅供研究教育，非投资建议 · 点报告里的",
+    aiWarn: "报告四步出炉：圈定候选 → 抓实时行情 → 深度思考初稿 → 独立 AI 审查后修订成终稿（你只看修订后的版本）· 仅供研究教育，非投资建议 · 点报告里的",
     aiWarn2: "可直接点击跳转体检", tickerWord: "股票代码",
     exNaura: "北方华创", exMoutai: "贵州茅台", exMontage: "澜起科技",
     exNvda: "英伟达(美)", exShop: "Shopify(加)", exBtc: "比特币(币)",
@@ -738,6 +738,9 @@ const I18N = {
     aiScouting: "AI 正在沿产业链圈定候选标的…",
     aiQuoting: "候选锁定，正在抓取此刻的实时行情…",
     aiWriting: "AI 拿到真实数据了，开始写正式分析…",
+    aiDrafting: "AI 深度思考撰写初稿中…（内部草稿，不呈现）",
+    aiReviewing: "另一个 AI 正在挑刺审查初稿…（发现的问题会直接修掉）",
+    aiFinalizing: "吸收审查意见，终稿马上来…",
     krHist: "近 60 日", krMedian: "模型中位路径", krBand: "大概率落在",
     krDisc: (n) => `⚠️ ${n} 条采样路径的统计区间，是"模型觉得可能"而非"会发生"。模型不知道明天的新闻。仅供研究，别按它下单。`,
     krFail_not_configured: "预测服务未配置（KRONOS_API_URL）",
@@ -950,6 +953,9 @@ const I18N = {
     aiScouting: "AI is scouting the supply chain for candidates…",
     aiQuoting: "candidates locked — fetching live quotes right now…",
     aiWriting: "real data in hand — writing the full analysis…",
+    aiDrafting: "deep-thinking a draft… (internal, never shown)",
+    aiReviewing: "a second AI is auditing the draft… (issues get fixed, not shown)",
+    aiFinalizing: "folding in the audit — final version coming…",
     krHist: "last 60d", krMedian: "model median path", krBand: "likely range",
     krDisc: (n) => `⚠️ A statistical band from ${n} sampled paths — what the model finds plausible, not what will happen. It doesn't know tomorrow's news. Research only; don't trade on it.`,
     krFail_not_configured: "forecast service not configured (KRONOS_API_URL)",
@@ -2649,19 +2655,14 @@ async function doAnalyze() {
                 if (msg.stage === 'scout') { main.innerHTML = loaderHTML('🔍 ' + t('aiScouting')); mountLoaders(main); }
                 if (msg.stage === 'quotes') { const l0 = main.querySelector('.ld-text'); if (l0) l0.textContent = '📡 ' + t('aiQuoting'); }
                 if (msg.scout) main.innerHTML += `<div class="text-xs mt-2 flex flex-wrap gap-1.5">${msg.scout.map(c=>`<span class="px-2.5 py-1 rounded-full text-[10px]" style="background:var(--cloud);border:1px solid var(--line)">${c.name||''} <span class="font-mono">${c.code}</span></span>`).join('')}</div>`;
-                if (msg.stage === 'report') { raw = ''; main.insertAdjacentHTML('beforeend', loaderHTML('🧠 ' + t('aiWriting'), true)); mountLoaders(main); }
+                if (msg.stage === 'draft') { main.insertAdjacentHTML('beforeend', loaderHTML('🧠 ' + t('aiDrafting'), true)); mountLoaders(main); }
+                if (msg.stage === 'review') { const l2 = main.querySelectorAll('.ld-text'); const lt = l2[l2.length-1]; if (lt) lt.textContent = '🔎 ' + t('aiReviewing'); }
+                if (msg.stage === 'final') { raw = ''; const l3 = main.querySelectorAll('.ld-text'); const lf = l3[l3.length-1]; if (lf) lf.textContent = '✒️ ' + t('aiFinalizing'); }
                 if (msg.text) { raw += msg.text; main.innerHTML = mdRender(raw); }
-                if (msg.phase === 'review') {
-                    reviewing = true;
-                    renderChain(raw);   // 主报告结束，画供应链图谱
-                    verifyTickers(raw); // 并对 AI 提到的代码做真实行情对账
-                    reviewBox.innerHTML = `<div class="mt-8 border border-[#E4DAC7] rounded-2xl p-5">
-                        <div class="text-sm font-bold text-[#4A463C] mb-2">${t('aiReviewTitle')} <span class="eyebrow ml-2">second opinion</span><div class="text-xs text-[#8A8578] mt-0.5" style="font-family:var(--font-body)">另一个 AI 专门挑刺，帮你防止被忽悠</div></div>
-                        <div id="aiReviewText" class="text-sm text-[#4A463C] leading-relaxed"></div></div>`;
+                if (msg.done) {
+                    renderChain(raw);   // 终稿完成：画供应链图谱
+                    verifyTickers(raw); // 并对代码做真实行情对账（最后一道保险）
                 }
-                if (msg.review) { reviewRaw += msg.review;
-                    const rt = document.getElementById('aiReviewText');
-                    if (rt) rt.innerHTML = mdRender(reviewRaw); }
                 if (msg.error) box.innerHTML += `<div class="text-[#E5484D] mt-4">${msg.error}</div>`;
             }
         }
