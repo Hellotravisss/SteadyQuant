@@ -242,9 +242,14 @@
         <button onclick="dismissBanner()" class="text-[#8A8578] text-lg leading-none px-1" title="dismiss">×</button>
     </div>
 
-    <!-- 三个主入口 -->
-    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-        <button onclick="switchTab('check',this)" class="main-btn active" data-nav="check">
+    <!-- 四个主入口：今天(驾驶舱) → 买什么 → 已经买了 → 想买什么 -->
+    <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
+        <button onclick="switchTab('today',this)" class="main-btn active" data-nav="today">
+            <div class="eyebrow">today</div>
+            <div class="font-black text-lg mt-1"><span data-i18n="navToday">今天</span> <span id="todayBadge"></span></div>
+            <div class="text-xs text-[#8A8578] mt-1" data-i18n="navTodaySub">有没有需要你动手的事，一眼看完</div>
+        </button>
+        <button onclick="switchTab('check',this)" class="main-btn" data-nav="check">
             <div class="eyebrow">buy</div>
             <div class="font-black text-lg mt-1" data-i18n="navBuy">买什么</div>
             <div class="text-xs text-[#8A8578] mt-1" data-i18n="navBuySub">查一只股能不能碰，或让 AI 帮你找</div>
@@ -264,35 +269,25 @@
         <span class="text-[11px] text-[#8A8578] cursor-pointer hover:text-[#E5484D] tab-btn" style="padding:0;border:none" onclick="switchTab('scan',this)" data-i18n="advScan">// 一键选股（A股）</span>
     </div>
 
-    <!-- ===================== 卡点体检 ===================== -->
-    <div id="panel-check" class="panel active">
-        <!-- 预算 + 时间 规划（买之前先想清楚） -->
-        <div class="glass rounded-3xl p-8 mb-6">
-            <div class="eyebrow mb-1" data-i18n="planEyebrow">plan first</div>
-            <div class="mb-2 text-2xl font-bold" data-i18n="planTitle">有多少钱、打算放多久？先规划一下</div>
-            <div class="text-xs text-[#8A8578] mb-6" data-i18n="planSub">还没想好买什么？说说你的预算和时间，帮你想清楚该用什么心态、别踩什么坑——不推荐任何具体股票。</div>
-            <div class="flex flex-wrap gap-3 items-center">
-                <input id="planAmt" type="number" inputmode="decimal" class="px-4 py-3 rounded-2xl w-36" placeholder="2000" data-i18n-ph="planAmtPh"
-                       onkeydown="if(event.key==='Enter')doPlan()">
-                <select id="planCur" class="px-3 py-3 rounded-2xl">
-                    <option value="CNY">CNY ¥</option>
-                    <option value="CAD">CAD C$</option>
-                    <option value="USD">USD $</option>
-                    <option value="HKD">HKD</option>
-                </select>
-                <select id="planMonths" class="px-3 py-3 rounded-2xl">
-                    <option value="1" data-i18n="planM1">1 个月</option>
-                    <option value="3" data-i18n="planM3">3 个月</option>
-                    <option value="12" data-i18n="planM12">1 年</option>
-                    <option value="36" selected data-i18n="planM36">3 年</option>
-                    <option value="60" data-i18n="planM60">5 年+</option>
-                </select>
-                <button onclick="doPlan()" class="px-7 py-3 btn-red" data-i18n="planBtn">帮我规划</button>
+    <!-- ===================== 今天（驾驶舱） ===================== -->
+    <div id="panel-today" class="panel active">
+        <!-- 大盘脉搏 -->
+        <div class="glass rounded-3xl p-6 mb-4">
+            <div class="eyebrow mb-3">market pulse</div>
+            <div id="pulseRow" class="flex flex-wrap gap-x-8 gap-y-2 text-sm">
+                <span class="text-xs text-[#8A8578]" data-i18n="pulseLoading">大盘水位加载中…</span>
             </div>
-            <input id="planExtra" class="w-full mt-3 px-4 py-3 rounded-2xl text-sm" placeholder="（可选）补充一句，比如：我在加拿大、只想买美股" data-i18n-ph="planExtraPh">
-            <div id="planResult" class="mt-6"></div>
         </div>
+        <!-- 需要你行动 + 持仓一句话（或新手引导） -->
+        <div class="glass rounded-3xl p-8">
+            <div class="eyebrow mb-1">action items</div>
+            <div class="mb-4 text-2xl font-bold" data-i18n="todayTitle">今天有没有需要你做的事？</div>
+            <div id="todayBox"><div class="text-xs text-[#8A8578]" data-i18n="todayLoading">正在巡检你的持仓和心愿单…</div></div>
+        </div>
+    </div>
 
+    <!-- ===================== 卡点体检 ===================== -->
+    <div id="panel-check" class="panel">
         <div class="glass rounded-3xl p-8">
             <div class="eyebrow mb-1">stock check</div>
             <div class="mb-2 text-2xl font-bold" data-i18n="checkTitle">查一只股：现在能不能碰？</div>
@@ -345,6 +340,37 @@
             <div class="text-[10px] text-[#8A8578] mt-2"><span data-i18n="aiWarn">⚠️ AI 无实时数据，报告中价格/市值类数字仅供参考需自行核实 · 仅供研究教育，非投资建议 · 报告中出现的</span> <span class="code-link" data-i18n="tickerWord">股票代码</span> <span data-i18n="aiWarn2">可直接点击跳转体检</span></div>
             <div id="aiResult" class="ai-md mt-8 text-sm leading-relaxed text-[#4A463C]"></div>
         </div>
+
+        <!-- 预算 + 时间 规划（低频工具，折叠收纳） -->
+        <details class="glass rounded-3xl mt-6" style="padding:0">
+            <summary class="cursor-pointer p-8 list-none">
+                <div class="eyebrow mb-1" data-i18n="planEyebrow">plan first</div>
+                <div class="text-2xl font-bold" data-i18n="planTitle">有多少钱、打算放多久？先规划一下 <span class="text-xs text-[#8A8578] font-normal" data-i18n="planToggle">（点开）</span></div>
+                <div class="text-xs text-[#8A8578] mt-2" data-i18n="planSub">还没想好买什么？说说你的预算和时间，帮你想清楚该用什么心态、别踩什么坑——不推荐任何具体股票。</div>
+            </summary>
+            <div class="px-8 pb-8">
+            <div class="flex flex-wrap gap-3 items-center">
+                <input id="planAmt" type="number" inputmode="decimal" class="px-4 py-3 rounded-2xl w-36" placeholder="2000" data-i18n-ph="planAmtPh"
+                       onkeydown="if(event.key==='Enter')doPlan()">
+                <select id="planCur" class="px-3 py-3 rounded-2xl">
+                    <option value="CNY">CNY ¥</option>
+                    <option value="CAD">CAD C$</option>
+                    <option value="USD">USD $</option>
+                    <option value="HKD">HKD</option>
+                </select>
+                <select id="planMonths" class="px-3 py-3 rounded-2xl">
+                    <option value="1" data-i18n="planM1">1 个月</option>
+                    <option value="3" data-i18n="planM3">3 个月</option>
+                    <option value="12" data-i18n="planM12">1 年</option>
+                    <option value="36" selected data-i18n="planM36">3 年</option>
+                    <option value="60" data-i18n="planM60">5 年+</option>
+                </select>
+                <button onclick="doPlan()" class="px-7 py-3 btn-red" data-i18n="planBtn">帮我规划</button>
+            </div>
+            <input id="planExtra" class="w-full mt-3 px-4 py-3 rounded-2xl text-sm" placeholder="（可选）补充一句，比如：我在加拿大、只想买美股" data-i18n-ph="planExtraPh">
+            <div id="planResult" class="mt-6"></div>
+            </div>
+        </details>
     </div>
 
     <!-- ===================== 已经买了 ===================== -->
@@ -568,6 +594,21 @@ const I18N = {
     krDir_up: "模型倾向：偏涨", krDir_down: "模型倾向：偏跌", krDir_flat: "模型倾向：横着走",
     krDirNote: "专属微调模型（美/加/A/港/币 十年数据训练）· 回测方向命中约七成，当参考不当答案",
     newsTitle: "最近的消息",
+    navToday: "今天", navTodaySub: "有没有需要你动手的事，一眼看完",
+    todayTitle: "今天有没有需要你做的事？",
+    todayLoading: "正在巡检你的持仓和心愿单…",
+    todayAllClear: "都好好的，没有需要你动手的事。管住手也是本事。",
+    todayNote: "巡检口径：跌破止损线🔴 / 距止损3%内🟡 / 心愿到价🎯 / 接近心愿价👀。每个交易日收盘后也会邮件提醒你。",
+    pulseLoading: "大盘水位加载中…", pulseLevel: (l, p) => `${l} ${p}%`, m1short: "月",
+    ob1: "在「买什么」查一只你感兴趣的股——真实行情、能不能碰、AI 预测，一次看全",
+    ob2: "看中但嫌贵？放进「想买什么」，跌到你要的价会提醒你",
+    ob3: "买了就记进「已经买了」——自动算盈亏、盯止损，该卖的时候亮红灯 + 发邮件",
+    obGo: "去查第一只股 →",
+    evStop: (c, s) => `已跌破止损提醒线：较成本 ${c}%（提醒线 -${s}%）。当初的买入理由还在吗？`,
+    evNearStop: (d) => `距止损提醒线只剩 ${d}%。提前想好：跌破了执行吗？`,
+    evWishHit: (c, p) => `到了你想买的价：现价 ${c}${p}。去查查现在的水位和红旗，别闭眼接。`,
+    evWishNear: (g) => `离你的心愿价只差 ${g}%。`,
+    planToggle: "（点开）",
     dbTitle: "⚔️ 多空对辩（两个 AI 吵一架）",
     dbSub: "多头律师只准找买入理由，空头律师（另一家的 AI）只准拆台，最后法官指出双方分歧点——分歧点就是你该去核实的事。结合最近新闻。",
     dbRun: "开庭（约 1 分钟）",
@@ -726,6 +767,21 @@ const I18N = {
     krDir_up: "model lean: upward", krDir_down: "model lean: downward", krDir_flat: "model lean: sideways",
     krDirNote: "custom fine-tuned model (10y of US/CA/CN/HK/crypto data) · ~70% direction hit in backtest — a reference, not an answer",
     newsTitle: "recent headlines",
+    navToday: "today", navTodaySub: "anything that needs your hands, at a glance",
+    todayTitle: "anything you need to act on today?",
+    todayLoading: "patrolling your holdings and wishlist…",
+    todayAllClear: "all clear — nothing needs your hands. Sitting tight is a skill too.",
+    todayNote: "patrol rules: below stop 🔴 / within 3% of stop 🟡 / wish price hit 🎯 / near wish 👀. You also get an email after each trading day.",
+    pulseLoading: "loading market pulse…", pulseLevel: (l, p) => `${l} ${p}%`, m1short: "mo",
+    ob1: "check any stock under \"buy\" — real prices, verdict, AI forecast, all in one",
+    ob2: "like it but too pricey? park it in the wishlist — we ping you when it drops to your price",
+    ob3: "bought something? log it under holdings — auto P&L, stop-loss watch, red light + email when it's time to think about selling",
+    obGo: "check your first stock →",
+    evStop: (c, s) => `broke below your stop line: ${c}% vs cost (line at -${s}%). Is your original buy thesis still alive?`,
+    evNearStop: (d) => `only ${d}% above your stop line. Decide now: will you execute if it breaks?`,
+    evWishHit: (c, p) => `hit your wish price: now ${c}${p}. Check its water level and red flags before catching it.`,
+    evWishNear: (g) => `just ${g}% above your wish price.`,
+    planToggle: "(expand)",
     dbTitle: "⚔️ bull vs bear (two AIs argue)",
     dbSub: "A bull lawyer argues to buy, a bear lawyer (from a different AI vendor) tears it apart, then a judge names their real disagreements — which are exactly what you should verify. Uses recent headlines.",
     dbRun: "start the trial (~1 min)",
@@ -1045,6 +1101,88 @@ function switchTab(tab, el) {
     if (tab === 'wish') {
         if (USER) refreshWish();
         else document.getElementById('wishResult').innerHTML = gateCard(t('wishTitle'));
+    }
+    if (tab === 'today') buildToday();
+}
+
+/* ============ 今天（驾驶舱）：大盘脉搏 + 需要行动的事 ============ */
+let _pulseLoaded = false;
+async function buildToday() {
+    // ── 大盘脉搏（会话内只拉一次）──
+    const row = document.getElementById('pulseRow');
+    if (row && !_pulseLoaded) {
+        try {
+            const d = await apiFetch('/api/serenity/pulse');
+            row.innerHTML = d.items.map(i => i.ok ? `
+                <span><b>${i.name}</b> <span class="font-mono">${i.cur}${i.last}</span>
+                <span class="text-xs text-[#8A8578]">${t('pulseLevel', i.level, i.range_pos)}</span>
+                <span class="text-xs ${i.ret_1m>=0?'pos':'neg'}">${i.ret_1m>=0?'+':''}${i.ret_1m}%/${t('m1short')}</span></span>`
+                : `<span class="text-xs text-[#8A8578]">${i.name} —</span>`).join('');
+            _pulseLoaded = true;
+        } catch { row.innerHTML = `<span class="text-xs text-[#8A8578]">—</span>`; }
+    }
+    // ── 需要行动的事 ──
+    const box = document.getElementById('todayBox');
+    if (!box) return;
+    const hold = USER ? getHold() : [];
+    const wishL = USER ? getList('sq_wish') : [];
+    if (!USER || (!hold.length && !wishL.length)) {
+        // 新手/未登录：三步引导
+        box.innerHTML = `
+            <div class="space-y-3 text-sm text-[#4A463C]">
+                <div>1️⃣ ${t('ob1')}</div><div>2️⃣ ${t('ob2')}</div><div>3️⃣ ${t('ob3')}</div>
+                <div class="flex gap-3 mt-5 flex-wrap">
+                    <button onclick="switchTab('check', tabBtn('check'))" class="px-6 py-3 btn-red text-sm">${t('obGo')}</button>
+                    ${!USER ? `<button onclick="openLogin()" class="px-6 py-3 btn-ghost text-sm">${t('signIn')}</button>` : ''}
+                </div>
+            </div>`;
+        return;
+    }
+    box.innerHTML = `<div class="text-xs text-[#8A8578]">${t('todayLoading')}</div>`;
+    try {
+        const events = [];
+        let summaryHtml = '';
+        // 持仓：复用 portfolio 的记账口径（止损距离/预警区与邮件巡检同规则）
+        if (hold.length) {
+            const res = await fetch('/api/serenity/portfolio', {
+                method: 'POST', credentials: 'include', headers: {'Content-Type':'application/json'},
+                body: JSON.stringify({ base: PF_BASE, items: hold.map(h => ({ code:h.code, name:h.name, txns:h.txns })) })
+            });
+            const d = await res.json();
+            for (const s of (d.stocks || [])) {
+                if (!(s.hold_qty > 0) || s.last == null || !s.avg_cost) continue;
+                const chg = s.last / s.avg_cost - 1, stop = (s.stop_pct || 15) / 100;
+                if (chg <= -stop) events.push({lv:0, html:`🔴 <b>${s.name}</b> ${t('evStop', (chg*100).toFixed(1), (stop*100).toFixed(1))}`, code:s.code});
+                else if (chg <= -stop + 0.03) events.push({lv:1, html:`🟡 <b>${s.name}</b> ${t('evNearStop', ((chg+stop)*100).toFixed(1))}`, code:s.code});
+            }
+            const t2 = d.total;
+            if (t2) summaryHtml = `${t('pfValue')} <b>${t2.cur}${fmtMoney(Math.abs(t2.value))}</b> · <span class="${t2.total_pnl>=0?'pos':'neg'}">${t2.total_pnl>=0?'+':'-'}${t2.cur}${fmtMoney(Math.abs(t2.total_pnl))}</span>`;
+        }
+        // 心愿单：到价/接近
+        if (wishL.length) {
+            const items = wishL.map(x => `${x.code}:${x.target}`).join(',');
+            const w = await apiFetch(`/api/serenity/wish_check?items=${encodeURIComponent(items)}&lang=${LANG}`);
+            for (const i of (w.items || [])) {
+                const src = wishL.find(x => x.code === i.code);
+                if (!src || i.last === undefined) continue;
+                if (i.hit) events.push({lv:0, html:`🎯 <b>${src.name}</b> ${t('evWishHit', i.cur||'', i.last)}`, code:i.code});
+                else if (i.gap_pct !== undefined && i.gap_pct <= 3) events.push({lv:1, html:`👀 <b>${src.name}</b> ${t('evWishNear', i.gap_pct)}`, code:i.code});
+            }
+        }
+        events.sort((a,b) => a.lv - b.lv);
+        const badge = document.getElementById('todayBadge');
+        const nRed = events.filter(e => e.lv === 0).length;
+        if (badge) badge.innerHTML = nRed
+            ? `<span class="text-xs px-2 py-0.5 rounded-full ml-1" style="background:var(--red1);color:#fff;font-family:var(--font-mono)">${nRed}</span>` : '';
+        box.innerHTML = (events.length
+            ? events.map(e => `<div class="border border-[#E4DAC7] rounded-2xl p-4 mb-3 text-sm flex flex-wrap justify-between items-center gap-2">
+                <span>${e.html}</span>
+                <span class="code-link text-xs" onclick="goCheck('${e.code}')">${t('recheck')} →</span></div>`).join('')
+            : `<div class="text-sm text-[#2f9e53]">✅ ${t('todayAllClear')}</div>`)
+            + (summaryHtml ? `<div class="text-xs text-[#8A8578] mt-5 pt-4" style="border-top:1px dashed var(--line)">${t('myHold')}：${summaryHtml} <span class="code-link" onclick="switchTab('hold', tabBtn('hold'))">${t('goLook')}</span></div>` : '')
+            + `<div class="text-[10px] text-[#8A8578] mt-3">${t('todayNote')}</div>`;
+    } catch (e) {
+        box.innerHTML = `<div class="text-xs text-[#E5484D]">${t('failed', e.message)}</div>`;
     }
 }
 
@@ -1832,7 +1970,10 @@ function setPfBase(b) {
     refreshHold();
 }
 // 打开网站就把持仓汇总带出来（有持仓才查）
-window.addEventListener('DOMContentLoaded', () => { if (USER && getList('sq_hold').length) refreshHold(); });
+window.addEventListener('DOMContentLoaded', () => {
+    if (USER && getList('sq_hold').length) refreshHold();
+    buildToday(); // 默认落地页是「今天」驾驶舱
+});
 
 async function refreshWish() {
     const w = getList('sq_wish');

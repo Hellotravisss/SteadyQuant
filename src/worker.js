@@ -810,6 +810,23 @@ async function stockNews(env, code, count = 8) {
   }
 }
 
+/* ── 大盘脉搏：三大基准指数的水位快照（驾驶舱顶栏用）。
+   炒股的人开盘第一眼看大盘——给环境感，不给择时建议。 ── */
+async function marketPulse(env, S = pack("zh")) {
+  const idx = [
+    { code: "SPY", name: S.bench_spx },
+    { code: "000300.SH", name: S.bench_hs300 },
+    { code: "BTC-USD", name: S.bench_btc },
+  ];
+  const out = await Promise.all(idx.map(async (i) => {
+    const pa = await priceAnalysis(env, i.code, S).catch(() => null);
+    if (!pa) return { ...i, ok: false };
+    return { ...i, ok: true, last: pa.last, cur: pa.cur, level: pa.level,
+      range_pos: pa.range_pos_6mo_pct, ret_1m: pa.ret_1m_pct };
+  }));
+  return { items: out, checked_at: nowStr() };
+}
+
 async function history(env, code, points = 60, S = pack("zh")) {
   code = code.trim().toUpperCase();
   const s = await dailySeries(env, code);
@@ -1445,6 +1462,7 @@ export default {
       if (p === "/api/serenity/forecast") return json(await kronosForecast(env, q("code"), S));
       if (p === "/api/serenity/news") return json(await stockNews(env, q("code")));
       if (p === "/api/serenity/debate") return debateSSE(env, q("code"), S, lang);
+      if (p === "/api/serenity/pulse") return json(await marketPulse(env, S));
       if (p === "/api/serenity/watch_check") return json(await watchCheck(env, q("items"), S));
       if (p === "/api/serenity/wish_check") return json(await wishCheck(env, q("items"), S));
       if (p === "/api/serenity/portfolio" && request.method === "POST")
