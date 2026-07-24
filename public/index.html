@@ -261,26 +261,26 @@
         </button>
         <button onclick="switchTab('wish',this)" class="main-btn" data-nav="wish">
             <div class="eyebrow">wishlist</div>
-            <div class="font-black text-lg mt-1"><span data-i18n="navWish">想买什么</span> <span id="wishBadge"></span></div>
-            <div class="text-xs text-[#8A8578] mt-1" data-i18n="navWishSub">看中但嫌贵的，跌到你要的价提醒你</div>
+            <div class="font-black text-lg mt-1"><span data-i18n="navWish">心愿单</span> <span id="wishBadge"></span></div>
+            <div class="text-xs text-[#8A8578] mt-1" data-i18n="navWishSub">看中但嫌贵？放这儿蹲低价，跌到位喊你</div>
         </button>
     </div>
-    <div class="mb-6"></div>
+    <div class="text-center mb-6 mt-1 text-[11px] text-[#8A8578]" style="font-family:var(--font-mono)" data-i18n="flowHint">用法：买什么(先查) → 嫌贵放心愿单蹲价 → 买了记进已经买了 → 每天开「今天」看有没有要动手的事</div>
 
     <!-- ===================== 今天（驾驶舱） ===================== -->
     <div id="panel-today" class="panel active">
-        <!-- 大盘脉搏 -->
-        <div class="glass rounded-3xl p-6 mb-4">
+        <!-- 需要你行动（驾驶舱的灵魂，永远第一屏） -->
+        <div class="glass rounded-3xl p-8 mb-4">
+            <div class="eyebrow mb-1">action items</div>
+            <div class="mb-4 text-2xl font-bold" data-i18n="todayTitle">今天有没有需要你做的事？</div>
+            <div id="todayBox"><div class="text-xs text-[#8A8578]" data-i18n="todayLoading">正在巡检你的持仓和心愿单…</div></div>
+        </div>
+        <!-- 大盘脉搏（环境参考） -->
+        <div class="glass rounded-3xl p-6">
             <div class="eyebrow mb-3">market pulse</div>
             <div id="pulseRow" class="flex flex-wrap gap-x-8 gap-y-2 text-sm">
                 <span class="text-xs text-[#8A8578]" data-i18n="pulseLoading">大盘水位加载中…</span>
             </div>
-        </div>
-        <!-- 需要你行动 + 持仓一句话（或新手引导） -->
-        <div class="glass rounded-3xl p-8">
-            <div class="eyebrow mb-1">action items</div>
-            <div class="mb-4 text-2xl font-bold" data-i18n="todayTitle">今天有没有需要你做的事？</div>
-            <div id="todayBox"><div class="text-xs text-[#8A8578]" data-i18n="todayLoading">正在巡检你的持仓和心愿单…</div></div>
         </div>
     </div>
 
@@ -438,7 +438,7 @@
     <div id="panel-wish" class="panel">
         <div class="glass rounded-3xl p-8">
             <div class="eyebrow mb-1">wishlist</div>
-            <div class="mb-2 text-2xl font-bold" data-i18n="wishTitle">想买什么</div>
+            <div class="mb-2 text-2xl font-bold" data-i18n="wishTitle">心愿单：蹲个好价</div>
             <div class="text-xs text-[#8A8578] mb-6" data-i18n="wishSub">看中但觉得贵的股票放这。设一个你愿意买的价，跌到了就亮绿灯提醒你——不用天天刷行情等回调</div>
             <div id="wishResult"><div class="text-[#8A8578] text-sm" data-i18n="wishEmpty">wishlist running on 0%… 还没有想买的。去「买什么」查一只股，点「想买，等便宜点」。</div></div>
         </div>
@@ -498,7 +498,8 @@ const I18N = {
     // 三入口
     navBuy: "买什么", navBuySub: "查一只股能不能碰，或让 AI 帮你找",
     navHold: "已经买了", navHoldSub: "盈亏一目了然，该卖的时候亮红灯",
-    navWish: "想买什么", navWishSub: "看中但嫌贵的，跌到你要的价提醒你",
+    navWish: "心愿单", navWishSub: "看中但嫌贵？放这儿蹲低价，跌到位喊你",
+    flowHint: "用法：买什么(先查) → 嫌贵放心愿单蹲价 → 买了记进已经买了 → 每天开「今天」看有没有要动手的事",
     scanEntryLead: "更喜欢用数字硬筛？", scanEntry: "一键选股（A股 · 估值粗筛 + 走势复评两轮制）→",
     // 预算规划
     planEyebrow: "plan first",
@@ -563,7 +564,7 @@ const I18N = {
     afNotFound: (s) => `⚠️ 没认出「${s}」。A股可输中文名，美股输代码（NVDA），加股加 .TO，币输 BTC / ETH`,
     afCurAuto: "自动（按标的所在市场）",
     // 想买
-    wishTitle: "想买什么",
+    wishTitle: "心愿单：蹲个好价",
     wishSub: "看中但觉得贵的股票放这。设一个你愿意买的价，跌到了就亮绿灯提醒你——不用天天刷行情等回调",
     wishEmpty: "wishlist running on 0%… 还没有想买的。去「买什么」查一只股，点「想买，等便宜点」。",
     wishLoading: "正在看有没有跌到你要的价…",
@@ -679,6 +680,7 @@ const I18N = {
     navBuy: "what to buy", navBuySub: "check if a stock is worth touching, or let AI find one",
     navHold: "what I own", navHoldSub: "P&L at a glance, red light when it's time to sell",
     navWish: "what I want", navWishSub: "too pricey for now — we'll ping you at your price",
+    flowHint: "how to use: check a stock → too pricey? park it in the wishlist → bought it? log it in holdings → open \"today\" daily for anything that needs your hands",
     scanEntryLead: "prefer hard numbers?", scanEntry: "one-click screener (A-shares · value screen + trend review) →",
     planEyebrow: "plan first",
     planTitle: "how much, and for how long? plan it first",
