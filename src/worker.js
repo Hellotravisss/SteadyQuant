@@ -1600,7 +1600,7 @@ async function runPatrol(env) {
     const u = await env.ACCOUNTS_DB.prepare("SELECT email FROM users WHERE id = ?").bind(row.user_id).first();
     if (!u?.email || !env.RESEND_API_KEY) continue;
     const html = `<div style="font-family:ui-monospace,Menlo,monospace;max-width:560px;margin:0 auto;padding:24px;color:#17150F">
-      <div style="font-size:13px;color:#8A8578">steady · 每日巡检 — running on 1%</div>
+      <div style="font-size:13px;color:#8A8578">steady · 定风波 — 每日巡检</div>
       <div style="font-size:20px;font-weight:800;margin:10px 0 18px">今天有 ${events.length} 件事需要你看一眼</div>
       ${events.map((e) => `<div style="padding:12px 14px;border:1px solid #E4DAC7;border-radius:12px;margin-bottom:10px;font-size:14px;line-height:1.6">${e}</div>`).join("")}
       <a href="https://steady.lowbattery.studio" style="display:inline-block;margin-top:10px;padding:12px 22px;background:#E5484D;color:#fff;border-radius:999px;text-decoration:none;font-weight:700;font-size:14px">打开 steady 处理 →</a>

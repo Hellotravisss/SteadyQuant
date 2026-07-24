@@ -28,7 +28,7 @@
         --font-body:'General Sans',system-ui,sans-serif;
         --font-mono:'JetBrains Mono',ui-monospace,monospace}
         /* 夜间模式：跟随系统 prefers-color-scheme，或手动/定时切换写入 data-theme。
-           电量计永远 1% 红——夜间只换底色，不碰品牌红。 */
+           夜间只换底色，不碰品牌红。 */
         html[data-theme="dark"]{--paper:#171512;--paper-2:#1D1A16;--cloud:#221F1A;--ink:#F3EEE3;
         --ink-70:#C9C2B2;--dim:#8F8879;--line:#37332A;--red1:#FF6166;--red-deep:#B8353A;
         --charge:#4ECB79;--night:#0D0C0A;--chain-line:rgba(243,238,227,.22);
@@ -109,17 +109,9 @@
         .ai-md h2{font-weight:800;font-size:17px;color:var(--ink);margin:22px 0 8px;font-family:var(--font-display)}
         .ai-md li{margin-left:18px;list-style:disc}
         .ai-md strong{color:var(--ink)}
-        /* 供应链图谱卡点节点（1% critical 红） */
+        /* 供应链图谱卡点节点（critical 红） */
         .chain-hot{border-color:var(--red1);color:var(--red-deep);background:rgba(229,72,77,.08)}
         .chain-hub{border-style:dashed}
-        /* 固定电量计（永远 1%，偶尔挣扎一下又掉回去） */
-        #battery{position:fixed;right:18px;bottom:18px;z-index:65;display:flex;align-items:center;gap:8px;
-          background:var(--cloud);border:1px solid var(--line);border-radius:30px;padding:8px 14px;
-          font-family:var(--font-mono);font-size:11px;letter-spacing:.08em;color:var(--dim);
-          box-shadow:0 6px 18px rgba(0,0,0,var(--shadow-c))}
-        #battery .shell{width:22px;height:11px;border:1.5px solid var(--ink);border-radius:3px;position:relative}
-        #battery .shell::after{content:"";position:absolute;right:-4px;top:2.5px;width:2.5px;height:4px;background:var(--ink);border-radius:1px}
-        #battery .juice{position:absolute;left:1.5px;top:1.5px;bottom:1.5px;width:12%;background:var(--red1);border-radius:1px;transition:width .6s}
         @media (prefers-reduced-motion: reduce){*{animation:none!important;transition:none!important}}
         #themeBtn{position:fixed;right:18px;bottom:66px;z-index:65;background:var(--cloud);border:1px solid var(--line);
           border-radius:30px;padding:7px 14px;font-family:var(--font-mono);font-size:11px;letter-spacing:.06em;
@@ -164,7 +156,7 @@
     </script>
 </head>
 <body>
-<div class="sysbar" data-i18n="sysbar">steady tools for people running on 1% — real prices · plain verdicts</div>
+<div class="sysbar" data-i18n="sysbar">steady · 定风波 — real prices · plain verdicts</div>
 <div class="p-6 max-w-7xl mx-auto">
 
     <!-- Header -->
@@ -448,7 +440,7 @@
                 </div>
             </div>
 
-            <div id="holdResult"><div class="text-center py-8"><img src="/hero-mascot.png" alt="" style="width:130px;margin:0 auto 14px;opacity:.9"><div class="eyebrow" style="display:inline-block">holdings running on 0%</div><div class="text-sm text-[#4A463C] mt-2" data-i18n="holdEmpty">还没记录持仓。点右上角「+ 添加持仓」，或去「买什么」查一只股后点「我已经买了」。</div></div></div>
+            <div id="holdResult"><div class="text-center py-8"><img src="/hero-mascot.png" alt="" style="width:130px;margin:0 auto 14px;opacity:.9"><div class="eyebrow" style="display:inline-block">empty</div><div class="text-sm text-[#4A463C] mt-2" data-i18n="holdEmpty">还没记录持仓。点右上角「+ 添加持仓」，或去「买什么」查一只股后点「我已经买了」。</div></div></div>
         </div>
     </div>
 
@@ -458,7 +450,7 @@
             <div class="eyebrow mb-1">wishlist</div>
             <div class="mb-2 text-2xl font-bold" data-i18n="wishTitle">心愿单：蹲个好价</div>
             <div class="text-xs text-[#8A8578] mb-6" data-i18n="wishSub">看中但觉得贵的股票放这。设一个你愿意买的价，跌到了就亮绿灯提醒你——不用天天刷行情等回调</div>
-            <div id="wishResult"><div class="text-[#8A8578] text-sm" data-i18n="wishEmpty">wishlist running on 0%… 还没有想买的。去「买什么」查一只股，点「想买，等便宜点」。</div></div>
+            <div id="wishResult"><div class="text-[#8A8578] text-sm" data-i18n="wishEmpty">还没有想买的。去「买什么」查一只股，点「想买，等便宜点」。</div></div>
         </div>
     </div>
 
@@ -544,7 +536,7 @@ function animDraw(rootSel, dur = 900) {
 const I18N = {
   zh: {
     tagline: "定风波",
-    sysbar: "steady tools for people running on 1% — real prices · plain verdicts",
+    sysbar: "steady · 定风波 — real prices · plain verdicts",
     // 三入口
     navBuy: "买什么", navBuySub: "查一只股能不能碰，或让 AI 帮你找",
     navHold: "已经买了", navHoldSub: "盈亏一目了然，该卖的时候亮红灯",
@@ -616,7 +608,7 @@ const I18N = {
     // 想买
     wishTitle: "心愿单：蹲个好价",
     wishSub: "看中但觉得贵的股票放这。设一个你愿意买的价，跌到了就亮绿灯提醒你——不用天天刷行情等回调",
-    wishEmpty: "wishlist running on 0%… 还没有想买的。去「买什么」查一只股，点「想买，等便宜点」。",
+    wishEmpty: "还没有想买的。去「买什么」查一只股，点「想买，等便宜点」。",
     wishLoading: "正在看有没有跌到你要的价…",
     // 卡片
     ok: "✓ 一切正常", stopHit: "⛔ 跌破止损线，该考虑卖了",
@@ -756,12 +748,12 @@ const I18N = {
     wishSaved: (n, c, tg) => `<b>${n}</b> 已进想买清单：跌到 ${c}${tg} 会亮绿灯提醒`,
     goLook: "去看看 →",
     failed: (m) => `失败：${m}`,
-    disclaimerFoot: "© 2026 low battery studio — still at 1% · 也无风雨也无晴 · 仅供研究教育，非投资建议",
+    disclaimerFoot: "© 2026 low battery studio · 也无风雨也无晴 · 仅供研究教育，非投资建议",
   },
 
   en: {
     tagline: "steady, not clever",
-    sysbar: "steady tools for people running on 1% — real prices · plain verdicts",
+    sysbar: "steady · 定风波 — real prices · plain verdicts",
     navBuy: "what to buy", navBuySub: "check if a stock is worth touching, or let AI find one",
     navHold: "what I own", navHoldSub: "P&L at a glance, red light when it's time to sell",
     navWish: "what I want", navWishSub: "too pricey for now — we'll ping you at your price",
@@ -827,7 +819,7 @@ const I18N = {
     afCurAuto: "auto (use the stock's own market)",
     wishTitle: "what I want",
     wishSub: "Park the ones you like but find expensive. Set the price you'd pay — green light when it gets there. No need to refresh quotes all day.",
-    wishEmpty: "wishlist running on 0%… nothing here yet. Check a stock under \"what to buy\" and tap \"want it, waiting for cheaper\".",
+    wishEmpty: "Nothing here yet. Check a stock under \"what to buy\" and tap \"want it, waiting for cheaper\".",
     wishLoading: "checking whether anything hit your price…",
     ok: "✓ all good", stopHit: "⛔ below your stop — think about selling",
     wishHit: "🟢 it hit your price — re-check before you act", wishGap: (g) => `${g}% to go before it hits your price`,
@@ -961,7 +953,7 @@ const I18N = {
     wishSaved: (n, c, tg) => `<b>${n}</b> is on your wishlist — green light when it hits ${c}${tg}`,
     goLook: "take a look →",
     failed: (m) => `failed: ${m}`,
-    disclaimerFoot: "© 2026 low battery studio — still at 1%. research & education only, not investment advice",
+    disclaimerFoot: "© 2026 low battery studio · research & education only, not investment advice",
   },
 };
 
@@ -994,7 +986,7 @@ function toggleLang() {
 }
 
 /* ============ 登录 / 云端同步 ============ */
-// 登录走 Low Battery Studio 账号中心：一次登录，全 studio 子域（quant/geo/flashpick…）通用
+// 登录走统一账号中心：一次登录多产品通用
 const ACC = 'https://accounts.lowbattery.studio';
 let USER = null;
 
@@ -1425,7 +1417,7 @@ async function doPlan() {
     const extra = document.getElementById('planExtra').value.trim();
     const box = document.getElementById('planResult');
     if (!(amount > 0)) { box.innerHTML = `<div class="text-[#E5484D] text-sm">${t('planBadInput')||'填一下预算金额'}</div>`; return; }
-    box.innerHTML = `<div class="py-8 text-center text-[#E5484D]">charging…</div>`;
+    box.innerHTML = `<div class="py-8 text-center text-[#E5484D]">加载中…</div>`;
     let d;
     try {
         const r = await fetch(`/api/serenity/plan?amount=${amount}&currency=${currency}&months=${months}&lang=${LANG}`);
@@ -1456,7 +1448,7 @@ async function doPlanAI(amount, currency, months) {
     const btn = document.getElementById('planAiBtn');
     const out = document.getElementById('planAiResult');
     btn.disabled = true; btn.style.opacity = .5;
-    out.textContent = 'charging…';
+    out.textContent = '…';
     const esc = s => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
     const md = t => linkifyCodes(esc(t).replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>').replace(/^[-·•] (.*)$/gm,'<li>$1</li>').replace(/\n/g,'<br>'));
     let raw = '';
@@ -1656,7 +1648,7 @@ async function doCheck() {
     if (!code) return;
     document.getElementById('checkEmpty').style.display = 'none';
     const box = document.getElementById('checkResult');
-    box.innerHTML = `<div class="py-12 text-center text-[#E5484D]">charging… ${t('checking')}</div>`;
+    box.innerHTML = `<div class="py-12 text-center text-[#E5484D]">${t('checking')}</div>`;
     try {
         // 纯字母代码 = 美股/加股（AAPL / SHOP.TO）；数字+.HK = 港股（0700.HK）。直接查，不走A股搜索
         const overseas = (/^[A-Z][A-Z0-9.\-]{0,9}$/.test(code) || /^\d{1,5}\.HK$/.test(code))
@@ -2182,11 +2174,11 @@ async function refreshHold() {
     const box = document.getElementById('holdResult');
     const sumEl = document.getElementById('portfolioSummary');
     if (!hold.length) {
-        box.innerHTML = `<div class="text-center py-8"><img src="/hero-mascot.png" alt="" style="width:130px;margin:0 auto 14px;opacity:.9"><div class="eyebrow" style="display:inline-block">holdings running on 0%</div><div class="text-sm text-[#4A463C] mt-2">${t('holdEmpty')}</div></div>`;
+        box.innerHTML = `<div class="text-center py-8"><img src="/hero-mascot.png" alt="" style="width:130px;margin:0 auto 14px;opacity:.9"><div class="eyebrow" style="display:inline-block">empty</div><div class="text-sm text-[#4A463C] mt-2">${t('holdEmpty')}</div></div>`;
         if (sumEl) sumEl.innerHTML = '';
         return;
     }
-    box.innerHTML = `<div class="py-8 text-center text-[#2f9e53]">charging… ${t('holdLoading')}</div>`;
+    box.innerHTML = `<div class="py-8 text-center text-[#2f9e53]">${t('holdLoading')}</div>`;
     let d;
     try {
         const res = await fetch('/api/serenity/portfolio', {
@@ -2414,19 +2406,13 @@ window.addEventListener('DOMContentLoaded', () => {
     if (USER && getList('sq_hold').length) refreshHold();
     buildToday(); // 默认落地页是「今天」驾驶舱
     animEnter('.main-btn', 18);
-    const juice = document.getElementById('juice');
-    if (MOTION && juice) {          // 电量计：开机从 0 充到 1%（品牌时刻）
-        const w = juice.style.width || getComputedStyle(juice).width;
-        juice.style.width = '0';
-        anime({ targets: juice, width: w || '1%', duration: 1200, delay: 400, easing: 'easeOutQuart' });
-    }
 });
 
 async function refreshWish() {
     const w = getList('sq_wish');
     const box = document.getElementById('wishResult');
     if (!w.length) { box.innerHTML = `<div class="text-[#8A8578] text-sm">${t('wishEmpty')}</div>`; return; }
-    box.innerHTML = `<div class="py-8 text-center text-[#E5484D]">charging… ${t('wishLoading')}</div>`;
+    box.innerHTML = `<div class="py-8 text-center text-[#E5484D]">${t('wishLoading')}</div>`;
     const items = w.map(x => `${x.code}:${x.target}`).join(',');
     try {
         const d = await apiFetch(`/api/serenity/wish_check?items=${encodeURIComponent(items)}&lang=${LANG}`);
@@ -2656,19 +2642,9 @@ async function doScan() {
 }
 
 </script>
-<div class="text-center py-8 sysbar" style="border-bottom:none;border-top:1px solid var(--line);margin-top:32px" data-i18n="disclaimerFoot">© 2026 low battery studio — still at 1% · 也无风雨也无晴 · 仅供研究教育，非投资建议</div>
-<div id="battery"><span class="shell"><span class="juice" id="juice"></span></span><span id="battPct">1%</span><span id="battLabel">power saving mode</span></div>
+<div class="text-center py-8 sysbar" style="border-bottom:none;border-top:1px solid var(--line);margin-top:32px" data-i18n="disclaimerFoot">© 2026 low battery studio · 也无风雨也无晴 · 仅供研究教育，非投资建议</div>
 <button id="themeBtn" onclick="LBSTheme.cycle()" title="点击切换：auto(跟随系统/时间) → dark → light">auto</button>
 <script>
-// 电量计偶尔"挣扎"到 2% 又掉回 1%（永不充满 — 品牌铁律）
-(function(){
-  if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-  const pct = document.getElementById('battPct'), label = document.getElementById('battLabel'), juice = document.getElementById('juice');
-  setInterval(() => {
-    pct.textContent = '2%'; label.textContent = 'charging…'; juice.style.width = '22%';
-    setTimeout(() => { pct.textContent = '1%'; label.textContent = 'power saving mode'; juice.style.width = '12%'; }, 1800);
-  }, 24000);
-})();
 LBSTheme.apply(); // 按钮此时已挂载，把当前状态文字同步进去
 </script>
 </body>
