@@ -921,29 +921,29 @@ async function scan(env, principal = 2000, risk = "stable", S = pack("zh")) {
     });
   }
   results.sort((a, b) => b.score - a.score);
-  return { trade_date: targetDate, principal, max_price: Math.round(maxPrice * 100) / 100,
-    top_picks: results.slice(0, 15) };
-}
 
-function riskReview(code, totalReturn, winRate, maxDrawdown, dataMode, S = pack("zh")) {
-  const flags = [];
-  let score = 100;
-  if (dataMode === "simulated") { flags.push(S.rr_sim); score -= 25; }
-  if (String(totalReturn).includes("模拟")) { flags.push(S.rr_sim2); score -= 15; }
-  const wr = parseFloat(String(winRate).replace("%", "")) || 0;
-  if (wr > 85) { flags.push(S.rr_winrate); score -= 20; }
-  const dd = parseFloat(String(maxDrawdown).replace("%", "")) || 0;
-  if (dd < 5) { flags.push(S.rr_dd); score -= 15; }
-  if (!flags.length) flags.push(S.rr_ok);
-  return {
-    code,
-    review: {
-      review_score: Math.max(0, score), flags,
-      recommendation: score >= 70 ? S.rr_pass : S.rr_review,
-      red_line: S.risk_redline,
-    },
-    timestamp: new Date().toISOString(),
-  };
+  // 阶段2：技术复评。对估值粗筛出的前 12 只拉真实日线，
+  // 用全站同一套水位/阶段/ATR 逻辑打技术分——低位筑底加分、下跌途中重罚（别接飞刀），
+  // 最终榜单 = 估值分 + 技术分。选股和查股的判断口径完全一致，不搞两套标准。
+  const cands = results.slice(0, 12);
+  await Promise.all(cands.map(async (c) => {
+    const pa = await priceAnalysis(env, c.code, S);
+    if (!pa) { c.tech = null; return; }
+    let bonus = 0;
+    if (pa.stageKey === "basing") bonus += 15;
+    else if (pa.stageKey === "momentum") bonus += 8;
+    else if (pa.stageKey === "neutral") bonus += 4;
+    else if (pa.stageKey === "extended") bonus -= 10;
+    else if (pa.stageKey === "falling") bonus -= 20;
+    if (pa.range_pos_6mo_pct <= 30) bonus += 10;
+    else if (pa.range_pos_6mo_pct >= 85) bonus -= 10;
+    c.tech = { level: pa.level, stage: pa.stage, range_pos: pa.range_pos_6mo_pct,
+      ret_1m: pa.ret_1m_pct, stop_pct: pa.stop_atr_pct, vol: pa.vol_annual_pct };
+    c.score = Math.round((c.score + bonus) * 10) / 10;
+  }));
+  cands.sort((a, b) => b.score - a.score);
+  return { trade_date: targetDate, principal, max_price: Math.round(maxPrice * 100) / 100,
+    top_picks: cands.slice(0, 10), note: S.scan_note };
 }
 
 /* ───────── AI 深度报告（SSE 流式） ───────── */
@@ -1216,9 +1216,6 @@ export default {
       if (p === "/api/search") return json(await search(env, q("keyword")));
       if (p === "/api/scan")
         return json(await scan(env, parseFloat(q("principal", "2000")), q("risk", "stable"), S));
-      if (p === "/api/risk_review")
-        return json(riskReview(q("code"), q("total_return", "12.5%"), q("win_rate", "68%"),
-          q("max_drawdown", "9.2%"), q("data_mode", "real"), S));
       if (p.startsWith("/api/"))
         return json({ error: S.err_api(p) }, 404);
     } catch (e) {

@@ -261,12 +261,7 @@
         </button>
     </div>
     <div class="text-right mb-6">
-        <span class="text-[11px] text-[#8A8578] cursor-pointer hover:text-[#4A463C]" onclick="document.getElementById('advTools').classList.toggle('hidden')" data-i18n="advTools">// 高级工具 ▾</span>
-        <div id="advTools" class="hidden inline-flex gap-4 ml-3">
-            <span class="text-[11px] text-[#8A8578] cursor-pointer hover:text-[#E5484D] tab-btn" style="padding:0;border:none" onclick="switchTab('scan',this)" data-i18n="advScan">一键选股</span>
-            <span class="text-[11px] text-[#8A8578] cursor-pointer hover:text-[#E5484D] tab-btn" style="padding:0;border:none" onclick="switchTab('riskreview',this)" data-i18n="advRisk">风险审查</span>
-            <span class="text-[11px] text-[#8A8578] cursor-pointer hover:text-[#E5484D] tab-btn" style="padding:0;border:none" onclick="switchTab('portfolio',this)" data-i18n="advBt">组合回测</span>
-        </div>
+        <span class="text-[11px] text-[#8A8578] cursor-pointer hover:text-[#E5484D] tab-btn" style="padding:0;border:none" onclick="switchTab('scan',this)" data-i18n="advScan">// 一键选股（A股）</span>
     </div>
 
     <!-- ===================== 卡点体检 ===================== -->
@@ -421,7 +416,7 @@
         </div>
     </div>
 
-    <!-- ===================== 一键选股（最小可用版） ===================== -->
+    <!-- ===================== 一键选股（估值粗筛 + 走势复评） ===================== -->
     <div id="panel-scan" class="panel">
         <div class="glass rounded-3xl p-8 max-w-5xl">
             <div class="grid grid-cols-1 lg:grid-cols-12 gap-8">
@@ -448,7 +443,7 @@
                     </button>
                     
                     <div class="text-[10px] text-[#8A8578] pt-2">
-                        已集成三大风控红线 · 每只股票自动风控检查
+                        两轮筛选：全市场估值粗筛 → 前12只走势复评（水位/阶段/ATR，与查股同口径）
                     </div>
                 </div>
 
@@ -464,39 +459,6 @@
         </div>
     </div>
 
-    <!-- ===================== 风险审查 ===================== -->
-    <div id="panel-riskreview" class="panel">
-        <div class="glass rounded-3xl p-8 max-w-2xl mx-auto">
-            <div class="mb-6">
-                <div class="text-2xl font-bold">AI 风险审查员</div>
-                <div class="text-sm text-[#8A8578] mt-1">来自 personal-quant-trading 技能</div>
-            </div>
-
-            <div class="space-y-4">
-                <input id="riskCode" value="600519.SH" class="w-full px-5 py-4 rounded-2xl" placeholder="股票代码">
-                <div class="grid grid-cols-3 gap-4">
-                    <input id="riskReturn" value="12.5%" class="px-5 py-4 rounded-2xl" placeholder="总收益">
-                    <input id="riskWinrate" value="68%" class="px-5 py-4 rounded-2xl" placeholder="胜率">
-                    <input id="riskDD" value="9.2%" class="px-5 py-4 rounded-2xl" placeholder="最大回撤">
-                </div>
-            </div>
-
-            <button onclick="doRiskReview()" 
-                    class="mt-6 w-full py-5 btn-red">
-                运行 AI 风险审查
-            </button>
-
-            <div id="riskResult" class="mt-8 hidden"></div>
-        </div>
-    </div>
-
-    <!-- ===================== 组合回测（占位） ===================== -->
-    <div id="panel-portfolio" class="panel">
-        <div class="glass rounded-3xl p-8 text-center text-[#8A8578]">
-            组合回测功能已保留后端接口，需时可扩展
-        </div>
-    </div>
-
 </div>
 
 <script>
@@ -509,7 +471,7 @@ const I18N = {
     navBuy: "买什么", navBuySub: "查一只股能不能碰，或让 AI 帮你找",
     navHold: "已经买了", navHoldSub: "盈亏一目了然，该卖的时候亮红灯",
     navWish: "想买什么", navWishSub: "看中但嫌贵的，跌到你要的价提醒你",
-    advTools: "// 高级工具 ▾", advScan: "一键选股", advRisk: "风险审查", advBt: "组合回测",
+    advScan: "// 一键选股（A股）",
     // 预算规划
     planEyebrow: "plan first",
     planTitle: "有多少钱、打算放多久？先规划一下",
@@ -665,7 +627,7 @@ const I18N = {
     navBuy: "what to buy", navBuySub: "check if a stock is worth touching, or let AI find one",
     navHold: "what I own", navHoldSub: "P&L at a glance, red light when it's time to sell",
     navWish: "what I want", navWishSub: "too pricey for now — we'll ping you at your price",
-    advTools: "// advanced ▾", advScan: "screener", advRisk: "risk review", advBt: "backtest",
+    advScan: "// screener (A-shares)",
     planEyebrow: "plan first",
     planTitle: "how much, and for how long? plan it first",
     planSub: "Not sure what to buy yet? Tell me your budget and time frame and I'll help you figure out the right mindset and traps to avoid — no specific stock recommended.",
@@ -1995,81 +1957,35 @@ async function doScan() {
             return;
         }
 
-        let html = `<div class="text-xs text-[#8A8578] mb-4">交易日 ${data.trade_date} · 共 ${data.top_picks.length} 只候选</div>`;
-        
-        data.top_picks.forEach(stock => {
-            const rc = stock.risk_check || {};
-            const riskClass = rc.passed ? 'risk-pass' : 'risk-fail';
-            
+        let html = `<div class="text-xs text-[#8A8578] mb-1">交易日 ${data.trade_date} · 估值粗筛 + 走势复评 · ${data.top_picks.length} 只候选</div>
+            <div class="text-[10px] text-[#8A8578] mb-4">${data.note || ''}</div>`;
+
+        data.top_picks.forEach((stock, i) => {
+            const t = stock.tech;
+            const techLine = t
+                ? `水位 ${t.range_pos}%（${t.level}）· ${t.stage} · 近1月 <span class="${t.ret_1m>=0?'pos':'neg'}">${t.ret_1m>=0?'+':''}${t.ret_1m}%</span>${t.stop_pct?` · 止损建议 -${t.stop_pct}%`:''}`
+                : '走势数据暂缺';
             html += `
-            <div class="stock-card glass border border-[#E4DAC7] rounded-2xl p-5 mb-3 flex justify-between items-center">
+            <div class="stock-card glass border border-[#E4DAC7] rounded-2xl p-5 mb-3 flex flex-wrap justify-between items-center gap-3">
                 <div>
-                    <div class="font-bold">${stock.name} <span class="font-mono text-xs text-[#8A8578]">${stock.code}</span></div>
+                    <div class="font-bold"><span class="text-[#8A8578] font-mono text-xs mr-1">#${i+1}</span>${stock.name} <span class="font-mono text-xs text-[#8A8578]">${stock.code}</span></div>
                     <div class="text-xs mt-1 text-[#8A8578]">PE ${stock.pe} · PB ${stock.pb} · 股息 ${stock.dv}%</div>
+                    <div class="text-xs mt-1 text-[#4A463C]">${techLine}</div>
                 </div>
                 <div class="text-right">
                     <div class="text-xl font-bold">¥${stock.price}</div>
-                    <div class="text-xs mt-1">评分 <span class="font-bold text-[#E5484D]">${stock.score}</span></div>
-                    <div class="mt-2 flex items-center gap-2 justify-end">
-                        <div class="text-[10px] px-3 py-0.5 rounded-full inline-block ${riskClass}">
-                            ${rc.passed ? '风控通过' : '风控拦截'}
-                        </div>
-                        <button onclick="goCheck('${stock.code}')" class="text-[10px] px-3 py-0.5 rounded-full bg-[#E5484D]/10 text-[#E5484D] border border-[#E5484D]/40 hover:bg-[#E5484D]/30">🎯 卡点体检</button>
-                    </div>
+                    <div class="text-xs mt-1">综合分 <span class="font-bold text-[#E5484D]">${stock.score}</span></div>
+                    <button onclick="goCheck('${stock.code}')" class="mt-2 text-[10px] px-3 py-1 rounded-full bg-[#E5484D]/10 text-[#E5484D] border border-[#E5484D]/40 hover:bg-[#E5484D]/30">去查一查 →</button>
                 </div>
             </div>`;
         });
-        
+
         container.innerHTML = html;
     } catch(e) {
         container.innerHTML = `<div class="text-[#E5484D] p-8">扫描失败：${e.message}</div>`;
     }
 }
 
-async function doRiskReview() {
-    const code = document.getElementById('riskCode').value;
-    const ret = document.getElementById('riskReturn').value;
-    const wr = document.getElementById('riskWinrate').value;
-    const dd = document.getElementById('riskDD').value;
-
-    const resDiv = document.getElementById('riskResult');
-    resDiv.classList.remove('hidden');
-    resDiv.innerHTML = `<div class="py-8 text-center text-[#2f9e53]">AI 审查中...</div>`;
-
-    try {
-        const resp = await fetch(`/api/risk_review?code=${code}&total_return=${ret}&win_rate=${wr}&max_drawdown=${dd}&data_mode=real`);
-        const data = await resp.json();
-        const r = data.review;
-
-        let html = `
-            <div class="border border-[#E4DAC7] rounded-2xl p-6">
-                <div class="flex justify-between mb-4">
-                    <div class="font-mono">${data.code}</div>
-                    <div class="text-xs px-4 py-1 rounded-full ${r.review_score >= 70 ? 'bg-[#3FB55B]/14 text-[#2f9e53]' : 'bg-[#F7F1E7] text-[#4A463C]'}">
-                        评分 ${r.review_score}
-                    </div>
-                </div>
-                <div class="text-lg font-bold mb-4">${r.recommendation}</div>
-                <div class="space-y-2 text-sm">
-                    ${r.flags.map(f => `<div class="text-[#E5484D]">• ${f}</div>`).join('')}
-                </div>
-                <div class="mt-6 pt-4 border-t border-[#E4DAC7] text-[10px] text-[#8A8578]">${r.red_line}</div>
-            </div>`;
-        resDiv.innerHTML = html;
-    } catch(e) {
-        resDiv.innerHTML = `<div class="text-[#E5484D]">审查失败：${e.message}</div>`;
-    }
-}
-
-// 初始化默认扫描一次（方便演示）
-window.onload = () => {
-    setTimeout(() => {
-        const scanPanel = document.getElementById('panel-scan');
-        if (scanPanel.classList.contains('active')) {
-            // 可选：自动触发一次演示扫描
-        }
-    }, 800);
-};
 </script>
 <div class="text-center py-8 sysbar" style="border-bottom:none;border-top:1px solid var(--line);margin-top:32px" data-i18n="disclaimerFoot">© 2026 low battery studio — still at 1% · 也无风雨也无晴 · 仅供研究教育，非投资建议</div>
 <div id="battery"><span class="shell"><span class="juice" id="juice"></span></span><span id="battPct">1%</span><span id="battLabel">power saving mode</span></div>
