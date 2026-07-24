@@ -12,10 +12,6 @@
     {
       "pattern": "steady.lowbattery.studio",
       "custom_domain": true
-    },
-    {
-      "pattern": "quant.lowbattery.studio",
-      "custom_domain": true
     }
   ],
   "d1_databases": [
