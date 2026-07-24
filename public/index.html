@@ -339,7 +339,7 @@
                 <span data-i18n="scanEntryLead">更喜欢用数字硬筛？</span>
                 <span class="code-link" onclick="switchTab('scan', tabBtn('check'))" data-i18n="scanEntry">一键选股（A股 · 估值粗筛 + 走势复评两轮制）→</span>
             </div>
-            <div class="text-[10px] text-[#8A8578] mt-2"><span data-i18n="aiWarn">⚠️ AI 无实时数据，报告中价格/市值类数字仅供参考需自行核实 · 仅供研究教育，非投资建议 · 报告中出现的</span> <span class="code-link" data-i18n="tickerWord">股票代码</span> <span data-i18n="aiWarn2">可直接点击跳转体检</span></div>
+            <div class="text-[10px] text-[#8A8578] mt-2"><span data-i18n="aiWarn">⚠️ 网站行情是实时的，但 AI 写报告靠的是它的训练记忆（不联网）——报告里提到的价格/市值可能是旧数 · 仅供研究教育，非投资建议 · 想看实时数据？点报告里的</span> <span class="code-link" data-i18n="tickerWord">股票代码</span> <span data-i18n="aiWarn2">可直接点击跳转体检</span></div>
             <div id="aiResult" class="ai-md mt-8 text-sm leading-relaxed text-[#4A463C]"></div>
         </div>
 
@@ -571,7 +571,7 @@ const I18N = {
     aiSub: '告诉我你看好什么方向（比如"机器人"），AI 会顺着产业链往上游找那些还没被大家炒起来的公司，并把风险一起讲清楚',
     aiPh: "你看好什么方向？比如：机器人 / 芯片国产替代 / AI 算力",
     aiBtn: "生成报告", aiBtnBusy: "生成中…", aiTryThese: "试试这些主题：",
-    aiWarn: "⚠️ AI 无实时数据，报告中价格/市值类数字仅供参考需自行核实 · 仅供研究教育，非投资建议 · 报告中出现的",
+    aiWarn: "⚠️ 网站行情是实时的，但 AI 写报告靠的是它的训练记忆（不联网）——报告里提到的价格/市值可能是旧数 · 仅供研究教育，非投资建议 · 想看实时数据？点报告里的",
     aiWarn2: "可直接点击跳转体检", tickerWord: "股票代码",
     exNaura: "北方华创", exMoutai: "贵州茅台", exMontage: "澜起科技",
     exNvda: "英伟达(美)", exShop: "Shopify(加)", exBtc: "比特币(币)",
@@ -1541,6 +1541,21 @@ async function loadNews(code) {
     } catch {}
 }
 
+/* ── Markdown 轻渲染（AI 输出通用：找股票报告 / 多空对辩共用） ── */
+const CHAIN_RE = /```chain\s*([\s\S]*?)(```|$)/;
+function mdRender(md) {
+    const esc = s2 => s2.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    let x = md.replace(CHAIN_RE, '');  // 图谱数据块不显示为文字
+    let h = esc(x)
+        .replace(/^### (.*)$/gm, '<h3>$1</h3>')
+        .replace(/^## (.*)$/gm, '<h2>$1</h2>')
+        .replace(/^# (.*)$/gm, '<h2>$1</h2>')
+        .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+        .replace(/^[-·•] (.*)$/gm, '<li>$1</li>')
+        .replace(/\n/g, '<br>');
+    return linkifyCodes(h);
+}
+
 /* ── 多空对辩：多头律师(DeepSeek) vs 空头律师(Kimi) → 法官裁决。SSE 流式三段。 ── */
 async function runDebate(code) {
     const btn = document.getElementById('dbBtn');
@@ -2464,19 +2479,6 @@ async function doAnalyze() {
     box.innerHTML = '<div id="aiMain"></div><div id="aiChain"></div><div id="aiVerify"></div><div id="aiReview"></div>';
     const main = document.getElementById('aiMain'), reviewBox = document.getElementById('aiReview');
     let raw = '', reviewRaw = '', reviewing = false;
-    const esc = s => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-    const CHAIN_RE = /```chain\s*([\s\S]*?)(```|$)/;
-    const mdRender = md => {
-        let x = md.replace(CHAIN_RE, '');  // 图谱数据块不显示为文字
-        let h = esc(x)
-            .replace(/^### (.*)$/gm, '<h3>$1</h3>')
-            .replace(/^## (.*)$/gm, '<h2>$1</h2>')
-            .replace(/^# (.*)$/gm, '<h2>$1</h2>')
-            .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-            .replace(/^[-·•] (.*)$/gm, '<li>$1</li>')
-            .replace(/\n/g, '<br>');
-        return linkifyCodes(h);
-    };
     try {
         const res = await fetch(`/api/serenity/analyze?query=${encodeURIComponent(q)}&market=${encodeURIComponent(market)}&lang=${LANG}`);
         const reader = res.body.getReader();
