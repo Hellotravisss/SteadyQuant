@@ -703,6 +703,7 @@ async function portfolio(env, body, S = pack("zh")) {
       rate = fxLatest(await fxSeries(m.currency, base));
       if (rate == null) { fxOk = false; continue; } // 汇率不可用 → 跳过该市场，不并入
     }
+    m.fx_to_base = rate; // 前端环图按真实汇率算占比
     tCost += m.cost * rate; tValue += m.value * rate;
     tReal += m.realized * rate; tUnreal += m.unrealized * rate;
     tWins += m.closed_wins; tTrades += m.closed_trades;
@@ -863,6 +864,76 @@ async function stockNews(env, code, count = 8) {
   } catch {
     return { code, items: [] };
   }
+}
+
+/* ── 组合走势：按流水回放最近 ~90 个交易日的每日市值和成本（全部换算到 base）。
+   每天：Σ 每只股[当日持有量 × 当日收盘(本币) × 当日汇率] ；
+   成本线 = Σ 移动平均成本 × 持有量（记账币→base 同样按当日汇率）。
+   拉不到价/汇率的股当天跳过（两条线同口径跳过，不做假账）。 ── */
+async function portfolioHistory(env, body, S = pack("zh")) {
+  const items = (Array.isArray(body?.items) ? body.items : []).slice(0, 30);
+  const base = ["CNY", "USD", "CAD", "HKD"].includes(body?.base) ? body.base : "CNY";
+  if (!items.length) return { dates: [], value: [], cost: [], base };
+
+  // 预拉：每只股日线 + 记账币/本币→base 的汇率序列
+  const stocks = [];
+  const fxNeed = new Set();
+  for (const it of items) {
+    const code = String(it.code || "").toUpperCase();
+    const txns = (Array.isArray(it.txns) ? it.txns : [])
+      .filter((t) => t && (t.side === "buy" || t.side === "sell") && t.price > 0 && t.qty > 0)
+      .sort((a, b) => (String(a.date) < String(b.date) ? -1 : 1));
+    if (!txns.length) continue;
+    const s = await dailySeries(env, code);
+    if (!s) continue;
+    const natCur = CUR_OF_MARKET[MARKET_OF(code)];
+    const curs = new Set(txns.map((t) => t.cur || natCur));
+    const acctCur = curs.size === 1 ? [...curs][0] : natCur;
+    const priceMap = {};
+    s.dates.forEach((d, i) => (priceMap[d.replace(/-/g, "")] = s.closes[i]));
+    stocks.push({ code, txns, natCur, acctCur, priceMap, dates: s.dates.map((d) => d.replace(/-/g, "")) });
+    if (natCur !== base) fxNeed.add(natCur);
+    if (acctCur !== base) fxNeed.add(acctCur);
+  }
+  if (!stocks.length) return { dates: [], value: [], cost: [], base };
+  const fxMaps = {};
+  for (const c of fxNeed) fxMaps[c] = await fxSeries(c, base);
+  const toBase = (amt, cur, date) => {
+    if (cur === base) return amt;
+    const r = fxAt(fxMaps[cur], date) ?? fxLatest(fxMaps[cur]);
+    return r ? amt * r : null;
+  };
+
+  // 交易日历：所有股票日期并集的最后 90 天
+  const allDates = [...new Set(stocks.flatMap((s) => s.dates))].sort().slice(-90);
+
+  const value = [], cost = [];
+  for (const d of allDates) {
+    let v = 0, c = 0;
+    for (const st of stocks) {
+      // 回放 d 及之前的流水 → 持有量 + 移动平均成本（记账币）
+      let held = 0, avg = 0;
+      for (const t of st.txns) {
+        if (String(t.date).replace(/-/g, "") > d) break;
+        if (t.side === "buy") { const nq = held + t.qty; avg = nq > 0 ? (held * avg + t.qty * t.price) / nq : 0; held = nq; }
+        else held = Math.max(0, held - t.qty);
+      }
+      if (held <= 0) continue;
+      // 当日或之前最近收盘
+      let px = st.priceMap[d];
+      if (px == null) {
+        for (let i = st.dates.length - 1; i >= 0; i--) if (st.dates[i] <= d) { px = st.priceMap[st.dates[i]]; break; }
+      }
+      if (px == null) continue;
+      const vB = toBase(held * px, st.natCur, d);
+      const cB = toBase(held * avg, st.acctCur, d);
+      if (vB == null || cB == null) continue; // 汇率缺失→两条线同口径跳过该股
+      v += vB; c += cB;
+    }
+    value.push(Math.round(v * 100) / 100);
+    cost.push(Math.round(c * 100) / 100);
+  }
+  return { dates: allDates, value, cost, base, cur: CUR_SYM[base] || base };
 }
 
 /* ── 大盘脉搏：三大基准指数的水位快照（驾驶舱顶栏用）。
@@ -1534,6 +1605,8 @@ export default {
       if (p === "/api/serenity/pulse") return json(await marketPulse(env, S));
       if (p === "/api/serenity/parse_trade" && request.method === "POST")
         return json(await parseTrade(env, await request.json().catch(() => ({})), S));
+      if (p === "/api/serenity/portfolio_history" && request.method === "POST")
+        return json(await portfolioHistory(env, await request.json().catch(() => ({})), S));
       if (p === "/api/serenity/watch_check") return json(await watchCheck(env, q("items"), S));
       if (p === "/api/serenity/wish_check") return json(await wishCheck(env, q("items"), S));
       if (p === "/api/serenity/portfolio" && request.method === "POST")

@@ -648,6 +648,10 @@ const I18N = {
     stopEditTip: "点击修改止损提醒距离（留空恢复自动）", stopManual: "手动",
     stopPrompt: (a) => `止损提醒距离：成本价下方多少 % 提醒你？\n留空 = 恢复自动（按波动算，当前 ${a}%）`,
     stopChanged: (p) => `止损提醒线已手动设为 -${p}%（这条线是你画的，跌破了要认账）`,
+    chMarket: "钱押在哪几个市场？", chStock: "个股集中度（一只占半条命就该警惕）",
+    chPnl: "谁在赚钱、谁在拖后腿（各自记账币）", chCurve: "组合 90 天走势：市值线 vs 成本线",
+    chCurveLoading: "在按流水回放你的组合走势…", chCurveNone: "流水太短，攒几天再来看",
+    chCurveVal: "市值", chCurveCost: "投入成本", chToday: "今天",
     stopReset: (a) => `已恢复自动止损线（按它的波动，当前 -${a}%）`,
     dbTitle: "⚔️ 多空对辩（两个 AI 吵一架）",
     dbSub: "多头律师只准找买入理由，空头律师（另一家的 AI）只准拆台，最后法官指出双方分歧点——分歧点就是你该去核实的事。结合最近新闻。",
@@ -842,6 +846,10 @@ const I18N = {
     stopPrompt: (a) => `Stop alert distance: how many % below cost?\nLeave blank = back to auto (volatility-based, currently ${a}%)`,
     stopChanged: (p) => `stop alert set manually to -${p}% — you drew this line, honor it if it breaks`,
     stopReset: (a) => `back to auto stop (by its volatility, currently -${a}%)`,
+    chMarket: "where is your money parked?", chStock: "concentration (one stock = half your life? beware)",
+    chPnl: "who's earning, who's dragging (each in its own currency)", chCurve: "90-day curve: value vs cost",
+    chCurveLoading: "replaying your ledger…", chCurveNone: "ledger too short — come back in a few days",
+    chCurveVal: "value", chCurveCost: "cost", chToday: "today",
     dbTitle: "⚔️ bull vs bear (two AIs argue)",
     dbSub: "A bull lawyer argues to buy, a bear lawyer (from a different AI vendor) tears it apart, then a judge names their real disagreements — which are exactly what you should verify. Uses recent headlines.",
     dbRun: "start the trial (~1 min)",
@@ -2141,8 +2149,112 @@ async function refreshHold() {
           </div>`;
     }
 
-    box.innerHTML = totalHtml + tablesHtml +
+    const chartsHtml = `
+      <div class="border border-[var(--line)] rounded-2xl p-6 mb-5">
+        <div class="eyebrow mb-4">portfolio charts</div>
+        <div class="grid md:grid-cols-2 gap-6 items-start">
+          <div><div class="text-xs font-bold mb-2">${t('chMarket')}</div><div id="chMarket"></div></div>
+          <div><div class="text-xs font-bold mb-2">${t('chStock')}</div><div id="chStock"></div></div>
+        </div>
+        <div class="mt-6"><div class="text-xs font-bold mb-2">${t('chPnl')}</div><div id="chPnl"></div></div>
+        <div class="mt-6"><div class="text-xs font-bold mb-2">${t('chCurve')}</div>
+          <div id="chCurve"><div class="text-[10px] text-[#8A8578]">${t('chCurveLoading')}</div></div></div>
+      </div>`;
+    box.innerHTML = totalHtml + chartsHtml + tablesHtml +
         `<div class="text-[10px] text-[#8A8578] mt-2">${t('checkedAt', d.checked_at)} · ${USER ? t('savedCloud') : t('savedLocal')} · ${t('pfMethodNote')}</div>`;
+    drawPortfolioCharts(d);
+    drawPortfolioCurve(hold);
+}
+
+/* ── 组合图表：环图×2 + 盈亏条 + 走势线（手绘 SVG，与全站风格一致） ── */
+const CH_COLORS = ['#E5484D','#2f9e53','#E8A33D','#5B8DEF','#9B6BD3','#4EC5C1','#C97B4A','#8A8578'];
+function donutSVG(parts, cur) {  // parts: [{label, value}] 已排序
+    const total = parts.reduce((a,p)=>a+p.value,0);
+    if (!(total > 0)) return '';
+    const R = 56, CX = 70, CY = 70, SW = 26;
+    let angle = -Math.PI/2, arcs = '';
+    parts.forEach((p,i) => {
+        const frac = p.value/total, a2 = angle + frac*Math.PI*2;
+        const large = frac > .5 ? 1 : 0;
+        // 单一持仓占 100% 时画整圆
+        if (frac > 0.999) arcs += `<circle cx="${CX}" cy="${CY}" r="${R}" fill="none" stroke="${CH_COLORS[i%8]}" stroke-width="${SW}"/>`;
+        else arcs += `<path d="M${CX+R*Math.cos(angle)},${CY+R*Math.sin(angle)} A${R},${R} 0 ${large} 1 ${CX+R*Math.cos(a2)},${CY+R*Math.sin(a2)}" fill="none" stroke="${CH_COLORS[i%8]}" stroke-width="${SW}"/>`;
+        angle = a2;
+    });
+    const legend = parts.map((p,i) => `<div class="flex items-center gap-2 text-xs">
+        <span style="width:10px;height:10px;border-radius:3px;background:${CH_COLORS[i%8]};display:inline-block"></span>
+        <span class="flex-1">${p.label}</span>
+        <span class="font-mono text-[10px] text-[#8A8578]">${(p.value/total*100).toFixed(1)}%</span></div>`).join('');
+    return `<div class="flex items-center gap-5 flex-wrap">
+        <svg viewBox="0 0 140 140" style="width:120px;flex-shrink:0">${arcs}</svg>
+        <div class="flex-1 min-w-[140px] space-y-1">${legend}</div></div>`;
+}
+function drawPortfolioCharts(d) {
+    const held = d.stocks.filter(s => s.hold_qty > 0 && s.value != null);
+    // 占比统一换算到总表 base 币（用 markets 里的市值近似：直接按 base 比较需要汇率，
+    // 前端简化：市场环图用总表口径的 markets 数据，个股环图在各自市场内先占比再乘市场权重）
+    const mkParts = d.markets.filter(m=>m.value>0 && mFx(d,m)).map(m => ({ label: m.market, value: m.value * mFx(d, m) }))
+        .sort((a,b)=>b.value-a.value);
+    const el1 = document.getElementById('chMarket');
+    if (el1) el1.innerHTML = donutSVG(mkParts) || `<div class="text-[10px] text-[#8A8578]">—</div>`;
+    // 个股：市值 × 该市场→base 的近似权重
+    const stParts = held.map(s => {
+        const m = d.markets.find(x => x.market === s.market);
+        const fx = mFx(d, m);
+        return fx ? { label: `${s.name}`, value: (s.value||0) * fx } : null;
+    }).filter(Boolean).sort((a,b)=>b.value-a.value).slice(0,8);
+    const el2 = document.getElementById('chStock');
+    if (el2) el2.innerHTML = donutSVG(stParts) || `<div class="text-[10px] text-[#8A8578]">—</div>`;
+    // 盈亏条（各自记账币，标币种，不跨币加总——每根条自己说自己的话）
+    const bars = d.stocks.filter(s => s.total_pnl != null && (s.hold_qty > 0 || s.realized))
+        .sort((a,b)=>b.total_pnl-a.total_pnl);
+    const maxAbs = Math.max(...bars.map(b=>Math.abs(b.total_pnl)), 1);
+    const el3 = document.getElementById('chPnl');
+    if (el3) el3.innerHTML = bars.map(b => {
+        const w = Math.max(2, Math.abs(b.total_pnl)/maxAbs*100);
+        const pos = b.total_pnl >= 0;
+        return `<div class="flex items-center gap-2 text-xs mb-1.5">
+            <span class="w-28 truncate text-right shrink-0">${b.name}</span>
+            <div class="flex-1 flex ${pos?'':'flex-row'}">
+                <div style="width:${w}%;height:14px;border-radius:4px;background:${pos?'#2f9e53':'#E5484D'};opacity:.85"></div>
+            </div>
+            <span class="font-mono text-[10px] ${pos?'pos':'neg'} w-24 shrink-0">${pos?'+':''}${b.cur}${fmtMoney(Math.abs(b.total_pnl))}</span>
+        </div>`;
+    }).join('') || '';
+}
+function mFx(d, m) { // 市场→base 汇率：后端总表换算时算好的（拿不到汇率的市场不进环图）
+    if (!m) return null;
+    if (m.currency === d.base) return 1;
+    return m.fx_to_base || null;
+}
+async function drawPortfolioCurve(hold) {
+    const el = document.getElementById('chCurve');
+    if (!el) return;
+    try {
+        const d = await fetch('/api/serenity/portfolio_history', {
+            method:'POST', credentials:'include', headers:{'Content-Type':'application/json'},
+            body: JSON.stringify({ base: PF_BASE, items: hold.map(h => ({ code:h.code, txns:h.txns })) })
+        }).then(x=>x.json());
+        if (!d.dates || d.dates.length < 2) { el.innerHTML = `<div class="text-[10px] text-[#8A8578]">${t('chCurveNone')}</div>`; return; }
+        const W=640,H=180,P=6;
+        const all=[...d.value,...d.cost], yMin=Math.min(...all), yMax=Math.max(...all), span=(yMax-yMin)||1;
+        const X=i=>P+i/(d.dates.length-1)*(W-2*P), Y=v=>H-P-(v-yMin)/span*(H-2*P);
+        const line=a=>a.map((v,i)=>`${i?'L':'M'}${X(i).toFixed(1)},${Y(v).toFixed(1)}`).join('');
+        const last=d.value[d.value.length-1], lastC=d.cost[d.cost.length-1];
+        const gain=last-lastC, up=gain>=0;
+        el.innerHTML = `
+            <svg viewBox="0 0 ${W} ${H}" class="w-full" style="max-height:200px">
+                <path d="${line(d.cost)} L${X(d.cost.length-1)},${H-P} L${X(0)},${H-P} Z" fill="var(--cloud)" opacity=".5"/>
+                <path d="${line(d.cost)}" fill="none" stroke="#8A8578" stroke-width="1.3" stroke-dasharray="4 3"/>
+                <path d="${line(d.value)}" fill="none" stroke="${up?'#2f9e53':'#E5484D'}" stroke-width="1.8"/>
+            </svg>
+            <div class="flex flex-wrap gap-x-5 gap-y-1 text-[10px] text-[#8A8578] mt-1">
+                <span style="color:${up?'#2f9e53':'#E5484D'}">━ ${t('chCurveVal')} ${d.cur}${fmtMoney(last)}</span>
+                <span>╌ ${t('chCurveCost')} ${d.cur}${fmtMoney(lastC)}</span>
+                <span class="${up?'pos':'neg'}">${up?'+':''}${d.cur}${fmtMoney(Math.abs(gain))}</span>
+                <span>${d.dates[0].slice(0,4)}-${d.dates[0].slice(4,6)}-${d.dates[0].slice(6)} → ${t('chToday')}</span>
+            </div>`;
+    } catch (e) { el.innerHTML = `<div class="text-[10px] text-[#8A8578]">${t('failed', e.message)}</div>`; }
 }
 
 function setPfBase(b) {
