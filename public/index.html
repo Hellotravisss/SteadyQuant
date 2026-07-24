@@ -628,6 +628,7 @@ const I18N = {
     hzChip: (h) => `打算拿${h}`, hzUnknownChip: "没想好拿多久",
     hzDueChip: (h) => `当初打算拿${h}·到期了`,
     evHorizonDue: (h) => `当初买它时说打算拿${h}——时间到了。复盘一下：当初的理由兑现了吗？留还是走？`,
+    hzEditTip: "点击修改持有计划", hzChanged: (h) => `持有计划已改为「${h}」`,
     dbTitle: "⚔️ 多空对辩（两个 AI 吵一架）",
     dbSub: "多头律师只准找买入理由，空头律师（另一家的 AI）只准拆台，最后法官指出双方分歧点——分歧点就是你该去核实的事。结合最近新闻。",
     dbRun: "开庭（约 1 分钟）",
@@ -807,6 +808,7 @@ const I18N = {
     hzChip: (h) => `plan: ${h}`, hzUnknownChip: "holding period undecided",
     hzDueChip: (h) => `planned ${h} · time's up`,
     evHorizonDue: (h) => `when you bought this you planned to hold ${h} — time's up. Review: did the thesis play out? Stay or go?`,
+    hzEditTip: "click to change your holding plan", hzChanged: (h) => `holding plan changed to "${h}"`,
     dbTitle: "⚔️ bull vs bear (two AIs argue)",
     dbSub: "A bull lawyer argues to buy, a bear lawyer (from a different AI vendor) tears it apart, then a judge names their real disagreements — which are exactly what you should verify. Uses recent headlines.",
     dbRun: "start the trial (~1 min)",
@@ -1738,6 +1740,27 @@ function hzExpired(h) {   // 最近一次买入日期 + 意图月数 < 今天 �
     d.setMonth(d.getMonth() + HZ_MONTHS[h.horizon]);
     return d < new Date();
 }
+function editHorizon(ev, code) {
+    ev.stopPropagation();
+    const chip = ev.currentTarget;
+    const list = getHold();
+    const h = list.find(x => x.code === code);
+    if (!h) return;
+    const opts = ['?','1m','3m','1y','3y','hold'];
+    const sel = document.createElement('select');
+    sel.className = 'ml-1 text-[10px] px-2 py-0.5 rounded-full';
+    sel.innerHTML = opts.map(o => `<option value="${o}" ${h.horizon===o?'selected':''}>${t('hz_' + (o==='?'?'unknown':o))}</option>`).join('');
+    sel.onchange = () => {
+        h.horizon = sel.value;
+        setList('sq_hold', list);   // 本地+云同步
+        toast(t('hzChanged', t('hz_' + (sel.value==='?'?'unknown':sel.value))));
+        refreshHold();
+    };
+    sel.onblur = () => refreshHold(); // 没改就还原
+    chip.replaceWith(sel);
+    sel.focus();
+}
+
 function hzState(h) {
     if (!h || !h.horizon) return null;
     if (h.horizon === '?') return { label: '⏳ ' + t('hzUnknownChip'), cls: 'bg-[#F7F1E7] text-[#8A8578]' };
@@ -1974,7 +1997,7 @@ async function refreshHold() {
             const stopHit = held && s.last && s.avg_cost && s.last < s.avg_cost * (1 - (s.stop_pct || 15) / 100);
             const nameCell = `<div class="font-bold">${s.name} <span class="font-mono text-[10px] text-[#8A8578]">${s.code}</span>
                 ${s.paid_cur?`<span class="ml-1 text-[10px] px-2 py-0.5 rounded-full bg-[#2f9e53]/12 text-[#2f9e53]">${t('pfPaidIn', s.paid_cur)}</span>`:''}
-                ${hz?`<span class="ml-1 text-[10px] px-2 py-0.5 rounded-full ${hz.cls}">${hz.label}</span>`:''}
+                ${hz?`<span class="ml-1 text-[10px] px-2 py-0.5 rounded-full cursor-pointer ${hz.cls}" title="${t('hzEditTip')}" onclick="editHorizon(event,'${s.code}')">${hz.label} ✎</span>`:''}
                 ${stopHit?`<span class="ml-1 text-[10px] px-2 py-0.5 rounded-full bg-[#E5484D]/10 text-[#E5484D]">${t('stopHit')}</span>`:''}
                 ${s.no_price?`<span class="ml-1 text-[10px] text-[#8A8578]">${s.fx_missing?t('pfFxMiss'):t('noData')}</span>`:''}
                 ${s.oversell?`<span class="ml-1 text-[10px] text-[#E5484D]">${t('pfOversell')}</span>`:''}</div>
