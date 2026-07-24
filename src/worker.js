@@ -1397,6 +1397,19 @@ async function runPatrol(env) {
         events.push(`🔴 ${name}（${h.code}）已跌破你的止损提醒线：现价较成本 ${(chg * 100).toFixed(1)}%（提醒线 -${(stopPct * 100).toFixed(1)}%）。当初的买入理由还在吗？不在就该走了。`);
       else if (chg <= -stopPct + 0.03)
         events.push(`🟡 ${name}（${h.code}）距离止损提醒线只剩 ${((chg + stopPct) * 100).toFixed(1)}%（现 ${(chg * 100).toFixed(1)}%）。提前想好：跌破了执行吗？`);
+      // 持有意图到期 → 复盘提醒（当初用户自己设的持有期）
+      const HZM = { "1m": 1, "3m": 3, "1y": 12, "3y": 36 };
+      if (h.horizon && HZM[h.horizon]) {
+        const buys = txns.filter((t) => t.side === "buy" && t.date).map((t) => t.date).sort();
+        if (buys.length) {
+          const due = new Date(buys[buys.length - 1]);
+          due.setMonth(due.getMonth() + HZM[h.horizon]);
+          if (due < new Date()) {
+            const hzName = { "1m": "一个月", "3m": "几个月", "1y": "一年左右", "3y": "两三年" }[h.horizon];
+            events.push(`🗓 ${name}（${h.code}）当初买入时打算拿${hzName}——时间到了。复盘一下：当初的理由兑现了吗？留还是走？`);
+          }
+        }
+      }
       if (pa.stageKey === "extended" && chg > 0.15)
         events.push(`🟠 ${name}（${h.code}）近一月拉出抛物线且你已浮盈 ${(chg * 100).toFixed(0)}%——考虑分批止盈锁一部分？树不会长到天上。`);
     }

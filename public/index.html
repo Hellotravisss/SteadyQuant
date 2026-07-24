@@ -419,6 +419,17 @@
                         <div class="text-[10px] text-[#8A8578] mb-1" data-i18n="afQty2">数量（股/个）</div>
                         <input id="afQty" type="number" step="any" class="w-full px-4 py-3 rounded-xl text-sm" placeholder="100">
                     </div>
+                    <div id="afHorizonWrap">
+                        <div class="text-[10px] text-[#8A8578] mb-1" data-i18n="afHorizon">打算拿多久？</div>
+                        <select id="afHorizon" class="w-full px-4 py-3 rounded-xl text-sm">
+                            <option value="?" data-i18n="hz_unknown">没想好</option>
+                            <option value="1m" data-i18n="hz_1m">一个月内</option>
+                            <option value="3m" data-i18n="hz_3m">几个月</option>
+                            <option value="1y" data-i18n="hz_1y">一年左右</option>
+                            <option value="3y" data-i18n="hz_3y">两三年+</option>
+                            <option value="hold" data-i18n="hz_hold">长期持有</option>
+                        </select>
+                    </div>
                 </div>
                 <div class="text-[10px] text-[#8A8578] mt-2" data-i18n="afTip">
                     💡 你实际付款用的是什么币，就选什么币、填券商成交单上那个价。比如用加币在 Wealthsimple 买美股，就选 CAD、填加币成本价——盈亏按加币算，跟你账单对得上。总表再按汇率合成一个币种。
@@ -612,6 +623,11 @@ const I18N = {
     evWishHit: (c, p) => `到了你想买的价：现价 ${c}${p}。去查查现在的水位和红旗，别闭眼接。`,
     evWishNear: (g) => `离你的心愿价只差 ${g}%。`,
     planToggle: "（点开）",
+    afHorizon: "打算拿多久？",
+    hz_unknown: "没想好", hz_1m: "一个月内", hz_3m: "几个月", hz_1y: "一年左右", hz_3y: "两三年+", hz_hold: "长期持有",
+    hzChip: (h) => `打算拿${h}`, hzUnknownChip: "没想好拿多久",
+    hzDueChip: (h) => `当初打算拿${h}·到期了`,
+    evHorizonDue: (h) => `当初买它时说打算拿${h}——时间到了。复盘一下：当初的理由兑现了吗？留还是走？`,
     dbTitle: "⚔️ 多空对辩（两个 AI 吵一架）",
     dbSub: "多头律师只准找买入理由，空头律师（另一家的 AI）只准拆台，最后法官指出双方分歧点——分歧点就是你该去核实的事。结合最近新闻。",
     dbRun: "开庭（约 1 分钟）",
@@ -786,6 +802,11 @@ const I18N = {
     evWishHit: (c, p) => `hit your wish price: now ${c}${p}. Check its water level and red flags before catching it.`,
     evWishNear: (g) => `just ${g}% above your wish price.`,
     planToggle: "(expand)",
+    afHorizon: "how long do you plan to hold?",
+    hz_unknown: "not sure yet", hz_1m: "within a month", hz_3m: "a few months", hz_1y: "about a year", hz_3y: "2-3 years+", hz_hold: "long-term hold",
+    hzChip: (h) => `plan: ${h}`, hzUnknownChip: "holding period undecided",
+    hzDueChip: (h) => `planned ${h} · time's up`,
+    evHorizonDue: (h) => `when you bought this you planned to hold ${h} — time's up. Review: did the thesis play out? Stay or go?`,
     dbTitle: "⚔️ bull vs bear (two AIs argue)",
     dbSub: "A bull lawyer argues to buy, a bear lawyer (from a different AI vendor) tears it apart, then a judge names their real disagreements — which are exactly what you should verify. Uses recent headlines.",
     dbRun: "start the trial (~1 min)",
@@ -1161,6 +1182,10 @@ async function buildToday() {
             }
             const t2 = d.total;
             if (t2) summaryHtml = `${t('pfValue')} <b>${t2.cur}${fmtMoney(Math.abs(t2.value))}</b> · <span class="${t2.total_pnl>=0?'pos':'neg'}">${t2.total_pnl>=0?'+':'-'}${t2.cur}${fmtMoney(Math.abs(t2.total_pnl))}</span>`;
+        }
+        // 持有意图到期 → 复盘提醒（当初自己说的，系统只是替你记着）
+        for (const h of hold) {
+            if (hzExpired(h)) events.push({lv:1, html:`🗓 <b>${h.name||h.code}</b> ${t('evHorizonDue', t('hz_' + h.horizon))}`, code:h.code});
         }
         // 心愿单：到价/接近
         if (wishL.length) {
@@ -1702,6 +1727,24 @@ window.addEventListener('DOMContentLoaded', () => {
 });
 
 const CUR_SYMS = { CAD: 'C$', USD: '$', CNY: '¥', HKD: 'HK$' };
+
+/* ── "打算拿多久"：档位→月数；到期/没想好 的持仓表标签与复盘提醒 ── */
+const HZ_MONTHS = { '1m': 1, '3m': 3, '1y': 12, '3y': 36 };
+function hzExpired(h) {   // 最近一次买入日期 + 意图月数 < 今天 → 到期该复盘
+    if (!h || !h.horizon || !HZ_MONTHS[h.horizon]) return false;
+    const buys = (h.txns || []).filter(t => t.side === 'buy' && t.date).map(t => t.date).sort();
+    if (!buys.length) return false;
+    const d = new Date(buys[buys.length - 1]);
+    d.setMonth(d.getMonth() + HZ_MONTHS[h.horizon]);
+    return d < new Date();
+}
+function hzState(h) {
+    if (!h || !h.horizon) return null;
+    if (h.horizon === '?') return { label: '⏳ ' + t('hzUnknownChip'), cls: 'bg-[#F7F1E7] text-[#8A8578]' };
+    const label = t('hzChip', t('hz_' + h.horizon.replace('?', 'unknown')));
+    if (hzExpired(h)) return { label: '🗓 ' + t('hzDueChip', t('hz_' + h.horizon)), cls: 'bg-[#E5484D]/10 text-[#E5484D]' };
+    return { label, cls: 'bg-[#F7F1E7] text-[#8A8578]' };
+}
 /* ── 交易台账数据层：每只股一个 {code,name,stop,txns:[{side,date,price,qty}]} ── */
 // 把任何旧格式（单条 entry/qty）规范成台账形态
 function normHold(x) {
@@ -1712,12 +1755,13 @@ function normHold(x) {
 function getHold() { return getList('sq_hold').map(normHold); }
 
 // 追加一笔交易；同 code 合并进一个台账。cur = 用户实付币种（CNY/USD/CAD），不传则后端按标的本币算
-function addTxn({code, name, side, date, price, qty, cur}) {
+function addTxn({code, name, side, date, price, qty, cur, horizon}) {
     const list = getHold();
     let h = list.find(x => x.code === code);
     if (!h) { h = { code, name, stop:null, txns:[] }; list.push(h); }
     if (name) h.name = name;
     h.txns.push({ side, date: date || new Date().toLocaleDateString('sv'), price, qty: qty || 0, ...(cur ? { cur } : {}) });
+    if (side === 'buy' && horizon) h.horizon = horizon; // 打算拿多久（持仓级意图，供到期复盘提醒）
     if (side === 'buy') h.stop = Math.round(price * 0.85 * 100) / 100; // 止损线 = 最近买入价 85%
     setList('sq_hold', list);
     updateBadges();
@@ -1760,6 +1804,8 @@ function toggleAddForm() {
 let afSide = 'buy';
 function setAfSide(s) {
     afSide = s;
+    const hw = document.getElementById('afHorizonWrap');
+    if (hw) hw.style.display = s === 'buy' ? '' : 'none';
     document.getElementById('afSideBuy').classList.toggle('active', s === 'buy');
     document.getElementById('afSideSell').classList.toggle('active', s === 'sell');
 }
@@ -1799,7 +1845,8 @@ async function submitAddForm() {
             if (!r.ok) { msg.textContent = t('afNotFound', stock); btn.disabled = false; return; }
             code = r.code; name = r.name; market = r.market;
         }
-        addTxn({ code, name, side: afSide, date, price, qty, cur });
+        const horizon = afSide === 'buy' ? (document.getElementById('afHorizon')?.value || '?') : null;
+        addTxn({ code, name, side: afSide, date, price, qty, cur, horizon });
         msg.textContent = '';
         toggleAddForm();
         stockEl.value = ''; stockEl.dataset.code = '';
@@ -1920,11 +1967,14 @@ async function refreshHold() {
         let rowsHtml = '';
         for (const s of rows) {
             const held = s.hold_qty > 0;
+            const lh = hold.find(x => x.code === s.code);           // 本地台账（有 horizon 意图）
+            const hz = held ? hzState(lh) : null;                    // {label, cls} 或 null
             const sc = s.cur;   // 每行按该股自己的记账币（实付币）显示，跟用户账单对得上
             // 止损红灯：距离按该股自己的波动定（后端 2.5×ATR 钳 8~25%），不再一刀切 15%
             const stopHit = held && s.last && s.avg_cost && s.last < s.avg_cost * (1 - (s.stop_pct || 15) / 100);
             const nameCell = `<div class="font-bold">${s.name} <span class="font-mono text-[10px] text-[#8A8578]">${s.code}</span>
                 ${s.paid_cur?`<span class="ml-1 text-[10px] px-2 py-0.5 rounded-full bg-[#2f9e53]/12 text-[#2f9e53]">${t('pfPaidIn', s.paid_cur)}</span>`:''}
+                ${hz?`<span class="ml-1 text-[10px] px-2 py-0.5 rounded-full ${hz.cls}">${hz.label}</span>`:''}
                 ${stopHit?`<span class="ml-1 text-[10px] px-2 py-0.5 rounded-full bg-[#E5484D]/10 text-[#E5484D]">${t('stopHit')}</span>`:''}
                 ${s.no_price?`<span class="ml-1 text-[10px] text-[#8A8578]">${s.fx_missing?t('pfFxMiss'):t('noData')}</span>`:''}
                 ${s.oversell?`<span class="ml-1 text-[10px] text-[#E5484D]">${t('pfOversell')}</span>`:''}</div>
