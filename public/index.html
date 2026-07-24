@@ -629,6 +629,10 @@ const I18N = {
     hzDueChip: (h) => `当初打算拿${h}·到期了`,
     evHorizonDue: (h) => `当初买它时说打算拿${h}——时间到了。复盘一下：当初的理由兑现了吗？留还是走？`,
     hzEditTip: "点击修改持有计划", hzChanged: (h) => `持有计划已改为「${h}」`,
+    stopEditTip: "点击修改止损提醒距离（留空恢复自动）", stopManual: "手动",
+    stopPrompt: (a) => `止损提醒距离：成本价下方多少 % 提醒你？\n留空 = 恢复自动（按波动算，当前 ${a}%）`,
+    stopChanged: (p) => `止损提醒线已手动设为 -${p}%（这条线是你画的，跌破了要认账）`,
+    stopReset: (a) => `已恢复自动止损线（按它的波动，当前 -${a}%）`,
     dbTitle: "⚔️ 多空对辩（两个 AI 吵一架）",
     dbSub: "多头律师只准找买入理由，空头律师（另一家的 AI）只准拆台，最后法官指出双方分歧点——分歧点就是你该去核实的事。结合最近新闻。",
     dbRun: "开庭（约 1 分钟）",
@@ -809,6 +813,10 @@ const I18N = {
     hzDueChip: (h) => `planned ${h} · time's up`,
     evHorizonDue: (h) => `when you bought this you planned to hold ${h} — time's up. Review: did the thesis play out? Stay or go?`,
     hzEditTip: "click to change your holding plan", hzChanged: (h) => `holding plan changed to "${h}"`,
+    stopEditTip: "click to set a custom stop distance (blank = back to auto)", stopManual: "manual",
+    stopPrompt: (a) => `Stop alert distance: how many % below cost?\nLeave blank = back to auto (volatility-based, currently ${a}%)`,
+    stopChanged: (p) => `stop alert set manually to -${p}% — you drew this line, honor it if it breaks`,
+    stopReset: (a) => `back to auto stop (by its volatility, currently -${a}%)`,
     dbTitle: "⚔️ bull vs bear (two AIs argue)",
     dbSub: "A bull lawyer argues to buy, a bear lawyer (from a different AI vendor) tears it apart, then a judge names their real disagreements — which are exactly what you should verify. Uses recent headlines.",
     dbRun: "start the trial (~1 min)",
@@ -1178,7 +1186,9 @@ async function buildToday() {
             const d = await res.json();
             for (const s of (d.stocks || [])) {
                 if (!(s.hold_qty > 0) || s.last == null || !s.avg_cost) continue;
-                const chg = s.last / s.avg_cost - 1, stop = (s.stop_pct || 15) / 100;
+                const lh2 = hold.find(x => x.code === s.code);
+                const chg = s.last / s.avg_cost - 1;
+                const stop = ((lh2 && lh2.stopPct > 0) ? lh2.stopPct : (s.stop_pct || 15)) / 100;
                 if (chg <= -stop) events.push({lv:0, html:`🔴 <b>${s.name}</b> ${t('evStop', (chg*100).toFixed(1), (stop*100).toFixed(1))}`, code:s.code});
                 else if (chg <= -stop + 0.03) events.push({lv:1, html:`🟡 <b>${s.name}</b> ${t('evNearStop', ((chg+stop)*100).toFixed(1))}`, code:s.code});
             }
@@ -1761,6 +1771,26 @@ function editHorizon(ev, code) {
     sel.focus();
 }
 
+function editStop(ev, code, autoPct) {
+    ev.stopPropagation();
+    const list = getHold();
+    const h = list.find(x => x.code === code);
+    if (!h) return;
+    const cur = h.stopPct > 0 ? h.stopPct : '';
+    const inp = prompt(t('stopPrompt', autoPct), cur);
+    if (inp === null) return;                       // 取消
+    const v = parseFloat(inp);
+    if (inp.trim() === '' || !(v > 0)) {            // 留空/无效 → 恢复自动
+        delete h.stopPct;
+        toast(t('stopReset', autoPct));
+    } else {
+        h.stopPct = Math.min(50, Math.max(1, Math.round(v * 10) / 10));
+        toast(t('stopChanged', h.stopPct));
+    }
+    setList('sq_hold', list);
+    refreshHold();
+}
+
 function hzState(h) {
     if (!h || !h.horizon) return null;
     if (h.horizon === '?') return { label: '⏳ ' + t('hzUnknownChip'), cls: 'bg-[#F7F1E7] text-[#8A8578]' };
@@ -1990,14 +2020,17 @@ async function refreshHold() {
         let rowsHtml = '';
         for (const s of rows) {
             const held = s.hold_qty > 0;
-            const lh = hold.find(x => x.code === s.code);           // 本地台账（有 horizon 意图）
+            const lh = hold.find(x => x.code === s.code);           // 本地台账（horizon 意图 + 手动止损）
             const hz = held ? hzState(lh) : null;                    // {label, cls} 或 null
             const sc = s.cur;   // 每行按该股自己的记账币（实付币）显示，跟用户账单对得上
-            // 止损红灯：距离按该股自己的波动定（后端 2.5×ATR 钳 8~25%），不再一刀切 15%
-            const stopHit = held && s.last && s.avg_cost && s.last < s.avg_cost * (1 - (s.stop_pct || 15) / 100);
+            // 止损距离：手动设置优先，否则自动(后端 2.5×ATR 钳 8~25%)，兜底 15%
+            const stopEff = (lh && lh.stopPct > 0) ? lh.stopPct : (s.stop_pct || 15);
+            const stopManual = !!(lh && lh.stopPct > 0);
+            const stopHit = held && s.last && s.avg_cost && s.last < s.avg_cost * (1 - stopEff / 100);
             const nameCell = `<div class="font-bold">${s.name} <span class="font-mono text-[10px] text-[#8A8578]">${s.code}</span>
                 ${s.paid_cur?`<span class="ml-1 text-[10px] px-2 py-0.5 rounded-full bg-[#2f9e53]/12 text-[#2f9e53]">${t('pfPaidIn', s.paid_cur)}</span>`:''}
                 ${hz?`<span class="ml-1 text-[10px] px-2 py-0.5 rounded-full cursor-pointer ${hz.cls}" title="${t('hzEditTip')}" onclick="editHorizon(event,'${s.code}')">${hz.label} ✎</span>`:''}
+                ${held?`<span class="ml-1 text-[10px] px-2 py-0.5 rounded-full cursor-pointer ${stopManual?'bg-[#E5484D]/10 text-[#C23237]':'bg-[#F7F1E7] text-[#8A8578]'}" title="${t('stopEditTip')}" onclick="editStop(event,'${s.code}',${s.stop_pct||15})">🛡 -${stopEff}%${stopManual?'·'+t('stopManual'):''} ✎</span>`:''}
                 ${stopHit?`<span class="ml-1 text-[10px] px-2 py-0.5 rounded-full bg-[#E5484D]/10 text-[#E5484D]">${t('stopHit')}</span>`:''}
                 ${s.no_price?`<span class="ml-1 text-[10px] text-[#8A8578]">${s.fx_missing?t('pfFxMiss'):t('noData')}</span>`:''}
                 ${s.oversell?`<span class="ml-1 text-[10px] text-[#E5484D]">${t('pfOversell')}</span>`:''}</div>

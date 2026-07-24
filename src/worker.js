@@ -1390,7 +1390,8 @@ async function runPatrol(env) {
         if (rate == null) continue; // 汇率拿不到 → 宁可不报，不报错账
       }
       const lastAcct = pa.last * rate;
-      const stopPct = (pa.stop_atr_pct ?? 15) / 100;
+      // 手动止损优先（用户在持仓表自己画的线），否则 ATR 自动
+      const stopPct = (h.stopPct > 0 ? h.stopPct : (pa.stop_atr_pct ?? 15)) / 100;
       const chg = lastAcct / avg - 1;
       const name = h.name || h.code;
       if (chg <= -stopPct)
