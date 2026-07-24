@@ -1548,9 +1548,23 @@ async function runPatrol(env) {
         : Math.min(45, (pa.stop_atr_pct ?? 15) * (HZF[h.horizon] || 1))) / 100;
       const chg = lastAcct / avg - 1;
       const name = h.name || h.code;
-      if (chg <= -stopPct) {
+      if (isLong) {
+        // 长线三档：灾难线才报警；季度例行体检温和提醒；计划内回撤不打扰
+        const disPct = Math.min(60, stopPct * 100 * 1.6);
+        const buys2 = txns.filter((t) => t.side === "buy" && t.date).map((t) => t.date).sort();
+        const daysHeld = buys2.length ? Math.floor((Date.now() - new Date(buys2[buys2.length - 1]).getTime()) / 86400000) : null;
+        if (chg <= -disPct / 100) {
+          const mc = await getModelChg(h.code);
+          let txt = `🔴 ${name}（${h.code}）回撤已达 ${(chg * 100).toFixed(1)}%，超过长线灾难线（-${disPct.toFixed(1)}%）。这不是普通波动了——理由复核不能再拖：基本面没崩就分批补回信心，崩了就认错离场。`;
+          if (mc != null && mc > 1.5) txt += `若决定退出：模型看短期或有反弹（21天中位 +${mc}%），可等反弹分批走。`;
+          else if (mc != null && mc < -1.5) txt += `若决定退出：模型短期也偏弱（21天中位 ${mc}%），别指望反弹解套。`;
+          events.push(txt);
+        } else if (daysHeld != null && daysHeld >= 89 && (daysHeld % 91) <= 2) {
+          events.push(`🟡 ${name}（${h.code}）例行体检：长线计划已持有约 ${Math.round(daysHeld / 30)} 个月（现 ${(chg * 100).toFixed(1)}%）。花两分钟确认当初的买入理由还在——在就继续安心拿，不用操作。`);
+        }
+      } else if (chg <= -stopPct) {
         const mc = await getModelChg(h.code);
-        events.push(`🔴 ${name}（${h.code}）${reviewMsg(isLong, (chg * 100).toFixed(1), (stopPct * 100).toFixed(1), mc)}`);
+        events.push(`🔴 ${name}（${h.code}）${reviewMsg(false, (chg * 100).toFixed(1), (stopPct * 100).toFixed(1), mc)}`);
       }
       else if (chg <= -stopPct + 0.03)
         events.push(`🟡 ${name}（${h.code}）距离止损提醒线只剩 ${((chg + stopPct) * 100).toFixed(1)}%（现 ${(chg * 100).toFixed(1)}%）。提前想好：跌破了执行吗？`);

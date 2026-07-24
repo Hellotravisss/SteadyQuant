@@ -676,6 +676,10 @@ const I18N = {
     hzChip: (h) => `打算拿${h}`, hzUnknownChip: "没想好拿多久",
     hzDueChip: (h) => `当初打算拿${h}·到期了`,
     evHorizonDue: (h) => `当初买它时说打算拿${h}——时间到了。复盘一下：当初的理由兑现了吗？留还是走？`,
+    lgInPlanChip: (p) => `回撤 ${p}% · 在长线计划内`,
+    lgDisasterChip: "超出长线承受范围",
+    lgDisaster: (c, d) => `回撤已达 ${c}%，超过长线灾难线（-${d}%）。这不是普通波动了——理由复核不能再拖：基本面没崩就分批补回信心，崩了就认错离场。`,
+    lgCheckup: (m2, hz, c) => `例行体检：这只你计划拿${hz}，已持有约 ${m2} 个月（现 ${c}%）。花两分钟确认：当初的买入理由还在吗？在就继续安心拿，不用做任何操作。`,
     rvShort: (c, s2) => `已跌破止损线（现 ${c}% / 线 -${s2}%）——短线仓位按纪律处理，别让小亏拖成大亏。`,
     rvShortDown: (c, s2, m) => `已跌破止损线（现 ${c}% / 线 -${s2}%），模型短期同向看跌（21天中位 ${m}%）——两个信号一致：按纪律离场。`,
     rvShortUp: (c, s2, m) => `已跌破止损线（现 ${c}% / 线 -${s2}%），但模型看短期或有反弹（21天中位 ${m}%）——可等反弹择机离场、别割在地板价；反弹不来仍要执行纪律。`,
@@ -881,6 +885,10 @@ const I18N = {
     hzChip: (h) => `plan: ${h}`, hzUnknownChip: "holding period undecided",
     hzDueChip: (h) => `planned ${h} · time's up`,
     evHorizonDue: (h) => `when you bought this you planned to hold ${h} — time's up. Review: did the thesis play out? Stay or go?`,
+    lgInPlanChip: (p) => `${p}% drawdown · within the long-term plan`,
+    lgDisasterChip: "beyond long-term tolerance",
+    lgDisaster: (c, d) => `Drawdown ${c}% has passed the long-horizon disaster line (-${d}%). This is no longer ordinary volatility — the thesis review can't wait: fundamentals intact → rebuild conviction; broken → admit it and exit.`,
+    lgCheckup: (m2, hz, c) => `Routine checkup: you planned ${hz} on this one, held ~${m2} months (now ${c}%). Two minutes: does the original thesis still hold? If yes, keep calm and hold — no action needed.`,
     rvShort: (c, s2) => `Below the stop line (${c}% vs line -${s2}%) — short-horizon position: follow the discipline before a small loss grows.`,
     rvShortDown: (c, s2, m) => `Below the stop line (${c}% / -${s2}%) and the model leans down short-term (21d median ${m}%) — signals agree: exit per discipline.`,
     rvShortUp: (c, s2, m) => `Below the stop line (${c}% / -${s2}%) but the model sees a possible short-term bounce (21d median ${m}%) — you may time the exit on a bounce rather than the floor; if it never comes, the discipline still stands.`,
@@ -1272,7 +1280,17 @@ async function buildToday() {
                 const chg = s.last / s.avg_cost - 1;
                 const stop = ((lh2 && lh2.stopPct > 0) ? lh2.stopPct
                     : Math.min(45, (s.stop_pct || 15) * hzStopFactor(lh2))) / 100;
-                if (chg <= -stop) events.push({lv:0, code:s.code, _name:s.name, _lh:lh2,
+                if (hzIsLong(lh2)) {
+                    const dis = longDisasterPct(stop * 100);
+                    if (chg <= -dis / 100)
+                        events.push({lv:0, code:s.code, _name:s.name, _lh:lh2,
+                            _chg:(chg*100).toFixed(1), _stop:dis,
+                            html:`🔴 <b>${s.name}</b> ${t('lgDisaster', (chg*100).toFixed(1), dis)}`});
+                    else if (isQuarterCheckup(lh2))
+                        events.push({lv:1, code:s.code,
+                            html:`🟡 <b>${s.name}</b> ${t('lgCheckup', Math.round(daysSinceLastBuy(lh2)/30), t('hz_' + lh2.horizon), (chg*100).toFixed(1))}`});
+                    // 计划内回撤：不打扰——这正是"拿两三年"的含义
+                } else if (chg <= -stop) events.push({lv:0, code:s.code, _name:s.name, _lh:lh2,
                     _chg:(chg*100).toFixed(1), _stop:(stop*100).toFixed(1),
                     html:`🔴 <b>${s.name}</b> ${reviewText(lh2, (chg*100).toFixed(1), (stop*100).toFixed(1), null)}`});
                 else if (chg <= -stop + 0.03) events.push({lv:1, html:`🟡 <b>${s.name}</b> ${t('evNearStop', ((chg+stop)*100).toFixed(1))}`, code:s.code});
@@ -1303,7 +1321,9 @@ async function buildToday() {
                 const f = await apiFetch(`/api/serenity/forecast?code=${encodeURIComponent(e.code)}`);
                 if (!f.ok) return;
                 const mc = Math.round((f.p50[f.p50.length-1] / f.last - 1) * 1000) / 10;
-                e.html = `🔴 <b>${e._name}</b> ${reviewText(e._lh, e._chg, e._stop, mc)}`;
+                e.html = hzIsLong(e._lh)
+                    ? `🔴 <b>${e._name}</b> ${t('lgDisaster', e._chg, e._stop)}${mc>1.5?t('rvLongExitUp','+'+mc):mc<-1.5?t('rvLongExitDown',mc):''}`
+                    : `🔴 <b>${e._name}</b> ${reviewText(e._lh, e._chg, e._stop, mc)}`;
             } catch {}
         }));
         setTimeout(() => animEnter('#todayBox > div', 10), 0);
@@ -1891,6 +1911,19 @@ function editHorizon(ev, code) {
 /* ── 统一复审判定：破线后的结论由这一个函数产出，持仓表/今天页/邮件大方向一致。
    长线仓位：模型 21 天预测不配参与"卖不卖"的判断（时间尺度不匹配），
    只降级为"若决定退出，什么时机走"的参考。短线仓位才让模型参与方向合议。 ── */
+// 长线仓位三档：inplan(计划内不打扰) / checkup(季度例行体检) / disaster(灾难线才报警)
+const DISASTER_MULT = 1.6, DISASTER_CAP = 60;
+function longDisasterPct(stopEff) { return Math.min(DISASTER_CAP, Math.round(stopEff * DISASTER_MULT * 10) / 10); }
+function daysSinceLastBuy(h) {
+    const buys = (h?.txns || []).filter(t => t.side === 'buy' && t.date).map(t => t.date).sort();
+    if (!buys.length) return null;
+    return Math.floor((Date.now() - new Date(buys[buys.length - 1]).getTime()) / 86400000);
+}
+function isQuarterCheckup(h) {   // 持有每满 91 天的 0~2 天窗口内提醒一次
+    const d = daysSinceLastBuy(h);
+    return d != null && d >= 89 && (d % 91) <= 2;
+}
+
 function reviewText(lh, chgS, stopS, modelChg) {
     if (hzIsLong(lh)) {
         let txt = t('rvLong', chgS, stopS);
@@ -2214,7 +2247,11 @@ async function refreshHold() {
                 ${s.paid_cur?`<span class="ml-1 text-[10px] px-2 py-0.5 rounded-full bg-[#2f9e53]/12 text-[#2f9e53]">${t('pfPaidIn', s.paid_cur)}</span>`:''}
                 ${hz?`<span class="ml-1 text-[10px] px-2 py-0.5 rounded-full cursor-pointer ${hz.cls}" title="${t('hzEditTip')}" onclick="editHorizon(event,'${s.code}')">${hz.label} ✎</span>`:''}
                 ${held?`<span class="ml-1 text-[10px] px-2 py-0.5 rounded-full cursor-pointer ${stopManual?'bg-[#E5484D]/10 text-[#C23237]':'bg-[#F7F1E7] text-[#8A8578]'}" title="${t('stopEditTip')}" onclick="editStop(event,'${s.code}',${s.stop_pct||15})">🛡 -${stopEff}%${stopManual?'·'+t('stopManual'):''} ✎</span>`:''}
-                ${stopHit?`<span class="ml-1 text-[10px] px-2 py-0.5 rounded-full bg-[#E5484D]/10 text-[#E5484D]">${hzIsLong(lh)?t('stopHitLong'):t('stopHit')}</span>`:''}
+                ${stopHit ? (hzIsLong(lh)
+                    ? (held && s.last && s.avg_cost && s.last < s.avg_cost * (1 - longDisasterPct(stopEff) / 100)
+                        ? `<span class="ml-1 text-[10px] px-2 py-0.5 rounded-full bg-[#E5484D]/10 text-[#E5484D]">${t('lgDisasterChip')}</span>`
+                        : `<span class="ml-1 text-[10px] px-2 py-0.5 rounded-full bg-[#F7F1E7] text-[#8A8578]">${t('lgInPlanChip', s.unreal_pct ?? '')}</span>`)
+                    : `<span class="ml-1 text-[10px] px-2 py-0.5 rounded-full bg-[#E5484D]/10 text-[#E5484D]">${t('stopHit')}</span>`) : ''}
                 ${s.no_price?`<span class="ml-1 text-[10px] text-[#8A8578]">${s.fx_missing?t('pfFxMiss'):t('noData')}</span>`:''}
                 ${s.oversell?`<span class="ml-1 text-[10px] text-[#E5484D]">${t('pfOversell')}</span>`:''}</div>
                 <div class="text-[10px] text-[#8A8578] mt-0.5">
