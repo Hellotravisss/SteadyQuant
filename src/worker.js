@@ -7,7 +7,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import * as auth from "./auth.js";
 import { pack } from "./i18n.js";
 
-const CUR_SYM = { CNY: "¥", USD: "$", CAD: "C$" };
+const CUR_SYM = { CNY: "¥", USD: "$", CAD: "C$", HKD: "HK$" };
 const isAshare = (c) => /^\d{6}\.(SH|SZ)$/.test(c);
 // 常见币简写白名单：命中即先按 <X>-USD 试加密货币。含与股票代码同名者（LINK/UNI/APT…），
 // 面向"币友"用户默认识别为币；MATIC 已改名 POL，两者都列。
@@ -357,6 +357,7 @@ async function stockCheck(env, code, principal = 2000, S = pack("zh")) {
     const isCrypto = y.meta.instrumentType === "CRYPTOCURRENCY";
     const name = y.meta.shortName || y.meta.longName || code;
     const market = isCrypto ? S.mkt_crypto
+      : code.endsWith(".HK") || y.meta.currency === "HKD" ? S.mkt_hk
       : code.endsWith(".TO") || y.meta.currency === "CAD" ? S.mkt_ca : S.mkt_us;
     const pa = computePA(y.closes.slice(-140), y.meta.currency || "USD", S, y.highs?.slice(-140), y.lows?.slice(-140));
     if (!pa) return { error: S.err_price_thin2 };
@@ -575,8 +576,9 @@ async function wishCheck(env, items, S = pack("zh")) {
 const MARKET_OF = (code) =>
   isAshare(code) ? "A股"
   : /-(USD|USDT|USDC)$/.test(code) ? "加密货币"
+  : code.endsWith(".HK") ? "港股"
   : code.endsWith(".TO") ? "加拿大" : "美股";
-const CUR_OF_MARKET = { "A股": "CNY", "美股": "USD", "加拿大": "CAD", "加密货币": "USD" };
+const CUR_OF_MARKET = { "A股": "CNY", "美股": "USD", "加拿大": "CAD", "港股": "HKD", "加密货币": "USD" };
 
 async function portfolio(env, body, S = pack("zh")) {
   const items = Array.isArray(body?.items) ? body.items : [];
@@ -772,6 +774,7 @@ async function history(env, code, points = 60, S = pack("zh")) {
   if (!s) return { error: S.err_no_data };
   const market = isAshare(code) ? S.mkt_a
     : /-(USD|USDT|USDC)$/.test(code) ? S.mkt_crypto
+    : code.endsWith(".HK") || s.currency === "HKD" ? S.mkt_hk
     : code.endsWith(".TO") || s.currency === "CAD" ? S.mkt_ca : S.mkt_us;
   return { code, market, cur: CUR_SYM[s.currency] || "$",
     dates: s.dates.slice(-points),
@@ -794,6 +797,15 @@ async function resolve(env, q, S = pack("zh")) {
         return { ok: true, code: q + suf, name: info.items[0][1], market: S.mkt_a, cur: "¥" };
     }
   }
+  // 港股：数字开头 + .HK（0700.HK / 700.HK 补零到 4 位）
+  if (/^\d{1,5}\.HK$/.test(q)) {
+    const hk = q.split(".")[0].padStart(4, "0") + ".HK";
+    const y = await yahooChart(hk);
+    if (y?.closes?.length)
+      return { ok: true, code: hk, name: y.meta.shortName || y.meta.longName || hk,
+        market: S.mkt_hk, cur: CUR_SYM.HKD };
+    return { ok: false };
+  }
   if (/^[A-Z][A-Z0-9.\-]{0,9}$/.test(q)) {
     // 常见币简写先试加密货币对（输 BTC 自动识别为 BTC-USD）
     if (CRYPTO_SHORTHAND.has(q)) {
@@ -807,7 +819,8 @@ async function resolve(env, q, S = pack("zh")) {
       const cur = y.meta.currency || "USD";
       const isCrypto = y.meta.instrumentType === "CRYPTOCURRENCY";
       return { ok: true, code: q, name: y.meta.shortName || y.meta.longName || q,
-        market: isCrypto ? S.mkt_crypto : q.endsWith(".TO") || cur === "CAD" ? S.mkt_ca : S.mkt_us,
+        market: isCrypto ? S.mkt_crypto : cur === "HKD" ? S.mkt_hk
+          : q.endsWith(".TO") || cur === "CAD" ? S.mkt_ca : S.mkt_us,
         cur: CUR_SYM[cur] || "$" };
     }
   }

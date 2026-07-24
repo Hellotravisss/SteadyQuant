@@ -371,7 +371,7 @@
                 <div class="grid grid-cols-1 md:grid-cols-5 gap-3">
                     <div>
                         <div class="text-[10px] text-[#8A8578] mb-1" data-i18n="afStock">股票名字或代码</div>
-                        <input id="afStock" class="w-full px-4 py-3 rounded-xl text-sm" placeholder="茅台 / NVDA / SHOP.TO / BTC"
+                        <input id="afStock" class="w-full px-4 py-3 rounded-xl text-sm" placeholder="茅台 / NVDA / 0700.HK / BTC"
                                data-i18n-ph="afStockPh" oninput="this.dataset.code=''">
                     </div>
                     <div>
@@ -389,6 +389,7 @@
                             <option value="CNY">CNY ¥</option>
                             <option value="USD">USD $</option>
                             <option value="CAD">CAD C$</option>
+                            <option value="HKD">HKD HK$</option>
                         </select>
                     </div>
                     <div>
@@ -561,9 +562,9 @@ const I18N = {
     pfColUnreal: "未实现盈亏", pfColReal: "已实现",
     pfSubtotal: "小计", pfCost: "成本",
     pfMethodNote: "盈亏按移动平均成本法 · 总表按最新汇率换算 · 仅供研究教育",
-    mkt_a: "A股", mkt_us: "美股", mkt_ca: "加拿大", mkt_crypto: "加密货币",
+    mkt_a: "A股", mkt_us: "美股", mkt_ca: "加拿大", mkt_hk: "港股", mkt_crypto: "加密货币",
     addFormTitle: "记一笔交易（A股/美股/加股/币 自动识别）",
-    afStock: "股票名字或代码", afStockPh: "茅台 / NVDA / SHOP.TO / BTC",
+    afStock: "股票名字或代码", afStockPh: "茅台 / NVDA / 0700.HK / BTC",
     afDate: "买入日期", afPrice: "买入价（每股）", afCur: "你付的币种", afQty: "数量（股，可不填）",
     afCurHint: "💡 用加币买美股（如 Wealthsimple）就选 CAD，填券商显示的加币成本价——盈亏会按加币算，跟你的账单对得上。",
     afSubmit: "确认添加", afAdding: "识别中…", cancel: "取消",
@@ -603,7 +604,7 @@ const I18N = {
     krLoading: "AI 模型正在算方向倾向（几秒钟）…",
     krRetry: "再试一次",
     krDir_up: "模型倾向：偏涨", krDir_down: "模型倾向：偏跌", krDir_flat: "模型倾向：横着走",
-    krDirNote: "回测方向命中约七成，当参考不当答案",
+    krDirNote: "专属微调模型（美/加/A/港/币 十年数据训练）· 回测方向命中约七成，当参考不当答案",
     krHist: "近 60 日", krMedian: "模型中位路径", krBand: "大概率落在",
     krDisc: (n) => `⚠️ ${n} 条采样路径的统计区间，是"模型觉得可能"而非"会发生"。模型不知道明天的新闻。仅供研究，别按它下单。`,
     krFail_not_configured: "预测服务未配置（KRONOS_API_URL）",
@@ -709,13 +710,13 @@ const I18N = {
     pfColUnreal: "unrealized P&L", pfColReal: "realized",
     pfSubtotal: "subtotal", pfCost: "cost",
     pfMethodNote: "P&L by moving-average cost · total converted at latest FX · education only",
-    mkt_a: "A-shares", mkt_us: "US", mkt_ca: "Canada", mkt_crypto: "crypto",
+    mkt_a: "A-shares", mkt_us: "US", mkt_ca: "Canada", mkt_hk: "Hong Kong", mkt_crypto: "crypto",
     holdTitle: "what I own", addHold: "+ log a trade",
     holdSub: "Log every buy and sell. We compute your cost basis, realized/unrealized P&L, break it out by market (A-shares / US / Canada / crypto) with an FX-converted grand total, and watch your stop.",
     holdEmpty: "No trades logged yet. Hit \"+ log a trade\", or check a stock under \"what to buy\" and tap \"I already bought this\".",
     holdLoading: "fetching prices, computing P&L…",
     addFormTitle: "log a trade (A-shares / US / Canada / crypto auto-detected)",
-    afStock: "name or ticker", afStockPh: "NVDA / SHOP.TO / BTC / 茅台",
+    afStock: "name or ticker", afStockPh: "NVDA / 0700.HK / BTC / 茅台",
     afDate: "purchase date", afPrice: "cost per share", afCur: "currency you paid in", afQty: "shares (optional)",
     afCurHint: "💡 Buying US stocks with CAD (Wealthsimple etc.)? Pick CAD and enter the CAD cost your broker shows — P&L is then computed in CAD, matching your statement.",
     afSubmit: "add it", afAdding: "looking it up…", cancel: "cancel",
@@ -752,7 +753,7 @@ const I18N = {
     krLoading: "AI model is estimating direction (a few seconds)…",
     krRetry: "retry",
     krDir_up: "model lean: upward", krDir_down: "model lean: downward", krDir_flat: "model lean: sideways",
-    krDirNote: "~70% direction hit rate in backtest — a reference, not an answer",
+    krDirNote: "custom fine-tuned model (10y of US/CA/CN/HK/crypto data) · ~70% direction hit in backtest — a reference, not an answer",
     krHist: "last 60d", krMedian: "model median path", krBand: "likely range",
     krDisc: (n) => `⚠️ A statistical band from ${n} sampled paths — what the model finds plausible, not what will happen. It doesn't know tomorrow's news. Research only; don't trade on it.`,
     krFail_not_configured: "forecast service not configured (KRONOS_API_URL)",
@@ -1303,8 +1304,9 @@ async function doCheck() {
     const box = document.getElementById('checkResult');
     box.innerHTML = `<div class="py-12 text-center text-[#E5484D]">charging… ${t('checking')}</div>`;
     try {
-        // 纯字母代码 = 美股/加股（AAPL / SHOP.TO），直接查，不走A股搜索
-        const overseas = /^[A-Z][A-Z0-9.\-]{0,9}$/.test(code) && !/^\d{6}\.(SH|SZ)$/.test(code);
+        // 纯字母代码 = 美股/加股（AAPL / SHOP.TO）；数字+.HK = 港股（0700.HK）。直接查，不走A股搜索
+        const overseas = (/^[A-Z][A-Z0-9.\-]{0,9}$/.test(code) || /^\d{1,5}\.HK$/.test(code))
+            && !/^\d{6}\.(SH|SZ)$/.test(code);
         // 输入的不是标准代码也不是海外代码 → 先按名称/前缀搜索A股，取第一个匹配
         if (!overseas && !/^\d{6}\.(SH|SZ)$/.test(code)) {
             const sd = await apiFetch(`/api/search?keyword=${encodeURIComponent(code)}`);
@@ -1501,7 +1503,7 @@ window.addEventListener('DOMContentLoaded', () => {
     checkAuth();   // 已登录就拉云端数据覆盖本机
 });
 
-const CUR_SYMS = { CAD: 'C$', USD: '$', CNY: '¥' };
+const CUR_SYMS = { CAD: 'C$', USD: '$', CNY: '¥', HKD: 'HK$' };
 /* ── 交易台账数据层：每只股一个 {code,name,stop,txns:[{side,date,price,qty}]} ── */
 // 把任何旧格式（单条 entry/qty）规范成台账形态
 function normHold(x) {
@@ -1571,7 +1573,7 @@ function addFormFor(code, name, cur) {
     document.getElementById('afStock').value = name || code;
     document.getElementById('afStock').dataset.code = code;
     const cs = document.getElementById('afCur');
-    if (cs) cs.value = ['CNY','USD','CAD'].includes(cur) ? cur : '';
+    if (cs) cs.value = ['CNY','USD','CAD','HKD'].includes(cur) ? cur : '';
     document.getElementById('afPrice').focus();
     document.getElementById('afMsg').textContent = '';
     f.scrollIntoView({behavior:'smooth', block:'center'});
@@ -1660,7 +1662,7 @@ const fmtMoney = n => LANG === 'zh'
     : (n >= 1000 ? (n/1000).toFixed(1) + 'k' : n.toFixed(0));
 
 let PF_BASE = localStorage.getItem('sq_pfbase') || (LANG === 'en' ? 'USD' : 'CNY');
-const MKT_ORDER = ['A股', '美股', '加拿大', '加密货币'];
+const MKT_ORDER = ['A股', '美股', '加拿大', '港股', '加密货币'];
 
 async function refreshHold() {
     const hold = getHold();
@@ -1716,7 +1718,7 @@ async function refreshHold() {
         const m = d.markets.find(x => x.market === mk);
         if (!m) continue;
         const rows = d.stocks.filter(s => s.market === mk);
-        const mkName = t('mkt_' + ({'A股':'a','美股':'us','加拿大':'ca','加密货币':'crypto'}[mk]));
+        const mkName = t('mkt_' + ({'A股':'a','美股':'us','加拿大':'ca','港股':'hk','加密货币':'crypto'}[mk]));
         let rowsHtml = '';
         for (const s of rows) {
             const held = s.hold_qty > 0;

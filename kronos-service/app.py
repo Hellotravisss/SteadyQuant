@@ -35,9 +35,12 @@ MAX_CTX = 512
 PRED_MAX = 60
 SAMPLES = int(os.environ.get("KRONOS_SAMPLES", "8"))
 
-print("loading Kronos-small ...", flush=True)
-tokenizer = KronosTokenizer.from_pretrained("NeoQuasar/Kronos-Tokenizer-base")
-model = Kronos.from_pretrained("NeoQuasar/Kronos-small")
+# 微调权重 v2（171标的×10年，21天盲测误差 7.5% vs 原版 18.8%）；环境变量可覆盖回退官方权重
+TOK_REPO = os.environ.get("KRONOS_TOKENIZER", "Travisss/kronos-steady-tokenizer")
+MDL_REPO = os.environ.get("KRONOS_MODEL", "Travisss/kronos-steady-base")
+print(f"loading {MDL_REPO} ...", flush=True)
+tokenizer = KronosTokenizer.from_pretrained(TOK_REPO)
+model = Kronos.from_pretrained(MDL_REPO)
 print("model ready", flush=True)
 
 

@@ -7,7 +7,7 @@
 export const L = {
   zh: {
     // 市场
-    mkt_a: "A股", mkt_us: "美股", mkt_ca: "加拿大", mkt_crypto: "加密货币",
+    mkt_a: "A股", mkt_us: "美股", mkt_ca: "加拿大", mkt_hk: "港股", mkt_crypto: "加密货币",
     bench_hs300: "沪深300", bench_spx: "标普500", bench_tsx: "多伦多综指", bench_btc: "比特币",
     // 水位
     lvl_top: "贴顶", lvl_high: "高位", lvl_mid: "中位", lvl_low: "低位", lvl_bottom: "贴底",
@@ -120,7 +120,7 @@ export const L = {
   },
 
   en: {
-    mkt_a: "A-shares", mkt_us: "US", mkt_ca: "Canada", mkt_crypto: "crypto",
+    mkt_a: "A-shares", mkt_us: "US", mkt_ca: "Canada", mkt_hk: "Hong Kong", mkt_crypto: "crypto",
     bench_hs300: "CSI 300", bench_spx: "S&P 500", bench_tsx: "TSX Composite", bench_btc: "bitcoin",
     lvl_top: "at the top", lvl_high: "high", lvl_mid: "mid-range", lvl_low: "low", lvl_bottom: "at the bottom",
     stg_extended: "extended (parabolic — chasing is risky)",
