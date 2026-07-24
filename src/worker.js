@@ -1487,21 +1487,30 @@ async function runPatrol(env) {
     if (!paCache.has(code)) paCache.set(code, priceAnalysis(env, String(code).toUpperCase(), S).catch(() => null));
     return paCache.get(code);
   };
-  // 模型意见（只为触发警报的股调用，省 GPU 配额；跨用户缓存）
+  // 模型 21 天中位涨跌（只为触发警报的股调用；跨用户缓存；失败返回 null 不阻塞）
   const fcCache = new Map();
-  const getModelView = async (code) => {
+  const getModelChg = async (code) => {
     code = String(code).toUpperCase();
     if (!fcCache.has(code)) fcCache.set(code, (async () => {
       try {
         const f = await kronosForecast(env, code);
-        if (!f.ok) return "";
-        const chg = Math.round((f.p50[f.p50.length - 1] / f.last - 1) * 1000) / 10;
-        if (chg < -1.5) return `🤖 模型 21 天倾向：偏跌（中位 ${chg}%）——与防线信号同向，重审的优先级请调高。`;
-        if (chg > 1.5) return `🤖 模型 21 天倾向：偏涨（中位 +${chg}%）——可能是超跌，别恐慌割在地板价；先复核基本面理由再决定。`;
-        return `🤖 模型 21 天倾向：横着走（中位 ${chg >= 0 ? "+" : ""}${chg}%）——模型没给方向，决定权完全在你的基本面判断。`;
-      } catch { return ""; }
+        if (!f.ok) return null;
+        return Math.round((f.p50[f.p50.length - 1] / f.last - 1) * 1000) / 10;
+      } catch { return null; }
     })());
     return fcCache.get(code);
+  };
+  // 统一复审结论（与前端 reviewText 同一套话术，大方向必然一致）
+  const reviewMsg = (isLong, chgS, stopS, mc) => {
+    if (isLong) {
+      let txt = `已跌破防线（现 ${chgS}% / 防线 -${stopS}%，按长线放宽）。长线仓位只问一个问题：当初的理由还在吗？在→拿住；不在→退出。`;
+      if (mc != null && mc > 1.5) txt += `若决定退出：模型看短期或有反弹（21天中位 +${mc}%），可等反弹分批走，别抛在地板价。`;
+      else if (mc != null && mc < -1.5) txt += `若决定退出：模型短期也偏弱（21天中位 ${mc}%），别指望反弹解套。`;
+      return txt;
+    }
+    if (mc != null && mc < -1.5) return `已跌破止损线（现 ${chgS}% / 线 -${stopS}%），模型短期同向看跌（21天中位 ${mc}%）——两个信号一致：按纪律离场。`;
+    if (mc != null && mc > 1.5) return `已跌破止损线（现 ${chgS}% / 线 -${stopS}%），但模型看短期或有反弹（21天中位 +${mc}%）——可等反弹择机离场、别割在地板价；反弹不来仍要执行纪律。`;
+    return `已跌破止损线（现 ${chgS}% / 线 -${stopS}%）——短线仓位按纪律处理，别让小亏拖成大亏。`;
   };
 
   for (const row of rows) {
@@ -1540,11 +1549,8 @@ async function runPatrol(env) {
       const chg = lastAcct / avg - 1;
       const name = h.name || h.code;
       if (chg <= -stopPct) {
-        const mv = await getModelView(h.code);
-        events.push((isLong
-          ? `🔴 ${name}（${h.code}）已跌破防线：较成本 ${(chg * 100).toFixed(1)}%（防线 -${(stopPct * 100).toFixed(1)}%，已按长线放宽）。不是催你卖——是催你重审：当初拿长线的理由还成立吗？成立拿住，不成立才走。`
-          : `🔴 ${name}（${h.code}）已跌破你的止损提醒线：现价较成本 ${(chg * 100).toFixed(1)}%（提醒线 -${(stopPct * 100).toFixed(1)}%）。当初的买入理由还在吗？不在就该走了。`)
-          + (mv ? `<br><span style="color:#8A8578">${mv}</span>` : ""));
+        const mc = await getModelChg(h.code);
+        events.push(`🔴 ${name}（${h.code}）${reviewMsg(isLong, (chg * 100).toFixed(1), (stopPct * 100).toFixed(1), mc)}`);
       }
       else if (chg <= -stopPct + 0.03)
         events.push(`🟡 ${name}（${h.code}）距离止损提醒线只剩 ${((chg + stopPct) * 100).toFixed(1)}%（现 ${(chg * 100).toFixed(1)}%）。提前想好：跌破了执行吗？`);

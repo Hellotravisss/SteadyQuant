@@ -676,9 +676,12 @@ const I18N = {
     hzChip: (h) => `打算拿${h}`, hzUnknownChip: "没想好拿多久",
     hzDueChip: (h) => `当初打算拿${h}·到期了`,
     evHorizonDue: (h) => `当初买它时说打算拿${h}——时间到了。复盘一下：当初的理由兑现了吗？留还是走？`,
-    evModelDown: (c) => `🤖 模型 21 天倾向：偏跌（中位 ${c}%）——与防线信号同向，重审优先级调高`,
-    evModelUp: (c) => `🤖 模型 21 天倾向：偏涨（中位 ${c}%）——可能是超跌，别恐慌割在地板价，复核理由再定`,
-    evModelFlat: (c) => `🤖 模型 21 天倾向：横着走（中位 ${c}%）——模型不给方向，决定权在你的基本面判断`,
+    rvShort: (c, s2) => `已跌破止损线（现 ${c}% / 线 -${s2}%）——短线仓位按纪律处理，别让小亏拖成大亏。`,
+    rvShortDown: (c, s2, m) => `已跌破止损线（现 ${c}% / 线 -${s2}%），模型短期同向看跌（21天中位 ${m}%）——两个信号一致：按纪律离场。`,
+    rvShortUp: (c, s2, m) => `已跌破止损线（现 ${c}% / 线 -${s2}%），但模型看短期或有反弹（21天中位 ${m}%）——可等反弹择机离场、别割在地板价；反弹不来仍要执行纪律。`,
+    rvLong: (c, s2) => `已跌破防线（现 ${c}% / 防线 -${s2}%，按长线放宽）。长线仓位只问一个问题：当初的理由还在吗？在→拿住；不在→退出。`,
+    rvLongExitUp: (m) => `若决定退出：模型看短期或有反弹（21天中位 ${m}%），可等反弹分批走，别抛在地板价。`,
+    rvLongExitDown: (m) => `若决定退出：模型短期也偏弱（21天中位 ${m}%），别指望反弹解套。`,
     hzEditTip: "点击修改持有计划", hzChanged: (h) => `持有计划已改为「${h}」`,
     stopEditTip: "点击修改止损提醒距离（留空恢复自动）", stopManual: "手动",
     stopPrompt: (a) => `止损提醒距离：成本价下方多少 % 提醒你？\n留空 = 恢复自动（按波动算，当前 ${a}%）`,
@@ -878,9 +881,12 @@ const I18N = {
     hzChip: (h) => `plan: ${h}`, hzUnknownChip: "holding period undecided",
     hzDueChip: (h) => `planned ${h} · time's up`,
     evHorizonDue: (h) => `when you bought this you planned to hold ${h} — time's up. Review: did the thesis play out? Stay or go?`,
-    evModelDown: (c) => `🤖 model 21d lean: down (median ${c}%) — same direction as the line break; raise the review priority`,
-    evModelUp: (c) => `🤖 model 21d lean: up (median ${c}%) — possibly oversold; don't panic-sell the floor, recheck the thesis first`,
-    evModelFlat: (c) => `🤖 model 21d lean: sideways (median ${c}%) — no direction from the model; your fundamentals call decides`,
+    rvShort: (c, s2) => `Below the stop line (${c}% vs line -${s2}%) — short-horizon position: follow the discipline before a small loss grows.`,
+    rvShortDown: (c, s2, m) => `Below the stop line (${c}% / -${s2}%) and the model leans down short-term (21d median ${m}%) — signals agree: exit per discipline.`,
+    rvShortUp: (c, s2, m) => `Below the stop line (${c}% / -${s2}%) but the model sees a possible short-term bounce (21d median ${m}%) — you may time the exit on a bounce rather than the floor; if it never comes, the discipline still stands.`,
+    rvLong: (c, s2) => `Below the defense line (${c}% vs -${s2}%, widened for a long horizon). One question only: does the original thesis still hold? Yes → hold; no → exit.`,
+    rvLongExitUp: (m) => ` If you decide to exit: the model sees a possible near-term bounce (21d median ${m}%) — you can scale out on strength instead of the floor.`,
+    rvLongExitDown: (m) => ` If you decide to exit: the model is also soft near-term (21d median ${m}%) — don't count on a bounce to bail you out.`,
     hzEditTip: "click to change your holding plan", hzChanged: (h) => `holding plan changed to "${h}"`,
     stopEditTip: "click to set a custom stop distance (blank = back to auto)", stopManual: "manual",
     stopPrompt: (a) => `Stop alert distance: how many % below cost?\nLeave blank = back to auto (volatility-based, currently ${a}%)`,
@@ -1266,7 +1272,9 @@ async function buildToday() {
                 const chg = s.last / s.avg_cost - 1;
                 const stop = ((lh2 && lh2.stopPct > 0) ? lh2.stopPct
                     : Math.min(45, (s.stop_pct || 15) * hzStopFactor(lh2))) / 100;
-                if (chg <= -stop) events.push({lv:0, html:`🔴 <b>${s.name}</b> ${hzIsLong(lh2)?t('evStopLong',(chg*100).toFixed(1),(stop*100).toFixed(1)):t('evStop', (chg*100).toFixed(1), (stop*100).toFixed(1))}`, code:s.code});
+                if (chg <= -stop) events.push({lv:0, code:s.code, _name:s.name, _lh:lh2,
+                    _chg:(chg*100).toFixed(1), _stop:(stop*100).toFixed(1),
+                    html:`🔴 <b>${s.name}</b> ${reviewText(lh2, (chg*100).toFixed(1), (stop*100).toFixed(1), null)}`});
                 else if (chg <= -stop + 0.03) events.push({lv:1, html:`🟡 <b>${s.name}</b> ${t('evNearStop', ((chg+stop)*100).toFixed(1))}`, code:s.code});
             }
             const t2 = d.total;
@@ -1288,15 +1296,14 @@ async function buildToday() {
             }
         }
         events.sort((a,b) => a.lv - b.lv);
-        // 触发红灯的持仓（最多3只）请模型出庭作证——百分比是闹钟，模型是第二意见
-        const reds = events.filter(e => e.lv === 0 && e.code).slice(0, 3);
+        // 触发红灯的持仓（最多3只）请模型合议——回来后原地重写为"合并后的统一结论"
+        const reds = events.filter(e => e.lv === 0 && e._lh !== undefined).slice(0, 3);
         await Promise.all(reds.map(async e => {
             try {
                 const f = await apiFetch(`/api/serenity/forecast?code=${encodeURIComponent(e.code)}`);
                 if (!f.ok) return;
-                const chg = Math.round((f.p50[f.p50.length-1] / f.last - 1) * 1000) / 10;
-                const key = chg < -1.5 ? 'evModelDown' : chg > 1.5 ? 'evModelUp' : 'evModelFlat';
-                e.html += `<div class="text-[10px] text-[#8A8578] mt-1.5">${t(key, chg >= 0 ? '+'+chg : chg)}</div>`;
+                const mc = Math.round((f.p50[f.p50.length-1] / f.last - 1) * 1000) / 10;
+                e.html = `🔴 <b>${e._name}</b> ${reviewText(e._lh, e._chg, e._stop, mc)}`;
             } catch {}
         }));
         setTimeout(() => animEnter('#todayBox > div', 10), 0);
@@ -1879,6 +1886,23 @@ function editHorizon(ev, code) {
     sel.onblur = () => refreshHold(); // 没改就还原
     chip.replaceWith(sel);
     sel.focus();
+}
+
+/* ── 统一复审判定：破线后的结论由这一个函数产出，持仓表/今天页/邮件大方向一致。
+   长线仓位：模型 21 天预测不配参与"卖不卖"的判断（时间尺度不匹配），
+   只降级为"若决定退出，什么时机走"的参考。短线仓位才让模型参与方向合议。 ── */
+function reviewText(lh, chgS, stopS, modelChg) {
+    if (hzIsLong(lh)) {
+        let txt = t('rvLong', chgS, stopS);
+        if (modelChg != null) {
+            if (modelChg > 1.5) txt += t('rvLongExitUp', '+' + modelChg);
+            else if (modelChg < -1.5) txt += t('rvLongExitDown', modelChg);
+        }
+        return txt;
+    }
+    if (modelChg != null && modelChg < -1.5) return t('rvShortDown', chgS, stopS, modelChg);
+    if (modelChg != null && modelChg > 1.5) return t('rvShortUp', chgS, stopS, '+' + modelChg);
+    return t('rvShort', chgS, stopS);
 }
 
 function editStop(ev, code, autoPct) {
