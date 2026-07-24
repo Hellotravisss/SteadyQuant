@@ -265,9 +265,7 @@
             <div class="text-xs text-[#8A8578] mt-1" data-i18n="navWishSub">看中但嫌贵的，跌到你要的价提醒你</div>
         </button>
     </div>
-    <div class="text-right mb-6">
-        <span class="text-[11px] text-[#8A8578] cursor-pointer hover:text-[#E5484D] tab-btn" style="padding:0;border:none" onclick="switchTab('scan',this)" data-i18n="advScan">// 一键选股（A股）</span>
-    </div>
+    <div class="mb-6"></div>
 
     <!-- ===================== 今天（驾驶舱） ===================== -->
     <div id="panel-today" class="panel active">
@@ -336,6 +334,10 @@
                 <span class="ex-chip" onclick="goAnalyze('人形机器人产业链，上游哪些环节是真瓶颈？')" data-i18n="exRobot">人形机器人</span>
                 <span class="ex-chip" onclick="goAnalyze('HBM 存储产业链的国产替代，卡点在哪一层？')" data-i18n="exHbm">HBM 国产替代</span>
                 <span class="ex-chip" onclick="goAnalyze('数据中心电力与电网设备，谁是产能售罄的卡点？')" data-i18n="exPower">数据中心电力</span>
+            </div>
+            <div class="text-xs mt-4 pt-4" style="border-top:1px dashed var(--line)">
+                <span data-i18n="scanEntryLead">更喜欢用数字硬筛？</span>
+                <span class="code-link" onclick="switchTab('scan', tabBtn('check'))" data-i18n="scanEntry">一键选股（A股 · 估值粗筛 + 走势复评两轮制）→</span>
             </div>
             <div class="text-[10px] text-[#8A8578] mt-2"><span data-i18n="aiWarn">⚠️ AI 无实时数据，报告中价格/市值类数字仅供参考需自行核实 · 仅供研究教育，非投资建议 · 报告中出现的</span> <span class="code-link" data-i18n="tickerWord">股票代码</span> <span data-i18n="aiWarn2">可直接点击跳转体检</span></div>
             <div id="aiResult" class="ai-md mt-8 text-sm leading-relaxed text-[#4A463C]"></div>
@@ -497,7 +499,7 @@ const I18N = {
     navBuy: "买什么", navBuySub: "查一只股能不能碰，或让 AI 帮你找",
     navHold: "已经买了", navHoldSub: "盈亏一目了然，该卖的时候亮红灯",
     navWish: "想买什么", navWishSub: "看中但嫌贵的，跌到你要的价提醒你",
-    advScan: "// 一键选股（A股）",
+    scanEntryLead: "更喜欢用数字硬筛？", scanEntry: "一键选股（A股 · 估值粗筛 + 走势复评两轮制）→",
     // 预算规划
     planEyebrow: "plan first",
     planTitle: "有多少钱、打算放多久？先规划一下",
@@ -677,7 +679,7 @@ const I18N = {
     navBuy: "what to buy", navBuySub: "check if a stock is worth touching, or let AI find one",
     navHold: "what I own", navHoldSub: "P&L at a glance, red light when it's time to sell",
     navWish: "what I want", navWishSub: "too pricey for now — we'll ping you at your price",
-    advScan: "// screener (A-shares)",
+    scanEntryLead: "prefer hard numbers?", scanEntry: "one-click screener (A-shares · value screen + trend review) →",
     planEyebrow: "plan first",
     planTitle: "how much, and for how long? plan it first",
     planSub: "Not sure what to buy yet? Tell me your budget and time frame and I'll help you figure out the right mindset and traps to avoid — no specific stock recommended.",
