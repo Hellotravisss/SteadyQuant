@@ -507,7 +507,39 @@
 
 </div>
 
+<script src="/vendor/anime.min.js"></script>
 <script>
+/* ============ 动效层：anime.js，克制版 ————————
+   原则：动效只为信息服务（入场层次/图表生长/数字反馈），不做花哨转场；
+   prefers-reduced-motion 用户全部跳过；只动 transform/opacity/SVG 描边保性能 */
+const MOTION = typeof anime !== 'undefined' && !matchMedia('(prefers-reduced-motion: reduce)').matches;
+function animEnter(sel, dist = 14) {
+    if (!MOTION || document.hidden) return;  // 后台标签页 rAF 会被暂停，直接跳过（否则元素卡在透明态）
+    const els = document.querySelectorAll(sel);
+    if (!els.length) return;
+    anime.set(els, { opacity: 0 });
+    anime({ targets: els, opacity: [0, 1], translateY: [dist, 0],
+            duration: 460, delay: anime.stagger(60), easing: 'easeOutQuad' });
+}
+function animDraw(rootSel, dur = 900) {
+    if (!MOTION || document.hidden) return;
+    document.querySelectorAll(rootSel + ' path[stroke], ' + rootSel + ' circle[stroke]').forEach((el, i) => {
+        try {
+            const L = el.getTotalLength ? el.getTotalLength() : 0;
+            if (!L) return;
+            el.style.strokeDasharray = L;
+            el.style.strokeDashoffset = L;
+            anime({ targets: el, strokeDashoffset: [L, 0], duration: dur,
+                    delay: i * 90, easing: 'easeInOutSine',
+                    complete: () => { el.style.strokeDasharray = ''; } });
+        } catch {}
+    });
+    document.querySelectorAll(rootSel + ' path[fill]:not([fill="none"])').forEach((el) => {
+        const op = el.getAttribute('opacity') || 1;
+        anime({ targets: el, opacity: [0, op], duration: dur, easing: 'easeOutQuad' });
+    });
+}
+
 /* ============ 语言 ============ */
 const I18N = {
   zh: {
@@ -1159,6 +1191,7 @@ function switchTab(tab, el) {
     document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
     document.querySelectorAll('.tab-btn, .main-btn').forEach(b => b.classList.remove('active'));
     document.getElementById('panel-' + tab).classList.add('active');
+    animEnter(`#panel-${tab} > *`, 10);
     if (el) (el.closest('.main-btn') || el).classList.add('active');
     if (tab === 'hold') {
         if (USER) refreshHold();
@@ -1244,6 +1277,7 @@ async function buildToday() {
             }
         }
         events.sort((a,b) => a.lv - b.lv);
+        setTimeout(() => animEnter('#todayBox > div', 10), 0);
         const badge = document.getElementById('todayBadge');
         const nRed = events.filter(e => e.lv === 0).length;
         if (badge) badge.innerHTML = nRed
@@ -1483,6 +1517,7 @@ async function runForecast(code) {
                 <span>▒ ${t('krBand')} ${d.cur}${d.p10[d.p10.length-1]} ~ ${d.cur}${d.p90[d.p90.length-1]}</span>
             </div>
             <div class="text-[10px] text-[#8A8578] mt-2">${t('krDisc', d.samples)}</div>`;
+        animDraw('#krResult', 800);
     } catch (e) {
         box.innerHTML = `<div class="text-[10px] text-[#8A8578]">${t('failed', e.message)}
             <span class="code-link ml-1" onclick="runForecast('${code}')">${t('krRetry')}</span></div>`;
@@ -1581,6 +1616,7 @@ async function doCheck() {
         if (d.error) { box.innerHTML = `<div class="text-[#E5484D] p-6">${d.error}</div>`; return; }
         lastCheck = d;
         box.innerHTML = renderCheck(d);
+        animEnter('#checkResult .space-y-5 > *', 16);
         // Kronos 预测自动后台跑（配置了推理服务且有波动数据时），回来叠进「未来一个月」卡
         if (d.forecast_enabled && d.price?.bands) runForecast(d.code);
         loadNews(d.code); // 最近头条自动加载，没有就不露脸
@@ -2164,6 +2200,11 @@ async function refreshHold() {
         `<div class="text-[10px] text-[#8A8578] mt-2">${t('checkedAt', d.checked_at)} · ${USER ? t('savedCloud') : t('savedLocal')} · ${t('pfMethodNote')}</div>`;
     drawPortfolioCharts(d);
     drawPortfolioCurve(hold);
+    animEnter('#holdResult > div', 12);
+    animDraw('#chMarket', 700); animDraw('#chStock', 700);
+    if (MOTION) anime({ targets: '#chPnl div[style*="height:14px"]',
+        scaleX: [0, 1], duration: 600, delay: anime.stagger(45),
+        easing: 'easeOutQuart' });
 }
 
 /* ── 组合图表：环图×2 + 盈亏条 + 走势线（手绘 SVG，与全站风格一致） ── */
@@ -2254,6 +2295,7 @@ async function drawPortfolioCurve(hold) {
                 <span class="${up?'pos':'neg'}">${up?'+':''}${d.cur}${fmtMoney(Math.abs(gain))}</span>
                 <span>${d.dates[0].slice(0,4)}-${d.dates[0].slice(4,6)}-${d.dates[0].slice(6)} → ${t('chToday')}</span>
             </div>`;
+        animDraw('#chCurve', 1100);
     } catch (e) { el.innerHTML = `<div class="text-[10px] text-[#8A8578]">${t('failed', e.message)}</div>`; }
 }
 
@@ -2265,6 +2307,13 @@ function setPfBase(b) {
 window.addEventListener('DOMContentLoaded', () => {
     if (USER && getList('sq_hold').length) refreshHold();
     buildToday(); // 默认落地页是「今天」驾驶舱
+    animEnter('.main-btn', 18);
+    const juice = document.getElementById('juice');
+    if (MOTION && juice) {          // 电量计：开机从 0 充到 1%（品牌时刻）
+        const w = juice.style.width || getComputedStyle(juice).width;
+        juice.style.width = '0';
+        anime({ targets: juice, width: w || '1%', duration: 1200, delay: 400, easing: 'easeOutQuart' });
+    }
 });
 
 async function refreshWish() {
