@@ -109,6 +109,9 @@
         .ai-md h2{font-weight:800;font-size:17px;color:var(--ink);margin:22px 0 8px;font-family:var(--font-display)}
         .ai-md li{margin-left:18px;list-style:disc}
         .ai-md strong{color:var(--ink)}
+        .chain-node{transition:transform .18s ease, box-shadow .18s ease}
+        .chain-node:hover{transform:translateY(-2px);box-shadow:0 6px 16px rgba(0,0,0,.08)}
+        .panel{scroll-margin-top:10px}
         /* 供应链图谱卡点节点（critical 红） */
         .chain-hot{border-color:var(--red1);color:var(--red-deep);background:rgba(229,72,77,.08)}
         .chain-hub{border-style:dashed}
@@ -1249,6 +1252,11 @@ function switchTab(tab, el) {
     document.querySelectorAll('.tab-btn, .main-btn').forEach(b => b.classList.remove('active'));
     document.getElementById('panel-' + tab).classList.add('active');
     animEnter(`#panel-${tab} > *`, 10);
+    // 手机上导航卡是竖排的，内容在很下面——点卡后自动滑过去，不然用户不知道要往下拖
+    if (window.innerWidth < 900) {
+        setTimeout(() => document.getElementById('panel-' + tab)
+            .scrollIntoView({ behavior: (MOTION && !document.hidden) ? 'smooth' : 'auto', block: 'start' }), 80);
+    }
     if (el) (el.closest('.main-btn') || el).classList.add('active');
     if (tab === 'hold') {
         if (USER) refreshHold();
@@ -2588,6 +2596,28 @@ function renderChain(reportText) {
                         stroke="var(--chain-line)" stroke-width="1.5" fill="none"/>`;
         });
         svg.innerHTML = lines;
+
+        // ── 动画：节点按层瀑布入场 → 连线像墨水一样画出来 → 卡点持续轻微心跳 ──
+        if (MOTION) {
+            const nodes = wrap.querySelectorAll('.chain-node');
+            anime.set(nodes, { opacity: 0 });
+            anime({ targets: nodes, opacity: [0, 1], translateY: [10, 0], scale: [0.92, 1],
+                    duration: 420, delay: anime.stagger(40), easing: 'easeOutQuad' });
+            svg.querySelectorAll('path').forEach((el, i) => {
+                try {
+                    const L = el.getTotalLength();
+                    el.style.strokeDasharray = L; el.style.strokeDashoffset = L;
+                    anime({ targets: el, strokeDashoffset: [L, 0], duration: 700,
+                            delay: 350 + i * 70, easing: 'easeInOutSine',
+                            complete: () => { el.style.strokeDasharray = ''; } });
+                } catch {}
+            });
+            // 卡点红框：入场完后开始"心跳"（呼吸缩放，永续但极轻，指路不打扰）
+            const hot = wrap.querySelectorAll('.chain-hot');
+            if (hot.length) anime({ targets: hot, scale: [1, 1.035], duration: 1100,
+                delay: anime.stagger(180, { start: 900 }),
+                direction: 'alternate', loop: true, easing: 'easeInOutSine' });
+        }
     });
 }
 
