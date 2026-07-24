@@ -773,6 +773,43 @@ async function kronosForecast(env, code, S = pack("zh")) {
   }
 }
 
+/* ── 最近的消息：Yahoo 新闻检索（美/加/港/币直查；A股映射 .SH→.SS）。
+   只做展示和喂 AI 上下文，不做情绪打分——标题真伪与含义留给人和对辩去判断。 ── */
+async function stockNews(env, code, count = 8) {
+  code = String(code || "").trim().toUpperCase();
+  if (!code) return { items: [] };
+  // Yahoo 按代码的 RSS 头条：天然按标的过滤，五个市场（含茅台/腾讯）质量都实测过关
+  const q = isAshare(code) ? code.replace(".SH", ".SS") : code;
+  const unesc = (s) => s.replace(/<!\[CDATA\[|\]\]>/g, "").replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&#39;|&apos;/g, "'").replace(/&quot;/g, '"').trim();
+  try {
+    const res = await fetch(
+      `https://feeds.finance.yahoo.com/rss/2.0/headline?s=${encodeURIComponent(q)}&region=US&lang=en-US`,
+      { headers: { "User-Agent": "Mozilla/5.0" }, signal: AbortSignal.timeout(8000) }
+    );
+    const xml = await res.text();
+    const items = [];
+    for (const m of xml.matchAll(/<item>([\s\S]*?)<\/item>/g)) {
+      const b = m[1];
+      const title = (b.match(/<title>([\s\S]*?)<\/title>/) || [])[1];
+      const link = (b.match(/<link>([\s\S]*?)<\/link>/) || [])[1];
+      const pub = (b.match(/<pubDate>([\s\S]*?)<\/pubDate>/) || [])[1];
+      if (!title) continue;
+      const d = pub ? new Date(pub) : null;
+      items.push({
+        title: unesc(title),
+        source: "", // RSS 不带来源名，标题里通常自带
+        time: d && !isNaN(d) ? d.toISOString().slice(0, 10) : "",
+        url: link ? unesc(link) : "",
+      });
+      if (items.length >= count) break;
+    }
+    return { code, items };
+  } catch {
+    return { code, items: [] };
+  }
+}
+
 async function history(env, code, points = 60, S = pack("zh")) {
   code = code.trim().toUpperCase();
   const s = await dailySeries(env, code);
@@ -1015,6 +1052,38 @@ async function* streamDeepseek(env, system, user, maxTokens = 8000) {
   }
 }
 
+/* Kimi（月之暗面）：OpenAI 兼容协议。多空对辩里当"空头律师"——
+   换个厂商的模型当对手，视角基因不同，比同一个模型自问自答更能吵出东西 */
+async function* streamKimi(env, system, user, maxTokens = 3000) {
+  const res = await fetch("https://api.moonshot.cn/v1/chat/completions", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${env.KIMI_API_KEY}`, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      model: env.KIMI_MODEL || "moonshot-v1-8k", stream: true, max_tokens: maxTokens,
+      temperature: 0.6,
+      messages: [{ role: "system", content: system }, { role: "user", content: user }],
+    }),
+  });
+  if (!res.ok) throw new Error(`Kimi HTTP ${res.status}`);
+  const reader = res.body.getReader();
+  const dec = new TextDecoder();
+  let buf = "";
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buf += dec.decode(value, { stream: true });
+    const lines = buf.split("\n");
+    buf = lines.pop();
+    for (const line of lines) {
+      if (!line.startsWith("data: ") || line === "data: [DONE]") continue;
+      try {
+        const delta = JSON.parse(line.slice(6)).choices[0].delta?.content;
+        if (delta) yield delta;
+      } catch { /* 忽略半截 JSON */ }
+    }
+  }
+}
+
 async function* streamAnthropic(env, system, user, maxTokens = 8000, effort = "medium", webSearch = false) {
   const client = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY });
   const params = {
@@ -1138,6 +1207,86 @@ function planSSE(env, amount, currency, months, extra, S, lang) {
   return new Response(stream, { headers: { "Content-Type": "text/event-stream; charset=utf-8", "Cache-Control": "no-cache" } });
 }
 
+/* ───────── 多空对辩：两个不同厂商的 AI 吵一架 ─────────
+   多头律师（DeepSeek）只准找买入理由 → 空头律师（Kimi）只准拆台 →
+   法官（DeepSeek）听完两边给裁决和分歧点。上下文 = 真实行情 + 红旗 + 最近新闻。
+   Kimi 未配置时降级为 DeepSeek 分饰两角（明确告知用户）。 */
+const BULL_SYSTEM = `你是多头律师。你的当事人想买这只标的，你的唯一职责是给出最强的买入论证。
+规则：只用给定的事实（行情/红旗/新闻）+ 你对行业的常识；不许编造数字；来自训练知识的旧信息标注[知识库·可能过期]。
+输出 3-5 条最有力的多头论点，每条一段，直接了当。不写免责声明（页面自带）。中文，≤400字。`;
+const BEAR_SYSTEM = `你是空头律师。你的唯一职责是拆台：找出这只标的最致命的杀点，说服人不要买。
+规则：针对给定的事实（行情/红旗/新闻）逐条挑刺；指出多头最可能忽略的风险；禁止"估值偏高"这类空话，杀点要具体可验证；不许编造数字；旧信息标注[知识库·可能过期]。
+输出 3-5 条最锋利的空头论点，每条一段。不写免责声明。中文，≤400字。`;
+const JUDGE_SYSTEM = `你是法官。你刚听完多头律师和空头律师的辩论。
+你的裁决必须包含：① 双方谁的论据更扎实（一句话）② 双方真正的分歧点在哪（这是最有价值的部分——分歧点就是投资者该去核实的事）③ 什么样的人适合买、什么样的人不该碰（按风险承受力区分，不是荐股）。
+中文，≤300字，直接了当。`;
+
+function debateSSE(env, code, S = pack("zh"), lang = "zh") {
+  const enc = new TextEncoder();
+  const send = (ctrl, obj) => ctrl.enqueue(enc.encode("data: " + JSON.stringify(obj) + "\n\n"));
+  const stream = new ReadableStream({
+    async start(ctrl) {
+      try {
+        if (!env.DEEPSEEK_API_KEY) { send(ctrl, { error: S.ai_nokey }); ctrl.close(); return; }
+        // 组装案卷：真实行情 + 系统判定 + 红旗 + 新闻
+        const [d, news] = await Promise.all([
+          stockCheck(env, code, 2000, S),
+          stockNews(env, code, 8),
+        ]);
+        if (d.error) { send(ctrl, { error: d.error }); ctrl.close(); return; }
+        const p = d.price;
+        const ctx = [
+          `标的：${d.name}（${d.code}）· ${d.industry || ""}`,
+          `现价 ${p.cur}${p.last} · 半年水位 ${p.range_pos_6mo_pct}%（${p.level}）· 阶段 ${p.stage} · 近1月 ${p.ret_1m_pct}% · 近3月 ${p.ret_3m_pct}%` +
+            (d.basic?.pe ? ` · PE ${d.basic.pe}` : "") + (d.basic?.pb ? ` · PB ${d.basic.pb}` : ""),
+          `系统判定：${d.verdict.label}——${d.verdict.hint}`,
+          d.red_flags?.length ? `红旗：\n${d.red_flags.map((f) => `- ${f.text}`).join("\n")}` : "红旗：无",
+          news.items.length
+            ? `最近新闻标题（Yahoo 检索，仅标题，内容自行核实）：\n${news.items.map((n) => `- [${n.time}] ${n.title}（${n.source}）`).join("\n")}`
+            : "最近新闻：未检索到",
+        ].join("\n");
+        const kimiOk = !!env.KIMI_API_KEY;
+        send(ctrl, { meta: { name: d.name, code: d.code, dual: kimiOk, news_count: news.items.length } });
+
+        const bullParts = [];
+        send(ctrl, { phase: "bull" });
+        for await (const t of llmStream(env, BULL_SYSTEM, `案卷如下：\n${ctx}\n\n请陈述多头论点。`, 1200, "low"))
+          { bullParts.push(t); send(ctrl, { bull: t }); }
+
+        const bearParts = [];
+        send(ctrl, { phase: "bear" });
+        const bearGen = kimiOk
+          ? streamKimi(env, BEAR_SYSTEM, `案卷如下：\n${ctx}\n\n多头律师刚才说：\n${bullParts.join("")}\n\n请逐条拆台并给出你自己的杀点。`, 1200)
+          : llmStream(env, BEAR_SYSTEM, `案卷如下：\n${ctx}\n\n多头律师刚才说：\n${bullParts.join("")}\n\n请逐条拆台并给出你自己的杀点。`, 1200, "low");
+        try {
+          for await (const t of bearGen) { bearParts.push(t); send(ctrl, { bear: t }); }
+        } catch (ke) {
+          // Kimi 挂了 → 降级 DeepSeek 反串，不让整场辩论流产
+          if (kimiOk) {
+            send(ctrl, { bear_fallback: true });
+            for await (const t of llmStream(env, BEAR_SYSTEM, `案卷如下：\n${ctx}\n\n多头律师说：\n${bullParts.join("")}\n\n请拆台。`, 1200, "low"))
+              { bearParts.push(t); send(ctrl, { bear: t }); }
+          } else throw ke;
+        }
+
+        send(ctrl, { phase: "judge" });
+        for await (const t of llmStream(env, JUDGE_SYSTEM,
+          `案卷：\n${ctx}\n\n多头律师陈词：\n${bullParts.join("")}\n\n空头律师陈词：\n${bearParts.join("")}\n\n请裁决。`, 800, "low"))
+          send(ctrl, { judge: t });
+
+        send(ctrl, { done: true });
+      } catch (e) {
+        send(ctrl, { error: String(e.message || e) });
+      }
+      ctrl.close();
+    },
+  });
+  return new Response(stream, {
+    headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache",
+      "Access-Control-Allow-Origin": "*" },
+  });
+}
+
 function analyzeSSE(env, query, market, S = pack("zh"), lang = "zh") {
   const enc = new TextEncoder();
   const send = (ctrl, obj) => ctrl.enqueue(enc.encode("data: " + JSON.stringify(obj) + "\n\n"));
@@ -1180,7 +1329,101 @@ function analyzeSSE(env, query, market, S = pack("zh"), lang = "zh") {
 
 /* ───────── 路由 ───────── */
 
+/* ───────── 每日巡检：收盘后扫所有用户的持仓+心愿单，有事发邮件 ─────────
+   规则（全部复用查股/持仓的同一套口径）：
+   · 🔴 跌破止损提醒线（ATR 自适应距离，回退 15%）
+   · 🟡 距止损线不足 3%（预警区，给反应时间）
+   · 🟠 持仓进入 extended（抛物线）→ 提示思考止盈
+   · 🎯 心愿单到价 / 👀 接近心愿价 3% 以内
+   记账币与本币不同（如加币买美股）时按最新汇率折算后再比，与持仓表同口径。 */
+async function runPatrol(env) {
+  const S = pack("zh");
+  const rows = (await env.DB.prepare("SELECT user_id, hold, wish FROM user_data").all()).results || [];
+  const paCache = new Map(); // 同一只股多个用户持有时只拉一次
+  const getPA = (code) => {
+    if (!paCache.has(code)) paCache.set(code, priceAnalysis(env, String(code).toUpperCase(), S).catch(() => null));
+    return paCache.get(code);
+  };
+
+  for (const row of rows) {
+    let hold = [], wish = [];
+    try { hold = JSON.parse(row.hold || "[]"); wish = JSON.parse(row.wish || "[]"); } catch { continue; }
+    const events = [];
+
+    for (const h of hold) {
+      if (!h?.code || !Array.isArray(h.txns)) continue;
+      // 移动平均持仓/成本（与 portfolio 同法，记账币 = 流水实付币）
+      const txns = h.txns.filter((t) => t && t.price > 0 && t.qty > 0)
+        .sort((a, b) => (String(a.date) < String(b.date) ? -1 : 1));
+      if (!txns.length) continue;
+      const natCur = CUR_OF_MARKET[MARKET_OF(String(h.code).toUpperCase())];
+      const curs = new Set(txns.map((t) => t.cur || natCur));
+      const acctCur = curs.size === 1 ? [...curs][0] : natCur;
+      let held = 0, avg = 0;
+      for (const t of txns) {
+        if (t.side === "buy") { const nq = held + t.qty; avg = nq > 0 ? (held * avg + t.qty * t.price) / nq : 0; held = nq; }
+        else held = Math.max(0, held - t.qty);
+      }
+      if (held <= 0 || avg <= 0) continue;
+      const pa = await getPA(h.code);
+      if (!pa || pa.last == null) continue;
+      let rate = 1;
+      if (acctCur !== natCur) {
+        rate = fxLatest(await fxSeries(natCur, acctCur));
+        if (rate == null) continue; // 汇率拿不到 → 宁可不报，不报错账
+      }
+      const lastAcct = pa.last * rate;
+      const stopPct = (pa.stop_atr_pct ?? 15) / 100;
+      const chg = lastAcct / avg - 1;
+      const name = h.name || h.code;
+      if (chg <= -stopPct)
+        events.push(`🔴 ${name}（${h.code}）已跌破你的止损提醒线：现价较成本 ${(chg * 100).toFixed(1)}%（提醒线 -${(stopPct * 100).toFixed(1)}%）。当初的买入理由还在吗？不在就该走了。`);
+      else if (chg <= -stopPct + 0.03)
+        events.push(`🟡 ${name}（${h.code}）距离止损提醒线只剩 ${((chg + stopPct) * 100).toFixed(1)}%（现 ${(chg * 100).toFixed(1)}%）。提前想好：跌破了执行吗？`);
+      if (pa.stageKey === "extended" && chg > 0.15)
+        events.push(`🟠 ${name}（${h.code}）近一月拉出抛物线且你已浮盈 ${(chg * 100).toFixed(0)}%——考虑分批止盈锁一部分？树不会长到天上。`);
+    }
+
+    for (const w of wish) {
+      if (!w?.code || !w.target) continue;
+      const pa = await getPA(w.code);
+      if (!pa || pa.last == null) continue;
+      const name = w.name || w.code;
+      if (pa.last <= w.target)
+        events.push(`🎯 ${name}（${w.code}）到了你想买的价：现价 ${pa.cur}${pa.last}（目标 ${pa.cur}${w.target}）。去查一查它现在的水位和红旗，别闭眼接。`);
+      else if (pa.last <= w.target * 1.03)
+        events.push(`👀 ${name}（${w.code}）离你的心愿价只差 ${((pa.last / w.target - 1) * 100).toFixed(1)}%（现 ${pa.cur}${pa.last}）。`);
+    }
+
+    if (!events.length) continue;
+    const u = await env.ACCOUNTS_DB.prepare("SELECT email FROM users WHERE id = ?").bind(row.user_id).first();
+    if (!u?.email || !env.RESEND_API_KEY) continue;
+    const html = `<div style="font-family:ui-monospace,Menlo,monospace;max-width:560px;margin:0 auto;padding:24px;color:#17150F">
+      <div style="font-size:13px;color:#8A8578">steady · 每日巡检 — running on 1%</div>
+      <div style="font-size:20px;font-weight:800;margin:10px 0 18px">今天有 ${events.length} 件事需要你看一眼</div>
+      ${events.map((e) => `<div style="padding:12px 14px;border:1px solid #E4DAC7;border-radius:12px;margin-bottom:10px;font-size:14px;line-height:1.6">${e}</div>`).join("")}
+      <a href="https://steady.lowbattery.studio" style="display:inline-block;margin-top:10px;padding:12px 22px;background:#E5484D;color:#fff;border-radius:999px;text-decoration:none;font-weight:700;font-size:14px">打开 steady 处理 →</a>
+      <div style="font-size:11px;color:#8A8578;margin-top:22px">提醒基于你自己设的清单和全站统一的止损口径。仅供研究教育，非投资建议。</div>
+    </div>`;
+    try {
+      await fetch("https://api.resend.com/emails", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${env.RESEND_API_KEY}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          from: "steady · 定风波 <steady@lowbattery.studio>",
+          to: [u.email],
+          subject: `steady 巡检：${events.length} 件事需要你看一眼`,
+          html,
+        }),
+      });
+    } catch { /* 单个用户发信失败不影响其他人 */ }
+  }
+}
+
 export default {
+  async scheduled(event, env, ctx) {
+    ctx.waitUntil(runPatrol(env));
+  },
   async fetch(request, env) {
     const url = new URL(request.url);
     const p = url.pathname;
@@ -1200,6 +1443,8 @@ export default {
         return json({ ...(await stockCheck(env, q("code"), parseFloat(q("principal", "2000")), S)),
           forecast_enabled: !!env.KRONOS_API_URL });
       if (p === "/api/serenity/forecast") return json(await kronosForecast(env, q("code"), S));
+      if (p === "/api/serenity/news") return json(await stockNews(env, q("code")));
+      if (p === "/api/serenity/debate") return debateSSE(env, q("code"), S, lang);
       if (p === "/api/serenity/watch_check") return json(await watchCheck(env, q("items"), S));
       if (p === "/api/serenity/wish_check") return json(await wishCheck(env, q("items"), S));
       if (p === "/api/serenity/portfolio" && request.method === "POST")

@@ -28,5 +28,9 @@
   ],
   "observability": {
     "enabled": true
+  },
+  // 每日巡检：周一~五 21:30 UTC（美股收盘后 1 小时 / 北京时间早 5:30，A股开盘前）
+  "triggers": {
+    "crons": ["30 21 * * 1-5"]
   }
 }

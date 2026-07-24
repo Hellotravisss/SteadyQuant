@@ -567,6 +567,15 @@ const I18N = {
     krRetry: "再试一次",
     krDir_up: "模型倾向：偏涨", krDir_down: "模型倾向：偏跌", krDir_flat: "模型倾向：横着走",
     krDirNote: "专属微调模型（美/加/A/港/币 十年数据训练）· 回测方向命中约七成，当参考不当答案",
+    newsTitle: "最近的消息",
+    dbTitle: "⚔️ 多空对辩（两个 AI 吵一架）",
+    dbSub: "多头律师只准找买入理由，空头律师（另一家的 AI）只准拆台，最后法官指出双方分歧点——分歧点就是你该去核实的事。结合最近新闻。",
+    dbRun: "开庭（约 1 分钟）",
+    dbRunning: "开庭中… 多头先陈词",
+    dbBull: "🟢 多头律师陈词", dbBear: "🔴 空头律师拆台", dbJudge: "⚖️ 法官裁决",
+    dbSingle: "（Kimi 未配置，本场由同一个 AI 分饰两角——立场对抗仍在，视角多样性打折）",
+    dbFallback: "（空头律师 Kimi 缺席，由 DeepSeek 反串）",
+    dbDisc: "⚠️ 双方都只是 AI 基于公开信息的推演，都可能错。分歧点自己去核实，仅供研究教育。",
     krHist: "近 60 日", krMedian: "模型中位路径", krBand: "大概率落在",
     krDisc: (n) => `⚠️ ${n} 条采样路径的统计区间，是"模型觉得可能"而非"会发生"。模型不知道明天的新闻。仅供研究，别按它下单。`,
     krFail_not_configured: "预测服务未配置（KRONOS_API_URL）",
@@ -716,6 +725,15 @@ const I18N = {
     krRetry: "retry",
     krDir_up: "model lean: upward", krDir_down: "model lean: downward", krDir_flat: "model lean: sideways",
     krDirNote: "custom fine-tuned model (10y of US/CA/CN/HK/crypto data) · ~70% direction hit in backtest — a reference, not an answer",
+    newsTitle: "recent headlines",
+    dbTitle: "⚔️ bull vs bear (two AIs argue)",
+    dbSub: "A bull lawyer argues to buy, a bear lawyer (from a different AI vendor) tears it apart, then a judge names their real disagreements — which are exactly what you should verify. Uses recent headlines.",
+    dbRun: "start the trial (~1 min)",
+    dbRunning: "in session… bull speaks first",
+    dbBull: "🟢 bull's case", dbBear: "🔴 bear's takedown", dbJudge: "⚖️ judge's ruling",
+    dbSingle: "(Kimi not configured — one AI plays both roles; adversarial stance kept, vendor diversity reduced)",
+    dbFallback: "(bear lawyer Kimi absent — DeepSeek stands in)",
+    dbDisc: "⚠️ Both sides are AI reasoning over public info — either can be wrong. Verify the disagreements yourself. Research/education only.",
     krHist: "last 60d", krMedian: "model median path", krBand: "likely range",
     krDisc: (n) => `⚠️ A statistical band from ${n} sampled paths — what the model finds plausible, not what will happen. It doesn't know tomorrow's news. Research only; don't trade on it.`,
     krFail_not_configured: "forecast service not configured (KRONOS_API_URL)",
@@ -1259,6 +1277,69 @@ async function runForecast(code) {
     }
 }
 
+/* ── 最近的消息：查股后自动拉最近头条（纯展示，判断留给人和对辩） ── */
+async function loadNews(code) {
+    const card = document.getElementById('newsCard');
+    const list = document.getElementById('newsList');
+    if (!card || !list) return;
+    try {
+        const d = await apiFetch(`/api/serenity/news?code=${encodeURIComponent(code)}`);
+        if (!d.items || !d.items.length) return; // 没新闻就不露脸，不占版面
+        list.innerHTML = d.items.map(n => `
+            <a href="${n.url}" target="_blank" rel="noopener" class="block text-xs leading-relaxed hover:text-[#E5484D]" style="color:var(--ink)">
+                <span class="text-[#8A8578] font-mono text-[10px] mr-1">${n.time}</span>${n.title}
+                <span class="text-[10px] text-[#8A8578]">· ${n.source}</span>
+            </a>`).join('');
+        card.classList.remove('hidden');
+    } catch {}
+}
+
+/* ── 多空对辩：多头律师(DeepSeek) vs 空头律师(Kimi) → 法官裁决。SSE 流式三段。 ── */
+async function runDebate(code) {
+    const btn = document.getElementById('dbBtn');
+    const box = document.getElementById('dbResult');
+    if (!btn || !box) return;
+    btn.disabled = true; btn.textContent = t('dbRunning');
+    const seg = (id, title, color) => `
+        <div class="mt-4 pt-4" style="border-top:1px dashed var(--line)">
+            <div class="text-xs font-bold mb-2" style="color:${color}">${title}</div>
+            <div id="${id}" class="text-sm leading-relaxed" style="color:var(--ink)"></div>
+        </div>`;
+    box.innerHTML = '';
+    let bull = '', bear = '', judge = '';
+    try {
+        const res = await fetch(`/api/serenity/debate?code=${encodeURIComponent(code)}&lang=${LANG}`);
+        const reader = res.body.getReader();
+        const dec = new TextDecoder();
+        let buf = '';
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            buf += dec.decode(value, { stream: true });
+            const parts = buf.split('\n\n');
+            buf = parts.pop();
+            for (const part of parts) {
+                if (!part.startsWith('data: ')) continue;
+                const m = JSON.parse(part.slice(6));
+                if (m.meta && !m.meta.dual) box.innerHTML += `<div class="text-[10px] text-[#8A8578] mt-3">${t('dbSingle')}</div>`;
+                if (m.phase === 'bull') box.innerHTML += seg('dbBull', t('dbBull'), '#2f9e53');
+                if (m.phase === 'bear') box.innerHTML += seg('dbBear', t('dbBear'), '#E5484D');
+                if (m.phase === 'judge') box.innerHTML += seg('dbJudge', t('dbJudge'), 'var(--ink)');
+                if (m.bull) { bull += m.bull; const el = document.getElementById('dbBull'); if (el) el.innerHTML = mdRender(bull); }
+                if (m.bear) { bear += m.bear; const el = document.getElementById('dbBear'); if (el) el.innerHTML = mdRender(bear); }
+                if (m.judge) { judge += m.judge; const el = document.getElementById('dbJudge'); if (el) el.innerHTML = mdRender(judge); }
+                if (m.bear_fallback) box.innerHTML += `<div class="text-[10px] text-[#8A8578]">${t('dbFallback')}</div>`;
+                if (m.error) box.innerHTML += `<div class="text-xs text-[#E5484D] mt-3">${m.error}</div>`;
+                if (m.done) box.innerHTML += `<div class="text-[10px] text-[#8A8578] mt-4">${t('dbDisc')}</div>`;
+            }
+        }
+    } catch (e) {
+        box.innerHTML += `<div class="text-xs text-[#E5484D] mt-3">${t('failed', e.message)}</div>`;
+    } finally {
+        btn.disabled = false; btn.textContent = t('dbRun');
+    }
+}
+
 async function doCheck() {
     let code = document.getElementById('checkCode').value.trim().toUpperCase();
     if (!code) return;
@@ -1290,6 +1371,7 @@ async function doCheck() {
         box.innerHTML = renderCheck(d);
         // Kronos 预测自动后台跑（配置了推理服务且有波动数据时），回来叠进「未来一个月」卡
         if (d.forecast_enabled && d.price?.bands) runForecast(d.code);
+        loadNews(d.code); // 最近头条自动加载，没有就不露脸
     } catch (e) {
         box.innerHTML = `<div class="text-[#E5484D] p-6">${t('failed', e.message)}</div>`;
     }
@@ -1395,6 +1477,18 @@ ${t('whatIsIt')}</button>
 
         <!-- 未来一个月？统计区间 + Kronos 自动预测 + 止损建议，三合一（主视图） -->
         ${p.bands ? futureCard(p, d) : ''}
+
+        <!-- 最近的消息（自动加载）+ 多空对辩（手动触发，两个 AI 吵一架） -->
+        <div class="border border-[#E4DAC7] rounded-2xl p-6 hidden" id="newsCard">
+            <div class="text-sm font-bold mb-3">${t('newsTitle')}</div>
+            <div id="newsList" class="space-y-2"></div>
+        </div>
+        <div class="border border-[#E4DAC7] rounded-2xl p-6" id="debateCard">
+            <div class="text-sm font-bold mb-1">${t('dbTitle')}</div>
+            <div class="text-[10px] text-[#8A8578] mb-3">${t('dbSub')}</div>
+            <button onclick="runDebate('${d.code}')" id="dbBtn" class="px-5 py-2.5 rounded-xl text-xs" style="border:1px solid var(--line)">${t('dbRun')}</button>
+            <div id="dbResult"></div>
+        </div>
 
         <!-- 专业细节（默认折叠）：红旗 / 检查清单 / 卖出纪律 -->
         <details class="pro border border-[#E4DAC7] rounded-2xl p-5">
