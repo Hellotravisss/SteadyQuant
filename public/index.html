@@ -331,7 +331,7 @@
                 <span data-i18n="scanEntryLead">更喜欢用数字硬筛？</span>
                 <span class="code-link" onclick="switchTab('scan', tabBtn('check'))" data-i18n="scanEntry">一键选股（A股 · 估值粗筛 + 走势复评两轮制）→</span>
             </div>
-            <div class="text-[10px] text-[#8A8578] mt-2"><span data-i18n="aiWarn">⚠️ 网站行情是实时的，但 AI 写报告靠的是它的训练记忆（不联网）——报告里提到的价格/市值可能是旧数 · 仅供研究教育，非投资建议 · 想看实时数据？点报告里的</span> <span class="code-link" data-i18n="tickerWord">股票代码</span> <span data-i18n="aiWarn2">可直接点击跳转体检</span></div>
+            <div class="text-[10px] text-[#8A8578] mt-2"><span data-i18n="aiWarn">✓ AI 正文按规则不写价格/市值等时效数字（它不联网），报告末尾自动附实时行情对照表 · 仅供研究教育，非投资建议 · 点报告里的</span> <span class="code-link" data-i18n="tickerWord">股票代码</span> <span data-i18n="aiWarn2">可直接点击跳转体检</span></div>
             <div id="aiResult" class="ai-md mt-8 text-sm leading-relaxed text-[#4A463C]"></div>
         </div>
 
@@ -563,7 +563,7 @@ const I18N = {
     aiSub: '告诉我你看好什么方向（比如"机器人"），AI 会顺着产业链往上游找那些还没被大家炒起来的公司，并把风险一起讲清楚',
     aiPh: "你看好什么方向？比如：机器人 / 芯片国产替代 / AI 算力",
     aiBtn: "生成报告", aiBtnBusy: "生成中…", aiTryThese: "试试这些主题：",
-    aiWarn: "⚠️ 网站行情是实时的，但 AI 写报告靠的是它的训练记忆（不联网）——报告里提到的价格/市值可能是旧数 · 仅供研究教育，非投资建议 · 想看实时数据？点报告里的",
+    aiWarn: "✓ AI 正文按规则不写价格/市值等时效数字（它不联网），报告末尾自动附实时行情对照表 · 仅供研究教育，非投资建议 · 点报告里的",
     aiWarn2: "可直接点击跳转体检", tickerWord: "股票代码",
     exNaura: "北方华创", exMoutai: "贵州茅台", exMontage: "澜起科技",
     exNvda: "英伟达(美)", exShop: "Shopify(加)", exBtc: "比特币(币)",
@@ -2449,9 +2449,13 @@ async function verifyTickers(reportText) {
     const holder = document.getElementById('aiVerify');
     if (!holder) return;
     const codes = [...new Set([
-        ...(reportText.match(/\d{6}\.(SH|SZ)/g) || []),
+        ...(reportText.match(/\d{6}\.(?:SH|SZ)/g) || []),
         ...(reportText.match(/\b[A-Z]{1,5}\.TO\b/g) || []),
-    ])].slice(0, 12);
+        ...(reportText.match(/\b\d{4}\.HK\b/g) || []),
+        ...(reportText.match(/\b[A-Z]{2,5}-USD\b/g) || []),
+        // 美股裸代码只认"括号包裹"的（NVDA），避免把 AI/PE/CEO 这类词当代码
+        ...[...reportText.matchAll(/[（(]([A-Z]{1,5})[)）]/g)].map(m => m[1]),
+    ])].filter(c => !['AI','PE','PB','ROE','CEO','GPU','HBM','TAM','IPO','ETF','USD','CNY','CAD','HKD'].includes(c)).slice(0, 12);
     if (!codes.length) return;
     holder.innerHTML = '<div class="mt-8 text-xs text-[#8A8578]">正在用真实行情核对报告里的代码...</div>';
     try {
@@ -2462,7 +2466,7 @@ async function verifyTickers(reportText) {
             <div class="text-sm font-bold ${bad.length?'text-[#E5484D]':'text-[#2f9e53]'} mb-1">
                 ${bad.length ? `⚠️ 代码核验：${bad.length} 个代码查无此股（AI 可能写错，别直接用！）` : '✓ 代码核验：报告里的代码都真实存在'}
             </div>
-            <div class="text-[10px] text-[#8A8578] mb-3">下面是每个代码的真实名称和最新价——以这个为准，AI 正文里的价格可能过期</div>
+            <div class="text-[10px] text-[#8A8578] mb-3">📈 实时行情对照表（此刻的真实价格）——AI 正文按规则不写时效数字，看价格以这里为准，点代码进完整体检</div>
             <div class="grid md:grid-cols-2 gap-2">
             ${d.items.map(i => i.ok
                 ? `<div class="text-xs text-[#4A463C] flex justify-between gap-3 bg-[#F7F1E7] rounded-xl px-3 py-2">
