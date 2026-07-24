@@ -1876,8 +1876,9 @@ function editStop(ev, code, autoPct) {
 }
 
 function hzState(h) {
-    if (!h || !h.horizon) return null;
-    if (h.horizon === '?') return { label: '⏳ ' + t('hzUnknownChip'), cls: 'bg-[#F7F1E7] text-[#8A8578]' };
+    if (!h) return null;
+    // 功能上线前记的老持仓没有 horizon 字段 → 按"没想好"展示，保留可点修改的入口
+    if (!h.horizon || h.horizon === '?') return { label: '⏳ ' + t('hzUnknownChip'), cls: 'bg-[#F7F1E7] text-[#8A8578]' };
     const label = t('hzChip', t('hz_' + h.horizon.replace('?', 'unknown')));
     if (hzExpired(h)) return { label: '🗓 ' + t('hzDueChip', t('hz_' + h.horizon)), cls: 'bg-[#E5484D]/10 text-[#E5484D]' };
     return { label, cls: 'bg-[#F7F1E7] text-[#8A8578]' };
