@@ -4,7 +4,9 @@
   "compatibility_date": "2026-07-01",
   "assets": {
     "directory": "./public",
-    "binding": "ASSETS"
+    "binding": "ASSETS",
+    // 先跑 worker 再回退静态资产：否则 quant→steady 的 301 对首页不生效（资产在边缘直出）
+    "run_worker_first": true
   },
   "routes": [
     {
