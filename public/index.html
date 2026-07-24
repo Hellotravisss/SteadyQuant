@@ -1886,9 +1886,11 @@ function hzState(h) {
 /* ── 交易台账数据层：每只股一个 {code,name,stop,txns:[{side,date,price,qty}]} ── */
 // 把任何旧格式（单条 entry/qty）规范成台账形态
 function normHold(x) {
-    if (Array.isArray(x.txns)) return { code:x.code, name:x.name, stop:x.stop||null, txns:x.txns };
+    // 保留所有字段（horizon 持有计划 / stopPct 手动止损 / 未来新增字段），只做格式补全——
+    // 之前白名单式只留四个字段，导致改了持有计划一读回来就丢
+    if (Array.isArray(x.txns)) return { ...x, stop: x.stop || null };
     const txns = x.entry ? [{ side:'buy', date:x.added || new Date().toLocaleDateString('sv'), price:x.entry, qty:x.qty || 0 }] : [];
-    return { code:x.code, name:x.name, stop:x.stop||null, txns };
+    return { ...x, stop: x.stop || null, txns };
 }
 function getHold() { return getList('sq_hold').map(normHold); }
 
