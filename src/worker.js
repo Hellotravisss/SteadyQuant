@@ -736,10 +736,14 @@ async function kronosForecast(env, code, S = pack("zh")) {
       high: s.highs?.[i] ?? s.closes[i], low: s.lows?.[i] ?? s.closes[i] });
   }
   try {
-    // gradio 两步 REST：先提交拿 event_id，再读 SSE 结果（HF 免费 CPU + 冷启动可能要 2 分钟）
+    // gradio 两步 REST：先提交拿 event_id，再读 SSE 结果。
+    // KRONOS_HF_TOKEN 配置后带 Bearer 头——ZeroGPU 配额按调用方记账，匿名走 CF 共享出口 IP
+    // 很容易被别人耗光；挂到自己 HF 账号的配额才稳定。
     const base = env.KRONOS_API_URL.replace(/\/+$/, "");
+    const hdrs = { "Content-Type": "application/json" };
+    if (env.KRONOS_HF_TOKEN) hdrs.Authorization = `Bearer ${env.KRONOS_HF_TOKEN}`;
     const submit = await fetch(base + "/gradio_api/call/forecast", {
-      method: "POST", headers: { "Content-Type": "application/json" },
+      method: "POST", headers: hdrs,
       body: JSON.stringify({ data: [JSON.stringify({ bars, pred_len: 21 })] }),
       signal: AbortSignal.timeout(30000),
     });
@@ -747,6 +751,7 @@ async function kronosForecast(env, code, S = pack("zh")) {
     const { event_id: eid } = await submit.json();
     if (!eid) return { ok: false, reason: "service_error" };
     const res = await fetch(`${base}/gradio_api/call/forecast/${eid}`, {
+      headers: env.KRONOS_HF_TOKEN ? { Authorization: `Bearer ${env.KRONOS_HF_TOKEN}` } : {},
       signal: AbortSignal.timeout(150000),
     });
     if (!res.ok) return { ok: false, reason: "service_error", status: res.status };
