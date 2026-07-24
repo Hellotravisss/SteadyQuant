@@ -1166,12 +1166,12 @@ const EN_DIRECTIVE = `
 
 【LANGUAGE OVERRIDE — highest priority】Write the ENTIRE report in English, ignoring any instruction above about writing for Chinese readers. Keep tickers and standard finance terms as-is. Same structure, same discipline, same falsification requirements — just in natural English prose.`;
 
-async function* streamDeepseek(env, system, user, maxTokens = 8000) {
+async function* streamDeepseek(env, system, user, maxTokens = 8000, model = "deepseek-chat") {
   const res = await fetch("https://api.deepseek.com/chat/completions", {
     method: "POST",
     headers: { Authorization: `Bearer ${env.DEEPSEEK_API_KEY}`, "Content-Type": "application/json" },
     body: JSON.stringify({
-      model: "deepseek-chat", stream: true, max_tokens: maxTokens,
+      model, stream: true, max_tokens: maxTokens,
       messages: [{ role: "system", content: system }, { role: "user", content: user }],
     }),
   });
@@ -1246,7 +1246,11 @@ async function* streamAnthropic(env, system, user, maxTokens = 8000, effort = "m
 }
 
 function llmStream(env, system, user, maxTokens = 8000, effort = "medium", webSearch = false) {
-  if (env.DEEPSEEK_API_KEY) return streamDeepseek(env, system, user, maxTokens);
+  if (env.DEEPSEEK_API_KEY) {
+    // 重活（正式报告/规划/裁决）用深度思考的 reasoner；轻快活（圈候选/挑刺/律师陈词）用 chat 保速度
+    const model = effort === "low" ? "deepseek-chat" : (env.DEEPSEEK_HEAVY_MODEL || "deepseek-reasoner");
+    return streamDeepseek(env, system, user, maxTokens, model);
+  }
   return streamAnthropic(env, system, user, maxTokens, effort, webSearch);
 }
 
@@ -1339,7 +1343,7 @@ function planSSE(env, amount, currency, months, extra, S, lang) {
         if (!env.DEEPSEEK_API_KEY && !env.ANTHROPIC_API_KEY) {
           send(ctrl, { error: S.ai_nokey }); ctrl.close(); return;
         }
-        for await (const text of llmStream(env, sys, user, 2500, "low")) send(ctrl, { text });
+        for await (const text of llmStream(env, sys, user, 2500, "medium")) send(ctrl, { text });
         send(ctrl, { done: true });
       } catch (e) {
         send(ctrl, { error: String(e.message || e) });
@@ -1414,7 +1418,7 @@ function debateSSE(env, code, S = pack("zh"), lang = "zh") {
 
         send(ctrl, { phase: "judge" });
         for await (const t of llmStream(env, JUDGE_SYSTEM,
-          `案卷：\n${ctx}\n\n多头律师陈词：\n${bullParts.join("")}\n\n空头律师陈词：\n${bearParts.join("")}\n\n请裁决。`, 800, "low"))
+          `案卷：\n${ctx}\n\n多头律师陈词：\n${bullParts.join("")}\n\n空头律师陈词：\n${bearParts.join("")}\n\n请裁决。`, 800, "medium"))
           send(ctrl, { judge: t });
 
         send(ctrl, { done: true });
