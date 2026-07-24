@@ -1416,10 +1416,13 @@ function debateSSE(env, code, S = pack("zh"), lang = "zh") {
           } else throw ke;
         }
 
-        send(ctrl, { phase: "judge" });
-        for await (const t of llmStream(env, JUDGE_SYSTEM,
-          `案卷：\n${ctx}\n\n多头律师陈词：\n${bullParts.join("")}\n\n空头律师陈词：\n${bearParts.join("")}\n\n请裁决。`, 800, "medium"))
-          send(ctrl, { judge: t });
+        send(ctrl, { phase: "judge", judge_vendor: env.ANTHROPIC_API_KEY ? "claude" : "deepseek" });
+        const judgeGen = env.ANTHROPIC_API_KEY
+          ? streamAnthropic(env, JUDGE_SYSTEM,
+              `案卷：\n${ctx}\n\n多头律师陈词：\n${bullParts.join("")}\n\n空头律师陈词：\n${bearParts.join("")}\n\n请裁决。`, 800, "low")
+          : llmStream(env, JUDGE_SYSTEM,
+              `案卷：\n${ctx}\n\n多头律师陈词：\n${bullParts.join("")}\n\n空头律师陈词：\n${bearParts.join("")}\n\n请裁决。`, 800, "medium");
+        for await (const t of judgeGen) send(ctrl, { judge: t });
 
         send(ctrl, { done: true });
       } catch (e) {
@@ -1489,8 +1492,13 @@ function analyzeSSE(env, query, market, S = pack("zh"), lang = "zh") {
         send(ctrl, { stage: "review" });
         let critique = "";
         try {
-          for await (const text of llmStream(env, REVIEWER_SYSTEM + (lang === "en" ? EN_DIRECTIVE : ""),
-            `用户的原始问题：${query}\n\n待复核的报告：\n${draft}`, 1800, "low")) critique += text;
+          // 审查官优先用美方模型（Claude）——换个厂商换个文化视角，审查才叫独立
+          const auditGen = env.ANTHROPIC_API_KEY
+            ? streamAnthropic(env, REVIEWER_SYSTEM + (lang === "en" ? EN_DIRECTIVE : ""),
+                `用户的原始问题：${query}\n\n待复核的报告：\n${draft}`, 1800, "low")
+            : llmStream(env, REVIEWER_SYSTEM + (lang === "en" ? EN_DIRECTIVE : ""),
+                `用户的原始问题：${query}\n\n待复核的报告：\n${draft}`, 1800, "low");
+          for await (const text of auditGen) critique += text;
         } catch { /* 复核失败不阻塞终稿 */ }
 
         // ── 第五步：终稿（吸收审查意见修订后，才流式给用户）──

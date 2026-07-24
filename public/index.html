@@ -109,6 +109,18 @@
         .ai-md h2{font-weight:800;font-size:17px;color:var(--ink);margin:22px 0 8px;font-family:var(--font-display)}
         .ai-md li{margin-left:18px;list-style:disc}
         .ai-md strong{color:var(--ink)}
+        /* 手机端持仓表：表格塌成卡片，字段名用 data-l 伪元素标注 */
+        @media (max-width: 640px){
+            .pf-table thead{display:none}
+            .pf-table, .pf-table tbody{display:block}
+            .pf-table tr{display:block;border:1px solid var(--line);border-radius:14px;padding:10px 14px;margin-bottom:10px;background:var(--paper-2)}
+            .pf-table td{display:flex;justify-content:space-between;align-items:center;gap:8px;border:none !important;padding:3px 0;font-size:13px}
+            .pf-table td:first-child{display:block;padding-bottom:8px;margin-bottom:6px;border-bottom:1px dashed var(--line) !important}
+            .pf-table td[data-l]::before{content:attr(data-l);color:#8A8578;font-size:10px;flex-shrink:0}
+            .pf-table tr.pf-sub{background:var(--cloud);padding:8px 14px}
+            .pf-table td.pf-skip{display:none}
+            .pf-table tr.pf-sub td:first-child{border-bottom:none !important;margin-bottom:0;padding-bottom:3px;font-weight:700}
+        }
         .chain-node{transition:transform .18s ease, box-shadow .18s ease}
         .chain-node:hover{transform:translateY(-2px);box-shadow:0 6px 16px rgba(0,0,0,.08)}
         .panel{scroll-margin-top:10px}
@@ -2309,11 +2321,11 @@ async function refreshHold() {
                 </div>`;
             rowsHtml += `<tr>
                 <td>${nameCell}</td>
-                <td>${held ? s.hold_qty : '<span class="text-[#8A8578]">'+t('pfCleared')+'</span>'}</td>
-                <td>${held ? sc+s.avg_cost : '—'}</td>
-                <td>${s.last!=null ? sc+s.last : '—'}</td>
-                <td>${held && s.unrealized!=null ? signed(sc, s.unrealized)+(s.unreal_pct!==null?` <span class="text-[10px] ${s.unrealized>=0?'pos':'neg'}">${s.unrealized>=0?'+':''}${s.unreal_pct}%</span>`:'') : '—'}</td>
-                <td>${s.realized ? signed(sc, s.realized) : '—'}</td>
+                <td data-l="${t('pfColQty')}">${held ? s.hold_qty : '<span class="text-[#8A8578]">'+t('pfCleared')+'</span>'}</td>
+                <td data-l="${t('pfColAvg')}">${held ? sc+s.avg_cost : '—'}</td>
+                <td data-l="${t('pfColLast')}">${s.last!=null ? sc+s.last : '—'}</td>
+                <td data-l="${t('pfColUnreal')}">${held && s.unrealized!=null ? signed(sc, s.unrealized)+(s.unreal_pct!==null?` <span class="text-[10px] ${s.unrealized>=0?'pos':'neg'}">${s.unrealized>=0?'+':''}${s.unreal_pct}%</span>`:'') : '—'}</td>
+                <td data-l="${t('pfColReal')}">${s.realized ? signed(sc, s.realized) : '—'}</td>
             </tr>`;
         }
         tablesHtml += `
@@ -2329,10 +2341,10 @@ async function refreshHold() {
               <tbody>
                 ${rowsHtml}
                 <tr class="pf-sub">
-                  <td>${t('pfSubtotal')}</td><td></td><td></td>
-                  <td class="text-[10px] text-[#8A8578]">${t('pfCost')} ${money(m.cur, m.cost)}</td>
-                  <td>${signed(m.cur, m.unrealized)}${m.unreal_pct!==null?` <span class="text-[10px] ${m.unrealized>=0?'pos':'neg'}">${m.unrealized>=0?'+':''}${m.unreal_pct}%</span>`:''}</td>
-                  <td>${m.realized ? signed(m.cur, m.realized) : '—'}</td>
+                  <td>${t('pfSubtotal')}</td><td class="pf-skip"></td><td class="pf-skip"></td>
+                  <td data-l="${t('pfCost')}" class="text-[10px] text-[#8A8578]">${money(m.cur, m.cost)}</td>
+                  <td data-l="${t('pfColUnreal')}">${signed(m.cur, m.unrealized)}${m.unreal_pct!==null?` <span class="text-[10px] ${m.unrealized>=0?'pos':'neg'}">${m.unrealized>=0?'+':''}${m.unreal_pct}%</span>`:''}</td>
+                  <td data-l="${t('pfColReal')}">${m.realized ? signed(m.cur, m.realized) : '—'}</td>
                 </tr>
               </tbody>
             </table>
