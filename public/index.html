@@ -331,7 +331,7 @@
                 <span data-i18n="scanEntryLead">更喜欢用数字硬筛？</span>
                 <span class="code-link" onclick="switchTab('scan', tabBtn('check'))" data-i18n="scanEntry">一键选股（A股 · 估值粗筛 + 走势复评两轮制）→</span>
             </div>
-            <div class="text-[10px] text-[#8A8578] mt-2"><span data-i18n="aiWarn">✓ AI 正文按规则不写价格/市值等时效数字（它不联网），报告末尾自动附实时行情对照表 · 仅供研究教育，非投资建议 · 点报告里的</span> <span class="code-link" data-i18n="tickerWord">股票代码</span> <span data-i18n="aiWarn2">可直接点击跳转体检</span></div>
+            <div class="text-[10px] text-[#8A8578] mt-2"><span data-i18n="aiWarn">报告分三步生成：AI 圈定候选 → 系统抓取此刻实时行情 → AI 结合真实数据分析 · 仅供研究教育，非投资建议 · 点报告里的</span> <span class="code-link" data-i18n="tickerWord">股票代码</span> <span data-i18n="aiWarn2">可直接点击跳转体检</span></div>
             <div id="aiResult" class="ai-md mt-8 text-sm leading-relaxed text-[#4A463C]"></div>
         </div>
 
@@ -563,7 +563,7 @@ const I18N = {
     aiSub: '告诉我你看好什么方向（比如"机器人"），AI 会顺着产业链往上游找那些还没被大家炒起来的公司，并把风险一起讲清楚',
     aiPh: "你看好什么方向？比如：机器人 / 芯片国产替代 / AI 算力",
     aiBtn: "生成报告", aiBtnBusy: "生成中…", aiTryThese: "试试这些主题：",
-    aiWarn: "✓ AI 正文按规则不写价格/市值等时效数字（它不联网），报告末尾自动附实时行情对照表 · 仅供研究教育，非投资建议 · 点报告里的",
+    aiWarn: "报告分三步生成：AI 圈定候选 → 系统抓取此刻实时行情 → AI 结合真实数据分析 · 仅供研究教育，非投资建议 · 点报告里的",
     aiWarn2: "可直接点击跳转体检", tickerWord: "股票代码",
     exNaura: "北方华创", exMoutai: "贵州茅台", exMontage: "澜起科技",
     exNvda: "英伟达(美)", exShop: "Shopify(加)", exBtc: "比特币(币)",
@@ -697,6 +697,9 @@ const I18N = {
     dbSingle: "（Kimi 未配置，本场由同一个 AI 分饰两角——立场对抗仍在，视角多样性打折）",
     dbFallback: "（空头律师 Kimi 缺席，由 DeepSeek 反串）",
     dbDisc: "⚠️ 双方都只是 AI 基于公开信息的推演，都可能错。分歧点自己去核实，仅供研究教育。",
+    aiScouting: "AI 正在沿产业链圈定候选标的…",
+    aiQuoting: "候选锁定，正在抓取此刻的实时行情…",
+    aiWriting: "AI 拿到真实数据了，开始写正式分析…",
     krHist: "近 60 日", krMedian: "模型中位路径", krBand: "大概率落在",
     krDisc: (n) => `⚠️ ${n} 条采样路径的统计区间，是"模型觉得可能"而非"会发生"。模型不知道明天的新闻。仅供研究，别按它下单。`,
     krFail_not_configured: "预测服务未配置（KRONOS_API_URL）",
@@ -906,6 +909,9 @@ const I18N = {
     dbSingle: "(Kimi not configured — one AI plays both roles; adversarial stance kept, vendor diversity reduced)",
     dbFallback: "(bear lawyer Kimi absent — DeepSeek stands in)",
     dbDisc: "⚠️ Both sides are AI reasoning over public info — either can be wrong. Verify the disagreements yourself. Research/education only.",
+    aiScouting: "AI is scouting the supply chain for candidates…",
+    aiQuoting: "candidates locked — fetching live quotes right now…",
+    aiWriting: "real data in hand — writing the full analysis…",
     krHist: "last 60d", krMedian: "model median path", krBand: "likely range",
     krDisc: (n) => `⚠️ A statistical band from ${n} sampled paths — what the model finds plausible, not what will happen. It doesn't know tomorrow's news. Research only; don't trade on it.`,
     krFail_not_configured: "forecast service not configured (KRONOS_API_URL)",
@@ -2466,7 +2472,7 @@ async function verifyTickers(reportText) {
             <div class="text-sm font-bold ${bad.length?'text-[#E5484D]':'text-[#2f9e53]'} mb-1">
                 ${bad.length ? `⚠️ 代码核验：${bad.length} 个代码查无此股（AI 可能写错，别直接用！）` : '✓ 代码核验：报告里的代码都真实存在'}
             </div>
-            <div class="text-[10px] text-[#8A8578] mb-3">📈 实时行情对照表（此刻的真实价格）——AI 正文按规则不写时效数字，看价格以这里为准，点代码进完整体检</div>
+            <div class="text-[10px] text-[#8A8578] mb-3">📈 实时行情对照表（报告完成后再核验一遍）——与正文引用的快照同源，点代码进完整体检</div>
             <div class="grid md:grid-cols-2 gap-2">
             ${d.items.map(i => i.ok
                 ? `<div class="text-xs text-[#4A463C] flex justify-between gap-3 bg-[#F7F1E7] rounded-xl px-3 py-2">
@@ -2574,6 +2580,10 @@ async function doAnalyze() {
             for (const part of parts) {
                 if (!part.startsWith('data: ')) continue;
                 const msg = JSON.parse(part.slice(6));
+                if (msg.stage === 'scout') main.innerHTML = `<div class="text-xs text-[#8A8578]">🔍 ${t('aiScouting')}</div>`;
+                if (msg.stage === 'quotes') main.innerHTML += `<div class="text-xs text-[#8A8578] mt-1">📡 ${t('aiQuoting')}</div>`;
+                if (msg.scout) main.innerHTML += `<div class="text-xs mt-2 flex flex-wrap gap-1.5">${msg.scout.map(c=>`<span class="px-2.5 py-1 rounded-full text-[10px]" style="background:var(--cloud);border:1px solid var(--line)">${c.name||''} <span class="font-mono">${c.code}</span></span>`).join('')}</div>`;
+                if (msg.stage === 'report') { raw = ''; main.innerHTML += `<div class="text-xs text-[#8A8578] mt-1 mb-3">✍️ ${t('aiWriting')}</div>`; }
                 if (msg.text) { raw += msg.text; main.innerHTML = mdRender(raw); }
                 if (msg.phase === 'review') {
                     reviewing = true;

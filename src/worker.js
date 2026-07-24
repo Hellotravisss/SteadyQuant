@@ -1430,6 +1430,16 @@ function debateSSE(env, code, S = pack("zh"), lang = "zh") {
   });
 }
 
+const CANDIDATE_SYSTEM = `你是供应链卡点侦察员。给定主题和市场范围，沿产业链（下游→中游→上游设备/材料）圈定 6-10 个候选标的，跳过人尽皆知的下游龙头，偏好上游卡点。
+输出严格 JSON（不要任何其他文字）：{"candidates":[{"code":"标准代码","name":"名称","layer":"产业链位置一句话"}]}
+代码规范：A股 600519.SH / 美股 NVDA / 加股 SHOP.TO / 港股 0700.HK / 加密货币 BTC-USD。只选市场范围内的。不确定代码宁可不列，禁止编造。`;
+
+async function llmOnce(env, sys, user, maxTokens = 1000) {
+  let out = "";
+  for await (const t of llmStream(env, sys, user, maxTokens, "low")) out += t;
+  return out;
+}
+
 function analyzeSSE(env, query, market, S = pack("zh"), lang = "zh") {
   const enc = new TextEncoder();
   const send = (ctrl, obj) => ctrl.enqueue(enc.encode("data: " + JSON.stringify(obj) + "\n\n"));
@@ -1441,9 +1451,35 @@ function analyzeSSE(env, query, market, S = pack("zh"), lang = "zh") {
           send(ctrl, { error: S.ai_nokey });
           ctrl.close(); return;
         }
+        // ── 第一步：AI 圈定候选（快，只出清单）──
+        send(ctrl, { stage: "scout" });
+        let snaps = "", scoutList = [];
+        try {
+          const candTxt = await llmOnce(env, CANDIDATE_SYSTEM, `市场范围：${market}。主题：${query}`, 800);
+          const cand = JSON.parse(candTxt.match(/\{[\s\S]*\}/)?.[0] || "{}").candidates || [];
+          scoutList = cand.slice(0, 10);
+          if (scoutList.length) {
+            send(ctrl, { scout: scoutList.map((c) => ({ code: c.code, name: c.name })) });
+            // ── 第二步：抓实时行情快照 ──
+            send(ctrl, { stage: "quotes" });
+            const lines = await Promise.all(scoutList.map(async (c) => {
+              const code = String(c.code || "").toUpperCase();
+              const pa = await priceAnalysis(env, code, S).catch(() => null);
+              if (!pa) return `（${code}）${c.name || ""}：行情抓取失败，正文请标注需自行核实`;
+              return `（${code}）${c.name || ""}｜${c.layer || ""}｜现价 ${pa.cur}${pa.last}，半年水位 ${pa.range_pos_6mo_pct}%（${pa.level}），阶段 ${pa.stage}，近1月 ${pa.ret_1m_pct}%，近3月 ${pa.ret_3m_pct}%，年化波动 ${pa.vol_annual_pct}%`;
+            }));
+            snaps = lines.join("\n");
+          }
+        } catch { /* 候选圈定失败 → 退回单段式，不阻塞报告 */ }
+
+        // ── 第三步：带着真数据写正式报告 ──
+        send(ctrl, { stage: "report" });
         const report = [];
         const sys = SERENITY_SYSTEM + (lang === "en" ? EN_DIRECTIVE : "");
-        for await (const text of llmStream(env, sys, `市场范围：${market}。请分析：${query}`, 8000, "medium", true)) {
+        const userMsg = snaps
+          ? `市场范围：${market}。请分析：${query}\n\n【系统抓取的候选实时行情（此刻真实数据，正文引用价格/水位/阶段必须以此为准；除此之外不得写任何其他时效数字）】\n${snaps}\n\n你可以淘汰快照中不合格的候选、也可以补充快照外的标的（但补充的标的正文不得写具体价格）。水位高/阶段 extended 的候选要如实提示追高风险。`
+          : `市场范围：${market}。请分析：${query}`;
+        for await (const text of llmStream(env, sys, userMsg, 8000, "medium", true)) {
           report.push(text);
           send(ctrl, { text });
         }
