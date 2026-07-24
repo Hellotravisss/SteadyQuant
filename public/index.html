@@ -386,7 +386,14 @@
 
             <!-- 添加持仓表单 -->
             <div id="addForm" class="hidden border border-[#3FB55B]/40 rounded-2xl p-6 mb-6">
-                <div class="text-sm font-bold mb-4" data-i18n="addFormTitle">记一笔交易（A股/美股/加股/币 自动识别）</div>
+                <div class="flex flex-wrap items-center gap-3 mb-4">
+                    <div class="text-sm font-bold" data-i18n="addFormTitle">记一笔交易（A股/美股/加股/币 自动识别）</div>
+                    <button type="button" onclick="document.getElementById('shotInput').click()"
+                            class="text-xs px-4 py-2 rounded-full" style="border:1px dashed var(--line);color:var(--dim)"
+                            id="shotBtn" data-i18n="shotBtn">📷 截图识别（拍/传成交单，AI 帮你填）</button>
+                    <input type="file" id="shotInput" accept="image/*" class="hidden" onchange="parseShot(this.files[0])">
+                    <span id="shotMsg" class="text-[10px] text-[#8A8578]"></span>
+                </div>
                 <div class="flex gap-2 mb-4">
                     <button type="button" id="afSideBuy" onclick="setAfSide('buy')" class="af-side px-5 py-2 rounded-xl text-sm active" data-i18n="afBuy">买入</button>
                     <button type="button" id="afSideSell" onclick="setAfSide('sell')" class="af-side px-5 py-2 rounded-xl text-sm" data-i18n="afSell">卖出</button>
@@ -624,6 +631,15 @@ const I18N = {
     evWishNear: (g) => `离你的心愿价只差 ${g}%。`,
     planToggle: "（点开）",
     afHorizon: "打算拿多久？",
+    shotBtn: "📷 截图识别（拍/传成交单，AI 帮你填）",
+    shotReading: "AI 正在读你的成交单…（约 10 秒）",
+    shotDone: "已按截图预填——请逐项核对再点确认，数字以你的账单为准",
+    shotFail_no_kimi: "未配置视觉模型（KIMI_API_KEY）",
+    shotFail_bad_image: "图片格式不支持，请传 PNG/JPG 截图",
+    shotFail_too_large: "图片太大了，截小一点再试",
+    shotFail_vision_error: "识别服务出错，稍后再试",
+    shotFail_parse_error: "没能从截图里读出交易信息——截图里要有名称、价格、数量",
+    shotFail_timeout: "识别超时，再试一次",
     hz_unknown: "没想好", hz_1m: "一个月内", hz_3m: "几个月", hz_1y: "一年左右", hz_3y: "两三年+", hz_hold: "长期持有",
     hzChip: (h) => `打算拿${h}`, hzUnknownChip: "没想好拿多久",
     hzDueChip: (h) => `当初打算拿${h}·到期了`,
@@ -808,6 +824,15 @@ const I18N = {
     evWishNear: (g) => `just ${g}% above your wish price.`,
     planToggle: "(expand)",
     afHorizon: "how long do you plan to hold?",
+    shotBtn: "📷 screenshot fill (snap/upload your trade slip)",
+    shotReading: "AI is reading your trade slip… (~10s)",
+    shotDone: "pre-filled from the screenshot — verify every field against your statement before confirming",
+    shotFail_no_kimi: "vision model not configured (KIMI_API_KEY)",
+    shotFail_bad_image: "unsupported image format — use a PNG/JPG screenshot",
+    shotFail_too_large: "image too large — crop it and retry",
+    shotFail_vision_error: "vision service error — try again later",
+    shotFail_parse_error: "couldn't read a trade from this screenshot — it needs name, price and quantity",
+    shotFail_timeout: "recognition timed out — try once more",
     hz_unknown: "not sure yet", hz_1m: "within a month", hz_3m: "a few months", hz_1y: "about a year", hz_3y: "2-3 years+", hz_hold: "long-term hold",
     hzChip: (h) => `plan: ${h}`, hzUnknownChip: "holding period undecided",
     hzDueChip: (h) => `planned ${h} · time's up`,
@@ -1852,6 +1877,51 @@ function toggleAddForm() {
         document.getElementById('afStock').focus();
     }
     document.getElementById('afMsg').textContent = '';
+}
+
+/* ── 截图识别成交单：压缩→Kimi视觉抽字段→只预填表单，入账仍需用户过目点确认 ── */
+async function parseShot(file) {
+    if (!file) return;
+    const btn = document.getElementById('shotBtn');
+    const msg = document.getElementById('shotMsg');
+    btn.disabled = true; msg.textContent = t('shotReading');
+    try {
+        // 压缩：最长边 1400px、JPEG 0.85（识别够用，省流量省 token）
+        const img = await new Promise((ok, no) => {
+            const i = new Image();
+            i.onload = () => ok(i); i.onerror = no;
+            i.src = URL.createObjectURL(file);
+        });
+        const scale = Math.min(1, 1400 / Math.max(img.width, img.height));
+        const cv = document.createElement('canvas');
+        cv.width = Math.round(img.width * scale); cv.height = Math.round(img.height * scale);
+        cv.getContext('2d').drawImage(img, 0, 0, cv.width, cv.height);
+        const dataUrl = cv.toDataURL('image/jpeg', 0.85);
+        URL.revokeObjectURL(img.src);
+
+        const r = await fetch('/api/serenity/parse_trade', {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ image: dataUrl })
+        }).then(x => x.json());
+        if (!r.ok) { msg.textContent = t('shotFail_' + (r.reason || 'timeout')); return; }
+
+        // 预填（识别出啥填啥，没识别出的留给用户）
+        setAfSide(r.side || 'buy');
+        const stockEl = document.getElementById('afStock');
+        stockEl.value = r.code || r.name || '';
+        stockEl.dataset.code = '';                     // 让提交时正常走 resolve 校验
+        if (r.date) document.getElementById('afDate').value = r.date;
+        if (r.price) document.getElementById('afPrice').value = r.price;
+        if (r.currency) document.getElementById('afCur').value = r.currency;
+        if (r.qty) document.getElementById('afQty').value = r.qty;
+        msg.innerHTML = (r.confidence === 'low' ? '⚠️ ' : '✅ ') + t('shotDone')
+            + (r.note ? `<br>💬 ${r.note}` : '');
+    } catch (e) {
+        msg.textContent = t('failed', e.message);
+    } finally {
+        btn.disabled = false;
+        document.getElementById('shotInput').value = '';
+    }
 }
 
 let afSide = 'buy';

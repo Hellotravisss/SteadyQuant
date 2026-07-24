@@ -773,6 +773,61 @@ async function kronosForecast(env, code, S = pack("zh")) {
   }
 }
 
+/* ── 截图识别成交单：用户截屏券商 App 的成交记录 → Kimi 视觉模型抽字段。
+   只做"预填表单"，绝不直接入账——数字必须经用户过目确认（AI 看错一个小数点就是假账）。
+   图片仅转发给 Moonshot 识别，不存储。 ── */
+async function parseTrade(env, body, S = pack("zh")) {
+  if (!env.KIMI_API_KEY) return { ok: false, reason: "no_kimi" };
+  const img = body?.image;
+  if (!img || !/^data:image\/(png|jpeg|webp);base64,/.test(img)) return { ok: false, reason: "bad_image" };
+  if (img.length > 4_000_000) return { ok: false, reason: "too_large" };
+  try {
+    const res = await fetch("https://api.moonshot.cn/v1/chat/completions", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${env.KIMI_API_KEY}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: env.KIMI_VISION_MODEL || "moonshot-v1-8k-vision-preview",
+        temperature: 0.1,
+        response_format: { type: "json_object" },
+        messages: [
+          { role: "system", content:
+`你从券商/交易所 App 的成交截图中抽取一笔交易的字段，输出严格 JSON：
+{"side":"buy"|"sell","name":"标的名称","code":"代码(尽量标准化:A股600519.SH、美股NVDA、加股SHOP.TO、港股0700.HK、币BTC-USD;不确定则空串)","date":"YYYY-MM-DD","price":成交单价数字,"currency":"CNY"|"USD"|"CAD"|"HKD","qty":数量数字,"confidence":"high"|"low","note":"不确定之处一句话，没有则空串"}
+规则：价格必须是"每股/每个单价"，若截图只有总额和数量则用 总额÷数量；买入/卖出按截图字样判断（买/买入/Buy/Bought=buy，卖/卖出/Sell/Sold=sell）；币种按截图货币符号或文字判断，加拿大券商(Wealthsimple等)常用 CAD；识别不出的字段用 null；看到多笔交易只取最上面/最完整的一笔并在 note 里说明。只输出 JSON。` },
+          { role: "user", content: [
+            { type: "image_url", image_url: { url: img } },
+            { type: "text", text: "抽取这笔交易" },
+          ] },
+        ],
+        max_tokens: 500,
+      }),
+      signal: AbortSignal.timeout(45000),
+    });
+    if (!res.ok) return { ok: false, reason: "vision_error", status: res.status };
+    const d = await res.json();
+    let out;
+    try {
+      const txt = d.choices[0].message.content;
+      out = JSON.parse(txt.match(/\{[\s\S]*\}/)?.[0] || txt);
+    } catch { return { ok: false, reason: "parse_error" }; }
+    // 服务器侧兜底校验：数字合法性
+    const price = parseFloat(out.price), qty = parseFloat(out.qty);
+    return { ok: true,
+      side: out.side === "sell" ? "sell" : "buy",
+      name: String(out.name || "").slice(0, 40),
+      code: String(out.code || "").toUpperCase().slice(0, 12),
+      date: /^\d{4}-\d{2}-\d{2}$/.test(out.date || "") ? out.date : null,
+      price: price > 0 ? price : null,
+      currency: ["CNY", "USD", "CAD", "HKD"].includes(out.currency) ? out.currency : null,
+      qty: qty > 0 ? qty : null,
+      confidence: out.confidence === "low" ? "low" : "high",
+      note: String(out.note || "").slice(0, 120),
+    };
+  } catch {
+    return { ok: false, reason: "timeout" };
+  }
+}
+
 /* ── 最近的消息：Yahoo 新闻检索（美/加/港/币直查；A股映射 .SH→.SS）。
    只做展示和喂 AI 上下文，不做情绪打分——标题真伪与含义留给人和对辩去判断。 ── */
 async function stockNews(env, code, count = 8) {
@@ -1477,6 +1532,8 @@ export default {
       if (p === "/api/serenity/news") return json(await stockNews(env, q("code")));
       if (p === "/api/serenity/debate") return debateSSE(env, q("code"), S, lang);
       if (p === "/api/serenity/pulse") return json(await marketPulse(env, S));
+      if (p === "/api/serenity/parse_trade" && request.method === "POST")
+        return json(await parseTrade(env, await request.json().catch(() => ({})), S));
       if (p === "/api/serenity/watch_check") return json(await watchCheck(env, q("items"), S));
       if (p === "/api/serenity/wish_check") return json(await wishCheck(env, q("items"), S));
       if (p === "/api/serenity/portfolio" && request.method === "POST")
