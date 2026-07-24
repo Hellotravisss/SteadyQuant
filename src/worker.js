@@ -1487,6 +1487,22 @@ async function runPatrol(env) {
     if (!paCache.has(code)) paCache.set(code, priceAnalysis(env, String(code).toUpperCase(), S).catch(() => null));
     return paCache.get(code);
   };
+  // 模型意见（只为触发警报的股调用，省 GPU 配额；跨用户缓存）
+  const fcCache = new Map();
+  const getModelView = async (code) => {
+    code = String(code).toUpperCase();
+    if (!fcCache.has(code)) fcCache.set(code, (async () => {
+      try {
+        const f = await kronosForecast(env, code);
+        if (!f.ok) return "";
+        const chg = Math.round((f.p50[f.p50.length - 1] / f.last - 1) * 1000) / 10;
+        if (chg < -1.5) return `🤖 模型 21 天倾向：偏跌（中位 ${chg}%）——与防线信号同向，重审的优先级请调高。`;
+        if (chg > 1.5) return `🤖 模型 21 天倾向：偏涨（中位 +${chg}%）——可能是超跌，别恐慌割在地板价；先复核基本面理由再决定。`;
+        return `🤖 模型 21 天倾向：横着走（中位 ${chg >= 0 ? "+" : ""}${chg}%）——模型没给方向，决定权完全在你的基本面判断。`;
+      } catch { return ""; }
+    })());
+    return fcCache.get(code);
+  };
 
   for (const row of rows) {
     let hold = [], wish = [];
@@ -1523,10 +1539,13 @@ async function runPatrol(env) {
         : Math.min(45, (pa.stop_atr_pct ?? 15) * (HZF[h.horizon] || 1))) / 100;
       const chg = lastAcct / avg - 1;
       const name = h.name || h.code;
-      if (chg <= -stopPct)
-        events.push(isLong
+      if (chg <= -stopPct) {
+        const mv = await getModelView(h.code);
+        events.push((isLong
           ? `🔴 ${name}（${h.code}）已跌破防线：较成本 ${(chg * 100).toFixed(1)}%（防线 -${(stopPct * 100).toFixed(1)}%，已按长线放宽）。不是催你卖——是催你重审：当初拿长线的理由还成立吗？成立拿住，不成立才走。`
-          : `🔴 ${name}（${h.code}）已跌破你的止损提醒线：现价较成本 ${(chg * 100).toFixed(1)}%（提醒线 -${(stopPct * 100).toFixed(1)}%）。当初的买入理由还在吗？不在就该走了。`);
+          : `🔴 ${name}（${h.code}）已跌破你的止损提醒线：现价较成本 ${(chg * 100).toFixed(1)}%（提醒线 -${(stopPct * 100).toFixed(1)}%）。当初的买入理由还在吗？不在就该走了。`)
+          + (mv ? `<br><span style="color:#8A8578">${mv}</span>` : ""));
+      }
       else if (chg <= -stopPct + 0.03)
         events.push(`🟡 ${name}（${h.code}）距离止损提醒线只剩 ${((chg + stopPct) * 100).toFixed(1)}%（现 ${(chg * 100).toFixed(1)}%）。提前想好：跌破了执行吗？`);
       // 持有意图到期 → 复盘提醒（当初用户自己设的持有期）
