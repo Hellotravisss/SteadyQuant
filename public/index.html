@@ -110,16 +110,25 @@
         .ai-md li{margin-left:18px;list-style:disc}
         .ai-md strong{color:var(--ink)}
         /* 手机端持仓表：表格塌成卡片，字段名用 data-l 伪元素标注 */
-        @media (max-width: 640px){
+        @media (max-width: 900px){
             .pf-table thead{display:none}
             .pf-table, .pf-table tbody{display:block}
             .pf-table tr{display:block;border:1px solid var(--line);border-radius:14px;padding:10px 14px;margin-bottom:10px;background:var(--paper-2)}
             .pf-table td{display:flex;justify-content:space-between;align-items:center;gap:8px;border:none !important;padding:3px 0;font-size:13px}
             .pf-table td:first-child{display:block;padding-bottom:8px;margin-bottom:6px;border-bottom:1px dashed var(--line) !important}
             .pf-table td[data-l]::before{content:attr(data-l);color:#8A8578;font-size:10px;flex-shrink:0}
+            /* 名称行：标签成行铺开不挤压，操作链接单独一行 */
+            .pf-table td:first-child > div:first-child{display:flex;flex-wrap:wrap;align-items:center;gap:4px;line-height:1.7}
+            .pf-table td:first-child span[class*="rounded-full"]{white-space:nowrap}
             .pf-table tr.pf-sub{background:var(--cloud);padding:8px 14px}
             .pf-table td.pf-skip{display:none}
             .pf-table tr.pf-sub td:first-child{border-bottom:none !important;margin-bottom:0;padding-bottom:3px;font-weight:700}
+        }
+        @media (max-width: 640px){
+            /* 波动区间行：窄屏改上下两段——条形独占一行，价格区间在下方右对齐 */
+            #futureCard .space-y-2 > div{flex-wrap:wrap}
+            #futureCard .space-y-2 > div > span:last-child{width:100%;text-align:right;margin-top:2px}
+            #chPnl > div > span:first-child{width:auto;max-width:40%}
         }
         .chain-node{transition:transform .18s ease, box-shadow .18s ease}
         .chain-node:hover{transform:translateY(-2px);box-shadow:0 6px 16px rgba(0,0,0,.08)}
@@ -705,7 +714,7 @@ const I18N = {
     evWishHit: (c, p) => `到了你想买的价：现价 ${c}${p}。去查查现在的水位和红旗，别闭眼接。`,
     evWishNear: (g) => `离你的心愿价只差 ${g}%。`,
     planToggle: "（点开）",
-    afHorizon: "打算拿多久？",
+    afHorizon: "打算拿多久？", afAddMore: (n) => `你已持有 ${n} 股——这笔算加仓，成本会自动按移动平均合并`,
     shotBtn: "📷 截图识别（拍/传成交单，AI 帮你填）",
     shotReading: "AI 正在读你的成交单…（约 10 秒）",
     shotDone: "已按截图预填——请逐项核对再点确认，数字以你的账单为准",
@@ -731,6 +740,10 @@ const I18N = {
     rvLongExitDown: (m) => `若决定退出：模型短期也偏弱（21天中位 ${m}%），别指望反弹解套。`,
     hzEditTip: "点击修改持有计划", hzChanged: (h) => `持有计划已改为「${h}」`,
     stopEditTip: "点击修改止损提醒距离（留空恢复自动）", stopManual: "手动",
+    confirm: "确定",
+    wishAskTitle: (n) => `${n}：跌到多少你愿意买？`,
+    wishAskHint: (c, p) => `现价 ${c}${p}。到价时「今天」页和邮件都会提醒你。`,
+    stopAskTitle: "止损提醒距离", stopAskHint: (a) => `成本价下方多少 % 提醒你？留空 = 恢复自动（按波动算，当前 ${a}%）`,
     stopPrompt: (a) => `止损提醒距离：成本价下方多少 % 提醒你？\n留空 = 恢复自动（按波动算，当前 ${a}%）`,
     stopChanged: (p) => `止损提醒线已手动设为 -${p}%（这条线是你画的，跌破了要认账）`,
     chMarket: "钱押在哪几个市场？", chStock: "个股集中度（一只占半条命就该警惕）",
@@ -929,7 +942,7 @@ const I18N = {
     evWishHit: (c, p) => `hit your wish price: now ${c}${p}. Check its water level and red flags before catching it.`,
     evWishNear: (g) => `just ${g}% above your wish price.`,
     planToggle: "(expand)",
-    afHorizon: "how long do you plan to hold?",
+    afHorizon: "how long do you plan to hold?", afAddMore: (n) => `you already hold ${n} — this adds to the position, cost averages in automatically`,
     shotBtn: "📷 screenshot fill (snap/upload your trade slip)",
     shotReading: "AI is reading your trade slip… (~10s)",
     shotDone: "pre-filled from the screenshot — verify every field against your statement before confirming",
@@ -955,6 +968,10 @@ const I18N = {
     rvLongExitDown: (m) => ` If you decide to exit: the model is also soft near-term (21d median ${m}%) — don't count on a bounce to bail you out.`,
     hzEditTip: "click to change your holding plan", hzChanged: (h) => `holding plan changed to "${h}"`,
     stopEditTip: "click to set a custom stop distance (blank = back to auto)", stopManual: "manual",
+    confirm: "confirm",
+    wishAskTitle: (n) => `${n}: at what price would you buy?`,
+    wishAskHint: (c, p) => `now ${c}${p}. You'll be alerted on the "today" page and by email.`,
+    stopAskTitle: "stop alert distance", stopAskHint: (a) => `how many % below cost? Blank = back to auto (volatility-based, currently ${a}%)`,
     stopPrompt: (a) => `Stop alert distance: how many % below cost?\nLeave blank = back to auto (volatility-based, currently ${a}%)`,
     stopChanged: (p) => `stop alert set manually to -${p}% — you drew this line, honor it if it breaks`,
     stopReset: (a) => `back to auto stop (by its volatility, currently -${a}%)`,
@@ -1423,6 +1440,35 @@ async function buildToday() {
 }
 
 /* ============ 通用：toast / 联想搜索 / 跨页跳转 ============ */
+/* ── 内联输入框（替代原生 prompt：手机上原生框丑且带"Suppress dialogs"吓人按钮）── */
+function askInline({ title, hint, value, suffix, onOk }) {
+    document.getElementById('askOverlay')?.remove();
+    const ov = document.createElement('div');
+    ov.id = 'askOverlay';
+    ov.style.cssText = 'position:fixed;inset:0;z-index:80;background:rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center;padding:20px';
+    ov.innerHTML = `<div style="background:var(--paper-2);border:1px solid var(--line);border-radius:20px;padding:22px;max-width:400px;width:100%;box-shadow:0 20px 50px rgba(0,0,0,.2)">
+        <div class="text-sm font-bold mb-1">${title}</div>
+        ${hint ? `<div class="text-[11px] text-[#8A8578] mb-3">${hint}</div>` : '<div class="mb-3"></div>'}
+        <div class="flex items-center gap-2">
+            <input id="askInput" type="number" step="any" inputmode="decimal" class="flex-1 px-4 py-3 rounded-xl text-base" value="${value ?? ''}">
+            ${suffix ? `<span class="text-xs text-[#8A8578]">${suffix}</span>` : ''}
+        </div>
+        <div class="flex gap-2 mt-4">
+            <button id="askOk" class="flex-1 px-5 py-3 btn-red text-sm">${t('confirm')}</button>
+            <button id="askCancel" class="px-5 py-3 btn-ghost text-sm">${t('cancel')}</button>
+        </div></div>`;
+    document.body.appendChild(ov);
+    const inp = ov.querySelector('#askInput');
+    inp.focus(); inp.select();
+    const close = () => ov.remove();
+    ov.querySelector('#askCancel').onclick = close;
+    ov.onclick = (e) => { if (e.target === ov) close(); };
+    const submit = () => { const v = inp.value.trim(); close(); onOk(v === '' ? null : parseFloat(v)); };
+    ov.querySelector('#askOk').onclick = submit;
+    inp.onkeydown = (e) => { if (e.key === 'Enter') submit(); if (e.key === 'Escape') close(); };
+    if (MOTION) anime({ targets: ov.firstElementChild, scale: [.94, 1], opacity: [0, 1], duration: 220, easing: 'easeOutQuad' });
+}
+
 function toast(msg) {
     let t = document.getElementById('toast');
     if (!t) { t = document.createElement('div'); t.id = 'toast'; document.body.appendChild(t); }
@@ -2038,19 +2084,16 @@ function editStop(ev, code, autoPct) {
     const list = getHold();
     const h = list.find(x => x.code === code);
     if (!h) return;
-    const cur = h.stopPct > 0 ? h.stopPct : '';
-    const inp = prompt(t('stopPrompt', autoPct), cur);
-    if (inp === null) return;                       // 取消
-    const v = parseFloat(inp);
-    if (inp.trim() === '' || !(v > 0)) {            // 留空/无效 → 恢复自动
-        delete h.stopPct;
-        toast(t('stopReset', autoPct));
-    } else {
-        h.stopPct = Math.min(50, Math.max(1, Math.round(v * 10) / 10));
-        toast(t('stopChanged', h.stopPct));
-    }
-    setList('sq_hold', list);
-    refreshHold();
+    askInline({
+        title: t('stopAskTitle'), hint: t('stopAskHint', autoPct),
+        value: h.stopPct > 0 ? h.stopPct : '', suffix: '%',
+        onOk: (v) => {
+            if (v == null || !(v > 0)) { delete h.stopPct; toast(t('stopReset', autoPct)); }
+            else { h.stopPct = Math.min(50, Math.max(1, Math.round(v * 10) / 10)); toast(t('stopChanged', h.stopPct)); }
+            setList('sq_hold', list);
+            refreshHold();
+        },
+    });
 }
 
 function hzState(h) {
@@ -2093,18 +2136,13 @@ function saveHolding({code, name, entry, qty, added}) {
 function addToHold() {
     if (needLogin(true)) return;
     if (!lastCheck) return;
-    const cur = lastCheck.price.cur;
-    const entryStr = prompt(`你买 ${lastCheck.name} 的成本价是多少？（${cur}）`, lastCheck.price.last);
-    if (entryStr === null) return;
-    const entry = parseFloat(entryStr);
-    if (!entry || entry <= 0) { toast(t('afBadPrice')); return; }
-    const qtyStr = prompt(LANG === 'en' ? `How many shares/units of ${lastCheck.name}?` : `买了多少股 ${lastCheck.name}？`, '');
-    if (qtyStr === null) return;
-    const qty = parseFloat(qtyStr);
-    if (!qty || qty <= 0) { toast(t('afNeedQty')); return; }   // 数量必填：否则台账算不出成本/盈亏
-    const stop = saveHolding({code: lastCheck.code, name: lastCheck.name, entry, qty, cur});
-    toast(t('holdSaved', lastCheck.name, cur, entry, qty ? ' × ' + qty + t('shares') : '')
-       + ` <span class="code-link ml-2" onclick="switchTab('hold', tabBtn('hold'))">${t('goLook')}</span>`);
+    // 不弹原生 prompt（手机上又丑又吓人）——直接跳到持仓页、打开预填好的记账表单：
+    // 代码/名字/币种/现价/日期全部带过去，已持有的自动识别为加仓
+    switchTab('hold', tabBtn('hold'));
+    setTimeout(() => addFormFor(lastCheck.code, lastCheck.name, null, {
+        price: lastCheck.price.last,
+        currency: (lastCheck.price.currency || '').toUpperCase(),
+    }), 120);
 }
 
 /* ── 添加持仓表单 ── */
@@ -2173,16 +2211,28 @@ function setAfSide(s) {
     document.getElementById('afSideSell').classList.toggle('active', s === 'sell');
 }
 // 用某只股预填表单（从台账行的"再记一笔"进）。cur = 该持仓已有的记账币，预选上避免同一只股混币
-function addFormFor(code, name, cur) {
+function addFormFor(code, name, cur, opts) {
+    opts = opts || {};
     const f = document.getElementById('addForm');
     f.classList.remove('hidden');
+    setAfSide('buy');
     document.getElementById('afDate').value = new Date().toLocaleDateString('sv');
     document.getElementById('afStock').value = name || code;
     document.getElementById('afStock').dataset.code = code;
     const cs = document.getElementById('afCur');
-    if (cs) cs.value = ['CNY','USD','CAD','HKD'].includes(cur) ? cur : '';
-    document.getElementById('afPrice').focus();
-    document.getElementById('afMsg').textContent = '';
+    const pre = cur || opts.currency;
+    if (cs) cs.value = ['CNY','USD','CAD','HKD'].includes(pre) ? pre : '';
+    const pe = document.getElementById('afPrice');
+    pe.value = opts.price != null ? opts.price : '';
+    document.getElementById('afQty').value = '';
+    // 已持有 → 提示这是加仓（不必再问"你有没有"，台账里就有答案）
+    const exist = getHold().find(h => h.code === code);
+    let heldQty = 0;
+    if (exist) for (const tx of (exist.txns || [])) heldQty += tx.side === 'buy' ? (tx.qty||0) : -(tx.qty||0);
+    const msg = document.getElementById('afMsg');
+    msg.innerHTML = heldQty > 0 ? `<span class="text-[#2f9e53]">${t('afAddMore', heldQty)}</span>` : '';
+    f.dataset.fromWish = opts.fromWish || '';
+    (opts.price != null ? document.getElementById('afQty') : pe).focus();
     f.scrollIntoView({behavior:'smooth', block:'center'});
 }
 
@@ -2217,6 +2267,8 @@ async function submitAddForm() {
         document.getElementById('afCur').value = '';
         setAfSide('buy');
         toast(t(afSide === 'buy' ? 'txnBuyOk' : 'txnSellOk', name, price, qty));
+        const fw = document.getElementById('addForm').dataset.fromWish;
+        if (fw) { document.getElementById('addForm').dataset.fromWish = ''; removeFrom('sq_wish', fw, refreshWish); }
         refreshHold();
     } catch (e) {
         msg.textContent = t('failed', e.message);
@@ -2228,10 +2280,14 @@ function addToWish() {
     if (!lastCheck) return;
     const cur = lastCheck.price.cur;
     const suggest = Math.round(lastCheck.price.last * 0.9 * 100) / 100;
-    const tStr = prompt(`${lastCheck.name} 现在 ${cur}${lastCheck.price.last}。跌到多少你愿意买？（${cur}）`, suggest);
-    if (tStr === null) return;
-    const target = parseFloat(tStr);
-    if (!target || target <= 0) { toast(t('afBadPrice')); return; }
+    askInline({
+        title: t('wishAskTitle', lastCheck.name),
+        hint: t('wishAskHint', cur, lastCheck.price.last),
+        value: suggest, suffix: cur,
+        onOk: (target) => { if (!target || target <= 0) { toast(t('afBadPrice')); return; } saveWish(target, cur); },
+    });
+}
+function saveWish(target, cur) {
     const w = getList('sq_wish').filter(x => x.code !== lastCheck.code);
     w.push({ code: lastCheck.code, name: lastCheck.name, target,
              priceWhenAdded: lastCheck.price.last, cur,
@@ -2252,17 +2308,12 @@ function wishToHold(code) {
     if (needLogin(true)) return;
     const item = getList('sq_wish').find(x => x.code === code);
     if (!item) return;
-    const entryStr = prompt(`买入 ${item.name} 的成本价？`, item.target);
-    if (entryStr === null) return;
-    const entry = parseFloat(entryStr);
-    if (!entry || entry <= 0) { toast(t('afBadPrice')); return; }
-    const qtyStr = prompt(LANG === 'en' ? `How many shares/units of ${item.name}?` : `买了多少股 ${item.name}？`, '');
-    if (qtyStr === null) return;
-    const qty = parseFloat(qtyStr);
-    if (!qty || qty <= 0) { toast(t('afNeedQty')); return; }   // 数量必填
-    saveHolding({ code: item.code, name: item.name, entry, qty, cur: item.cur });
-    removeFrom('sq_wish', code, refreshWish);
-    toast(LANG === 'en' ? `${item.name} moved to "holdings"` : `${item.name} 已从「想买」转入「已经买了」`);
+    switchTab('hold', tabBtn('hold'));
+    setTimeout(() => addFormFor(item.code, item.name, null, {
+        price: item.target,                    // 预填你当初设的心愿价，实际成交价可改
+        currency: (item.currency || '').toUpperCase(),
+        fromWish: code,                        // 记账成功后自动移出心愿单
+    }), 120);
 }
 
 const fmtMoney = n => LANG === 'zh'

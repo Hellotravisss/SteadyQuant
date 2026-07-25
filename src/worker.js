@@ -1225,7 +1225,11 @@ async function* streamDeepseek(env, system, user, maxTokens = 8000, model = "dee
       messages: [{ role: "system", content: system }, { role: "user", content: user }],
     }),
   });
-  if (!res.ok) throw new Error(`DeepSeek HTTP ${res.status}`);
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    console.log(`deepseek ${model} HTTP ${res.status}: ${body.slice(0, 300)}`);
+    throw new Error(`DeepSeek HTTP ${res.status}${body ? ": " + body.slice(0, 160) : ""}`);
+  }
   const reader = res.body.getReader();
   const dec = new TextDecoder();
   let buf = "";
@@ -1295,13 +1299,33 @@ async function* streamAnthropic(env, system, user, maxTokens = 8000, effort = "m
   }
 }
 
-function llmStream(env, system, user, maxTokens = 8000, effort = "medium", webSearch = false) {
+async function* llmStream(env, system, user, maxTokens = 8000, effort = "medium", webSearch = false) {
   if (env.DEEPSEEK_API_KEY) {
     // 重活（正式报告/规划/裁决）用深度思考的 reasoner；轻快活（圈候选/挑刺/律师陈词）用 chat 保速度
     const model = effort === "low" ? "deepseek-chat" : (env.DEEPSEEK_HEAVY_MODEL || "deepseek-reasoner");
-    return streamDeepseek(env, system, user, maxTokens, model);
+    try {
+      let any = false;
+      for await (const t of streamDeepseek(env, system, user, maxTokens, model)) { any = true; yield t; }
+      if (any) return;
+      throw new Error("empty stream");
+    } catch (e) {
+      // DeepSeek 失败（400/限流/超时/空流）→ 先降级到 chat 重试，仍失败再交给 Claude 兜底，
+      // 绝不让用户看到裸的 HTTP 错误码
+      console.log(`llmStream deepseek(${model}) failed: ${e.message}`);
+      if (model !== "deepseek-chat") {
+        try {
+          for await (const t of streamDeepseek(env, system, user, Math.min(maxTokens, 4000), "deepseek-chat")) yield t;
+          return;
+        } catch (e2) { console.log(`llmStream deepseek(chat) fallback failed: ${e2.message}`); }
+      }
+      if (env.ANTHROPIC_API_KEY) {
+        for await (const t of streamAnthropic(env, system, user, maxTokens, effort, false)) yield t;
+        return;
+      }
+      throw e;
+    }
   }
-  return streamAnthropic(env, system, user, maxTokens, effort, webSearch);
+  yield* streamAnthropic(env, system, user, maxTokens, effort, webSearch);
 }
 
 /* ───────── 预算 + 时间 规划（纯规则，秒出，零合规风险） ─────────
