@@ -1752,7 +1752,6 @@ export default {
         return gated(async () => json(await parseTrade(env, await request.json().catch(() => ({})), S)));
       if (p === "/api/serenity/portfolio_history" && request.method === "POST")
         return gated(async () => json(await portfolioHistory(env, await request.json().catch(() => ({})), S)));
-      if (p === "/api/serenity/watch_check") return json(await watchCheck(env, q("items"), S));
       if (p === "/api/serenity/wish_check") return json(await wishCheck(env, q("items"), S));
       if (p === "/api/serenity/portfolio" && request.method === "POST")
         return gated(async () => json(await portfolio(env, await request.json().catch(() => ({})), S)));
@@ -1767,7 +1766,7 @@ export default {
       if (p === "/api/serenity/analyze") return gated(() => analyzeSSE(env, q("query"), q("market", S.mkt_a), S, lang));
       if (p === "/api/search") return json(await search(env, q("keyword")));
       if (p === "/api/scan")
-        return json(await scan(env, parseFloat(q("principal", "2000")), q("risk", "stable"), S));
+        return gated(async () => json(await scan(env, parseFloat(q("principal", "2000")), q("risk", "stable"), S)));
       if (p.startsWith("/api/"))
         return json({ error: S.err_api(p) }, 404);
     } catch (e) {

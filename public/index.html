@@ -2726,7 +2726,7 @@ async function doScan() {
         const data = await res.json();
 
         if (data.error) {
-            container.innerHTML = `<div class="text-[#E5484D] p-8">${data.error}</div>`;
+            container.innerHTML = `<div class="text-[#E5484D] p-8">${data.error}${data.login_required?` <span class="code-link" onclick="openLogin()">${t('signIn')}</span>`:''}</div>`;
             return;
         }
 
