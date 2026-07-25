@@ -616,20 +616,25 @@ async function portfolio(env, body, S = pack("zh")) {
     // 移动平均法。战绩按"一轮完整平仓（持仓从>0 回到0）"计一次，用整轮累计盈亏判胜负，
     // 避免把一个仓位的分批卖出记成多次战绩、虚增胜率场次。
     let held = 0, avg = 0, realized = 0, bought = 0, sold = 0, buyCost = 0;
-    let closedWins = 0, closedTrades = 0, oversell = false, roundPnl = 0;
+    let closedWins = 0, closedTrades = 0, oversell = false, roundPnl = 0, roundCost = 0;
+    const roundRets = []; // 每轮平仓的收益率(轮盈亏/轮投入)——币种无关,供凯利公式跨市场聚合
     for (const t of txns) {
       const price = await toAcct(t);
       if (t.side === "buy") {
         const nq = held + t.qty;
         avg = nq > 0 ? (held * avg + t.qty * price) / nq : 0;
-        held = nq; bought += t.qty; buyCost += t.qty * price;
+        held = nq; bought += t.qty; buyCost += t.qty * price; roundCost += t.qty * price;
       } else {
         const sq = Math.min(t.qty, held);
         if (t.qty > held + 1e-9) oversell = true;
         if (sq > 0) {
           const pnl = sq * (price - avg);
           realized += pnl; roundPnl += pnl; held -= sq; sold += sq;
-          if (held <= 1e-9) { closedTrades++; if (roundPnl > 0) closedWins++; roundPnl = 0; }
+          if (held <= 1e-9) {
+            closedTrades++; if (roundPnl > 0) closedWins++;
+            if (roundCost > 0) roundRets.push(roundPnl / roundCost);
+            roundPnl = 0; roundCost = 0;
+          }
         }
       }
     }
@@ -660,6 +665,7 @@ async function portfolio(env, body, S = pack("zh")) {
       stop_pct: pa?.stop_atr_pct ?? 15,
       no_price: last == null, fx_missing: fxMiss || txnFxMiss, oversell, txn_count: txns.length,
       closed_wins: closedWins, closed_trades: closedTrades,
+      round_rets: roundRets,
     };
   }));
 
@@ -715,8 +721,29 @@ async function portfolio(env, body, S = pack("zh")) {
     tWins += m.closed_wins; tTrades += m.closed_trades;
   }
   const r2 = (x) => Math.round(x * 100) / 100;
+  // ── 凯利仓位教练：用用户自己的平仓战绩算 f* = p - (1-p)/b ──
+  // b = 平均盈利轮收益率 / 平均亏损轮收益率(绝对值)。样本<10轮只展示不建议；
+  // 建议值 = 半凯利(参数估计误差的标准防御,Thorp 实践)，封顶 25%(单票集中度红线)
+  const allRets = stocks.flatMap((s) => s.round_rets || []);
+  let kelly = null;
+  if (allRets.length >= 1) {
+    const wins = allRets.filter((r) => r > 0), losses = allRets.filter((r) => r <= 0);
+    const p2 = wins.length / allRets.length;
+    const avgW = wins.length ? wins.reduce((a, b2) => a + b2, 0) / wins.length : 0;
+    const avgL = losses.length ? Math.abs(losses.reduce((a, b2) => a + b2, 0) / losses.length) : 0;
+    const b2 = avgL > 0 ? avgW / avgL : (avgW > 0 ? Infinity : 0);
+    const full = b2 > 0 && isFinite(b2) ? p2 - (1 - p2) / b2 : (b2 === Infinity ? p2 : 0);
+    const r1k = (x) => Math.round(x * 1000) / 10;
+    kelly = {
+      rounds: allRets.length, win_rate: r1k(p2), avg_win: r1k(avgW), avg_loss: r1k(avgL),
+      b: isFinite(b2) ? Math.round(b2 * 100) / 100 : null,
+      full_pct: r1k(full),
+      suggest_pct: full > 0 ? Math.min(25, r1k(full / 2)) : 0,
+      reliable: allRets.length >= 10,
+    };
+  }
   const total = {
-    base, cur: CUR_SYM[base] || base, fx_ok: fxOk, no_price: tNoPrice,
+    base, cur: CUR_SYM[base] || base, fx_ok: fxOk, no_price: tNoPrice, kelly,
     cost: r2(tCost), value: r2(tValue), realized: r2(tReal), unrealized: r2(tUnreal),
     total_pnl: r2(tReal + tUnreal),
     unreal_pct: tCost > 0 ? Math.round(tUnreal / tCost * 1000) / 10 : null,

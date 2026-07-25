@@ -737,6 +737,13 @@ const I18N = {
     chPnl: "谁在赚钱、谁在拖后腿（各自记账币）", chCurve: "组合 90 天走势：市值线 vs 成本线",
     chCurveLoading: "在按流水回放你的组合走势…", chCurveNone: "流水太短，攒几天再来看",
     chCurveVal: "市值", chCurveCost: "投入成本", chToday: "今天", chOthers: (n) => `其他 ${n} 只`,
+    kyTitle: "🎲 凯利仓位教练（按你自己的战绩算）",
+    kyNoData: "还没有平仓记录。完成几轮完整的买卖后，这里会用凯利公式算出「按你的真实水平，单笔该下多大仓位」。",
+    kyThin: (n) => `⚠️ 只有 ${n} 轮平仓样本，参考价值有限（10 轮以上才算数）`,
+    kyStats: (n, p, w, l, b) => `${n} 轮平仓 · 胜率 ${p}% · 平均赚 +${w}% / 平均亏 -${l}% · 盈亏比 b=${b}`,
+    kyFull: "理论凯利仓位", kySuggest: "实际建议（半凯利·封顶25%）",
+    kyNegative: "按你的历史战绩，凯利值 ≤ 0 —— 数学在说：这套打法期望为负，先别加仓，该修炼的是选股和纪律，不是仓位。",
+    kyNote: "凯利公式 f*=p−(1−p)/b 最大化长期复利。只给半凯利是因为胜率和盈亏比都是估的——下注超过凯利值的惩罚是毁灭性的（Thorp 的实战铁律）。这是数学参考，不是指令。",
     krNeedLogin: "模型预测登录后可见（GPU 有配额，登录墙防盗刷）",
     stopReset: (a) => `已恢复自动止损线（按它的波动，当前 -${a}%）`,
     stopHitLong: "跌破防线，重审长线逻辑",
@@ -957,6 +964,13 @@ const I18N = {
     chPnl: "who's earning, who's dragging (each in its own currency)", chCurve: "90-day curve: value vs cost",
     chCurveLoading: "replaying your ledger…", chCurveNone: "ledger too short — come back in a few days",
     chCurveVal: "value", chCurveCost: "cost", chToday: "today", chOthers: (n) => `${n} others`,
+    kyTitle: "🎲 Kelly position coach (from your own record)",
+    kyNoData: "No closed rounds yet. After a few complete buy-sell rounds, this uses the Kelly criterion to compute how big your bets should be — at your actual skill level.",
+    kyThin: (n) => `⚠️ only ${n} closed rounds — low confidence (10+ needed)`,
+    kyStats: (n, p, w, l, b) => `${n} rounds · win rate ${p}% · avg win +${w}% / avg loss -${l}% · payoff b=${b}`,
+    kyFull: "theoretical Kelly", kySuggest: "practical (half-Kelly, capped 25%)",
+    kyNegative: "By your track record Kelly ≤ 0 — the math says this playbook has negative expectancy. Don't size up; work on selection and discipline first.",
+    kyNote: "Kelly f*=p−(1−p)/b maximizes long-run compound growth. We only ever suggest half-Kelly because p and b are estimates — betting beyond Kelly is ruinous (Thorp's iron rule). A mathematical reference, not an order.",
     krNeedLogin: "model forecast unlocks after sign-in (GPU quota is limited)",
     dbTitle: "⚔️ bull vs bear (two AIs argue)",
     dbSub: "A bull lawyer argues to buy, a bear lawyer (from a different AI vendor) tears it apart, then a judge names their real disagreements — which are exactly what you should verify. Uses recent headlines.",
@@ -2382,6 +2396,7 @@ async function refreshHold() {
         <div class="mt-6"><div class="text-xs font-bold mb-2">${t('chPnl')}</div><div id="chPnl"></div></div>
         <div class="mt-6"><div class="text-xs font-bold mb-2">${t('chCurve')}</div>
           <div id="chCurve"><div class="text-[10px] text-[#8A8578]">${t('chCurveLoading')}</div></div></div>
+        ${kellyCardHTML(t2.kelly)}
       </div>`;
     box.innerHTML = totalHtml + chartsHtml + tablesHtml +
         `<div class="text-[10px] text-[#8A8578] mt-2">${t('checkedAt', d.checked_at)} · ${USER ? t('savedCloud') : t('savedLocal')} · ${t('pfMethodNote')}</div>`;
@@ -2417,6 +2432,28 @@ function donutSVG(parts, cur) {  // parts: [{label, value}] 已排序
         <svg viewBox="0 0 140 140" style="width:120px;flex-shrink:0">${arcs}</svg>
         <div class="flex-1 min-w-[140px] space-y-1">${legend}</div></div>`;
 }
+/* ── 凯利仓位教练：用你自己的平仓战绩算"单笔该下多大" f* = p−(1−p)/b。
+   永远给半凯利(参数误差防御,Thorp 实践)且封顶25%；样本<10轮标注不可靠；
+   f*≤0 时如实告知:按历史战绩期望为负,该修炼的不是仓位是选股。 ── */
+function kellyCardHTML(k) {
+    if (!k) return `<div class="mt-6 pt-5" style="border-top:1px dashed var(--line)">
+        <div class="text-xs font-bold mb-1">${t('kyTitle')}</div>
+        <div class="text-[10px] text-[#8A8578]">${t('kyNoData')}</div></div>`;
+    const neg = k.full_pct <= 0;
+    const main = neg
+        ? `<div class="text-sm font-bold text-[#E5484D] mt-2">${t('kyNegative')}</div>`
+        : `<div class="flex flex-wrap gap-x-8 gap-y-2 mt-3">
+            <div><div class="text-[10px] text-[#8A8578]">${t('kyFull')}</div><div class="text-lg font-bold">${k.full_pct}%</div></div>
+            <div><div class="text-[10px] text-[#8A8578]">${t('kySuggest')}</div><div class="text-lg font-bold text-[#2f9e53]">≤ ${k.suggest_pct}%</div></div>
+           </div>`;
+    return `<div class="mt-6 pt-5" style="border-top:1px dashed var(--line)">
+        <div class="text-xs font-bold mb-1">${t('kyTitle')} ${k.reliable ? '' : `<span class="text-[10px] font-normal text-[#E5484D]">${t('kyThin', k.rounds)}</span>`}</div>
+        <div class="text-[10px] text-[#8A8578]">${t('kyStats', k.rounds, k.win_rate, k.avg_win, k.avg_loss, k.b ?? '∞')}</div>
+        ${main}
+        <div class="text-[10px] text-[#8A8578] mt-2">${t('kyNote')}</div>
+    </div>`;
+}
+
 function drawPortfolioCharts(d) {
     const held = d.stocks.filter(s => s.hold_qty > 0 && s.value != null);
     // 占比统一换算到总表 base 币（用 markets 里的市值近似：直接按 base 比较需要汇率，
