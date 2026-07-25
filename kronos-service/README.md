@@ -34,6 +34,13 @@ GET  {base}/gradio_api/call/forecast/{event_id}
   → SSE 流，最后一行 data: ["{...结果JSON...}"]
 ```
 
+## 权重私有时的配置
+
+微调权重仓库设为 Private 后，Space 需要读取令牌：
+1. https://huggingface.co/settings/tokens 创建一个 **Read** token
+2. Space Settings → Variables and secrets → New **secret**，Name 填 `HF_TOKEN`，Value 粘贴 token
+3. Space 自动重启后即可读取私有权重
+
 ## 注意
 
 - 免费 CPU 一次预测（8 条路径 × 21 天）约 1~2 分钟；Space 休眠后首次调用要再等约 1 分钟冷启动

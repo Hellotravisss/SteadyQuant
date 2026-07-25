@@ -14,6 +14,8 @@
       "custom_domain": true
     }
   ],
+  // D1 数据库：ID 不是机密（访问仍需 Cloudflare 账号权限），但 fork 本项目的人
+  // 必须换成自己的库 —— 用 `npx wrangler d1 create <name>` 创建后把 id 填这里
   "d1_databases": [
     {
       "binding": "DB",

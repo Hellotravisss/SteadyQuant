@@ -1,50 +1,118 @@
-# steady · 定风波（原 SteadyQuant / 省心量化）
+# steady · 定风波
 
-这是一个部署在 Vercel 上的量化交易仪表盘，严格遵循 **5层积木架构**（数据 → 研究 → 回测 → 风控 → 执行）。
+> 给普通人用的选股研究工具：真实行情 + 大白话判定 + 一套帮你守纪律的系统。
+> **仅供研究教育，非投资建议。**
 
-## 5层架构（来自 personal-quant-trading 技能）
-1. **数据**：Tushare Pro（A股主力） + 可扩展 OpenBB/AkShare
-2. **研究**：5因子评分 + TradingAgents 风格多代理报告
-3. **回测**：backtesting.py + vectorbt 风格（当前前端+服务端混合）
-4. **风控**：三大红线（单笔≤10%、15%熔断、3个月隔离观察）
-5. **执行**：Alpaca 模拟盘优先（真实下单必须经过风控）
+线上：**[steady.lowbattery.studio](https://steady.lowbattery.studio)**
 
-**AI 角色边界**：研究员 / 程序员 / 审查员（绝不直接下单）
+市面上的行情工具给你更多数据、让你更冲动；这个工具的设计目标相反：**在你要犯错的每个瞬间轻轻拦一下**——追高时提醒你在追高，破线时问你当初为什么买，长线仓位不拿短线的尺子催你卖。
 
-## Serenity 供应链卡点模块（v5 新增）
+---
 
-融合两个 GitHub skill 的方法论落地为可用功能：
-- [serenity-bottleneck-hunter](https://github.com/Mrjie7205/serenity-bottleneck-hunter)：水位标尺、二轴判定、证伪条件、价格纪律
-- [BestSerenitySkillFromAT](https://github.com/yux1azhengye/BestSerenitySkillFromAT)：九步工作流、9条卡点判据、红旗扫描、反确认偏误
+## 它能回答什么
 
-| 功能 | 说明 | 依赖 |
+四个页面对应四个真实场景：
+
+| 页面 | 回答 | 用的频率 |
 |---|---|---|
-| 🎯 卡点体检 | 真实价格算水位/动量/stage + 红旗自动扫描 + 判据打分 + 二轴🟢🟡🔴判定 + 机器可读证伪条件 | 仅 Tushare |
-| 👁️ 观察池 | 入池记录入场价/止损线，每次打开自动检查证伪是否触发 | 仅 Tushare（数据存浏览器 localStorage） |
-| 🧠 AI 深度报告 | 主题→供应链逆向拆链→上游卡点候选→红队四问→证伪条件，流式输出 | 需 `ANTHROPIC_API_KEY` |
+| **今天** | 有没有需要我动手的事？（破线 / 到价 / 到期复盘）+ 大盘水位 | 每天一眼 |
+| **买什么** | 这只能不能碰？没目标时让 AI 挖 / 一键选股 / 预算规划 | 想买前 |
+| **心愿单** | 看中但嫌贵的，蹲到心理价自动喊你 | 查完顺手放 |
+| **已经买了** | 盈亏台账 + 组合图表 + 止损哨兵 | 买卖后记一笔 |
 
-## 部署说明
+### 查一只股会得到什么
 
-### 1. 环境变量配置
-在 Vercel 项目设置中，请添加以下环境变量：
-- `TUSHARE_TOKEN`: 您的 Tushare API Token (当前已配置为 2100 积分账号)。
-- `DEEPSEEK_API_KEY`（推荐）或 `ANTHROPIC_API_KEY`: 用于「帮我找股票」AI 功能，配一个即可（优先用 DeepSeek）；不配置时其余功能不受影响。
+1. 🟢🟡🔴 **一句话判定** —— 二轴模型（价格水位 × 估值/基本面），不是"买入/卖出"评级
+2. **现在贵不贵** —— 半年水位标尺 + 阶段判定（筑底 / 趋势健康 / 抛物线 / 下跌中）
+3. **未来一个月会怎样** —— 三层信息叠在一张卡：
+   - **统计区间**：用这只股自己的历史波动算的 ±1σ/±2σ 概率带（不猜方向，只让你看清不确定性有多大）
+   - **模型倾向**：微调版 Kronos 采样多条路径 → 方向倾向 + 扇形（21 个交易日）
+   - **ATR 自适应止损**：按这只股自己的"脾气"给建议线，不是一刀切 15%
+4. **最近的消息** —— 按代码检索的真实新闻头条
+5. ⚔️ **多空对辩** —— 三家不同厂商的 AI 分饰多头律师 / 空头律师 / 法官，法官指出**双方分歧点**（分歧点才是你该去核实的事）
 
-### 三市场支持
-- **A股**：Tushare（名称搜索 + 估值 + 红旗全量）
-- **美股**：直接输代码（AAPL / NVDA），行情走 Yahoo 免 key；大盘对照标普500
-- **加拿大**：代码加 `.TO`（SHOP.TO / RY.TO）；大盘对照多伦多综指
+### 纪律系统（这个项目真正的心脏）
 
-### 2. 部署步骤
-1. 将此文件夹内容推送到您的 GitHub 仓库。
-2. 在 Vercel 中导入该 GitHub 仓库。
-3. Vercel 会自动识别 `api/index.py` 并将其作为 Serverless Function 运行。
-4. 访问生成的 Vercel URL 即可。
+- **止损线随持有计划自适应**：一个月内 ×0.8 / 几个月 ×1.0 / 一年 ×1.4 / 两三年 ×1.8 / 长期持有 ×2.2（基数 2.5×ATR，封顶 45%），也可手动画自己的线
+- **长线仓位三档对待**：计划内回撤**不打扰** → 每满 3 个月一次例行体检 → 只有跌破"灾难线"（防线 ×1.6）才报警。选了拿两三年，就用两三年的尺度
+- **买入时记录"打算拿多久"**：到期自动提醒复盘"当初的理由兑现了吗"，随时可改
+- **每日邮件巡检**：收盘后扫全部持仓和心愿单，有事才发信——从"你找它"变成"它找你"
+- **凯利仓位教练**：用你自己的平仓战绩算单笔上限（半凯利，封顶 25%），样本不足时只展示不建议
 
-- **项目名称**: steady · 定风波（steady.lowbattery.studio）
-- **前端**: HTML5, Tailwind CSS, Chart.js
-- **后端**: Python FastAPI, Requests, backtesting
-- **数据源**: Tushare Pro (2100 积分)
-- **风控红线**: AI 绝不能直接下单；所有指令必须经过写死的风控规则。
+---
 
-**免责声明**：本系统不会让你一夜暴富。普通人与机构的差距主要在于独家数据、执行速度和试错本钱。
+## 技术栈
+
+```
+Cloudflare Workers (JS) · D1 (SQLite) · 单文件前端（零构建步骤）
+├── 行情：腾讯(A股实时) → Tushare(兜底) | Yahoo Finance(美/加/港/币 + 汇率 + 新闻)
+├── 预测：自托管 Kronos 微调模型（HF Space, ZeroGPU）
+├── AI：DeepSeek(reasoner/chat) + Kimi(含视觉) + Claude —— 多厂商分工 + 降级链
+└── 邮件：Resend | 定时：Workers Cron
+```
+
+**几条自己定的规矩**
+- 免费数据源优先，付费源只做兜底
+- 每个"钱的数字"只有一个计算口径：持仓表 / 驾驶舱 / 巡检邮件三处永远一致
+- 跨币种按**你实际付款的币种**记账（加币买美股就按加币算，跟券商账单对得上）；汇率拿不到宁可不显示，绝不 1:1 硬凑
+- 消耗 API/GPU 配额的接口一律登录墙，纯免费源保持开放
+- AI 报告走"初稿 → 独立 AI 审查 → 吸收修订成终稿"，用户只看终稿（不把内部打架过程甩给读者）
+
+---
+
+## Kronos 微调实战
+
+本项目基于清华开源的 [Kronos](https://github.com/shiyu-coder/Kronos)（K 线基础模型，MIT）做了**面向自己标的池的微调**。脚本全在 [`kronos-service/finetune/`](kronos-service/finetune/)。
+
+**做法**
+1. 抓 **197 只标的 × 10 年日线**（美股 83 / A股 43 / 加股 29 / 港股 26 / 加密 16）——只选自己真正会买的市场
+2. 多 CSV 数据集补丁（训练窗口不跨标的边界）+ 按时间切分训练/验证
+3. AMD MI300X 上训练：tokenizer → predictor，再从通用权重续训出 21 天专精版
+4. **盲测对比**（13 只标的最近 21 天，模型未见过）：
+
+| 模型 | 路径误差 (MAPE) | 方向命中 |
+|---|---|---|
+| 原版 Kronos | 18.9% | 77% |
+| 微调 v1（79 标的 × 5 年） | 7.8% | 54% |
+| **微调 v2（171 标的 × 10 年）** | **7.5%** | **77%** |
+| 基准：「假设价格不动」 | 6.4% | — |
+
+**诚实的结论**：微调把路径误差砍掉六成，方向命中约七成有真实价值；**但没有任何版本能在点位精度上跑赢"假设价格不动"**——所以产品里它永远只呈现为**方向倾向 + 概率区间**，绝不给点位。60 天尺度上更是全线失效（方向命中掉到 10%），这也是为什么长线仓位的判断里模型不参与"卖不卖"，只在你决定退出后给时机参考。
+
+> 微调权重本身未公开。`finetune/` 里的抓数、配置、训练、评测脚本是完整的，换成你自己的标的池即可复现。
+
+---
+
+## 自己部署
+
+```bash
+git clone https://github.com/Hellotravisss/SteadyQuant.git && cd SteadyQuant
+npm i -g wrangler && wrangler login
+
+# 1. 建两个 D1 库，把输出的 database_id 填进 wrangler.jsonc
+wrangler d1 create steadyquant-db
+wrangler d1 create lbs-accounts-db
+
+# 2. 配密钥（全部可选，不配则对应功能自动降级/隐藏）
+wrangler secret put TUSHARE_TOKEN      # A股估值数据
+wrangler secret put DEEPSEEK_API_KEY   # AI 报告 / 规划 / 律师陈词
+wrangler secret put KIMI_API_KEY       # 空头律师 + 截图识别成交单
+wrangler secret put ANTHROPIC_API_KEY  # 对辩法官 / 兜底
+wrangler secret put RESEND_API_KEY     # 每日巡检邮件
+wrangler secret put KRONOS_API_URL     # 自部署的 Kronos 推理服务
+
+# 3. 上线
+wrangler deploy
+```
+
+**Kronos 推理服务**（可选；不配则只有统计区间、没有模型预测）：见 [`kronos-service/README.md`](kronos-service/README.md)——Hugging Face Space 免费 ZeroGPU，上传三个文件即可。
+
+登录走独立账号中心（[`accounts/`](accounts/) 目录，也是一个 Worker，支持邮箱验证码 / Apple / 微信）。只想单机自用的话，把 `worker.js` 里的 `gated()` 换成直通即可。
+
+---
+
+## 免责声明
+
+这是一个**研究和教育工具**。所有判定来自公开规则和统计模型，不构成投资建议，不推荐任何具体标的，不承诺任何收益。AI 生成的内容可能出错，模型预测是统计估计而非对未来的断言。**投资决策和后果都是你自己的。**
+
+MIT License · © 2026 Low Battery Studio

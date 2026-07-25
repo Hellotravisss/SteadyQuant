@@ -38,6 +38,12 @@ SAMPLES = int(os.environ.get("KRONOS_SAMPLES", "8"))
 # 微调权重 v2（171标的×10年，21天盲测误差 7.5% vs 原版 18.8%）；环境变量可覆盖回退官方权重
 TOK_REPO = os.environ.get("KRONOS_TOKENIZER", "Travisss/kronos-steady-tokenizer")
 MDL_REPO = os.environ.get("KRONOS_MODEL", "Travisss/kronos-steady-base")
+# 权重仓库设为私有后，Space 需要一个 read token 才能拉取。
+# 在 Space Settings → Variables and secrets 里加 HF_TOKEN（类型 read）即可。
+_HF_TOKEN = os.environ.get("HF_TOKEN") or os.environ.get("HUGGING_FACE_HUB_TOKEN")
+if _HF_TOKEN:
+    os.environ["HF_TOKEN"] = _HF_TOKEN
+    os.environ["HUGGING_FACE_HUB_TOKEN"] = _HF_TOKEN  # 兼容 huggingface_hub 新旧版本
 print(f"loading {MDL_REPO} ...", flush=True)
 tokenizer = KronosTokenizer.from_pretrained(TOK_REPO)
 model = Kronos.from_pretrained(MDL_REPO)
