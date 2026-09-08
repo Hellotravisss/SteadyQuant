@@ -13,6 +13,18 @@
     <link rel="icon" href="/icon.svg" type="image/svg+xml">
     <link rel="apple-touch-icon" href="/icon.svg">
     <link rel="manifest" href="/manifest.json">
+    <!-- 结构化数据。⚠️ 改这块时别把 Avowd 署名弄丢：WebSite 上的 creator 必须留着，
+         被它指向的 Organization 只放四个字段做引用 —— 权威定义在 avowd.ai 自己站上，只能有一处。
+         注意：这段注释刻意不写那个 @id 字符串本身，否则验收用的 grep 计数会多出一次（见 vault 坑 4）。 -->
+    <script type="application/ld+json">
+    {"@context":"https://schema.org","@graph":[
+      {"@type":"WebSite","@id":"https://steady.lowbattery.studio/#website",
+       "url":"https://steady.lowbattery.studio/","name":"steady · 定风波",
+       "inLanguage":["zh-CN","en"],
+       "creator":{"@id":"https://avowd.ai/#org"}},
+      {"@type":"Organization","@id":"https://avowd.ai/#org","name":"Avowd","url":"https://avowd.ai"}
+    ]}
+    </script>
     <!-- 字体非阻塞加载：media=print 骗过渲染阻塞，onload 后启用；
          大陆访问 Google Fonts / Fontshare 失败时页面照常秒开，回退系统字体 -->
     <link href="https://api.fontshare.com/v2/css?f[]=cabinet-grotesk@800,700,500&f[]=general-sans@400,500,600&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
@@ -827,6 +839,7 @@ const I18N = {
     goLook: "去看看 →",
     failed: (m) => `失败：${m}`,
     disclaimerFoot: "© 2026 low battery studio · 也无风雨也无晴 · 仅供研究教育，非投资建议",
+    avowdCredit: "Avowd 青眼出品",
   },
 
   en: {
@@ -1051,6 +1064,7 @@ const I18N = {
     goLook: "take a look →",
     failed: (m) => `failed: ${m}`,
     disclaimerFoot: "© 2026 low battery studio · research & education only, not investment advice",
+    avowdCredit: "An Avowd project",
   },
 };
 
@@ -2849,6 +2863,14 @@ async function doScan() {
 
 </script>
 <div class="text-center py-8 sysbar" style="border-bottom:none;border-top:1px solid var(--line);margin-top:32px" data-i18n="disclaimerFoot">© 2026 low battery studio · 也无风雨也无晴 · 仅供研究教育，非投资建议</div>
+<!-- Avowd 署名：全站只此一处。spec 在 vault「Avowd 署名链接 · spec 与执行手册」。
+     本站是自有站 → 文案只能是「Avowd 青眼出品 / An Avowd project」，不能写「网站由 Avowd 构建」。
+     只有文字走 i18n，href 写死在静态 HTML 里 —— 不执行 JS 的 AI 爬虫照样抓得到这条链接。 -->
+<div class="text-center sysbar" style="border-bottom:none;padding:0 0 28px">
+  <a href="https://avowd.ai/?utm_source=steady.lowbattery.studio&amp;utm_medium=credit"
+     target="_blank" rel="noopener" data-i18n="avowdCredit"
+     style="color:inherit;opacity:.75;text-decoration:underline">Avowd 青眼出品</a>
+</div>
 <button id="themeBtn" onclick="LBSTheme.cycle()" title="点击切换：auto(跟随系统/时间) → dark → light">auto</button>
 <script>
 LBSTheme.apply(); // 按钮此时已挂载，把当前状态文字同步进去
