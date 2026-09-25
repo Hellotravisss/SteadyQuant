@@ -899,6 +899,93 @@ async function stockNews(env, code, count = 8) {
   }
 }
 
+/* ── 新闻判断：TypeSafe Jev 给每条头条回答三个窄问题（一次请求，问题并行）。
+   模型只给判断和概率；"算不算要紧事"的规矩写在 newsVerdict 里，改阈值不用重跑模型。
+   没配 TYPESAFE_API_KEY / 调用失败 → 返回 null，调用方照常只展示头条。 ── */
+const NEWS_KINDS = {
+  earnings: "Earnings results, revenue/profit guidance, dividends or buybacks announced by the company",
+  legal: "Regulation, lawsuits, investigations, fines, sanctions or government action against the company",
+  management: "CEO/CFO/board changes, executive departures, insider selling by executives",
+  deal: "Mergers, acquisitions, divestitures, major contracts won or lost, partnerships",
+  operations: "Product launches or recalls, outages, factory/supply problems, layoffs",
+  analyst: "Analyst upgrades/downgrades, price-target changes, ratings",
+  noise: "Market roundups, 'stocks to watch' lists, price-move recaps, opinion pieces with no new fact",
+};
+const FUNDAMENTAL_KINDS = new Set(["earnings", "legal", "management", "deal", "operations"]);
+const newsJudgeCache = new Map(); // code|title → 判断（isolate 内复用，巡检和页面共享）
+
+async function judgeNews(env, code, items) {
+  if (!env.TYPESAFE_API_KEY || !items?.length) return null;
+  if (newsJudgeCache.size > 2000) newsJudgeCache.clear();
+  const todo = items.filter((n) => !newsJudgeCache.has(`${code}|${n.title}`)).slice(0, 8);
+  if (todo.length) {
+    const questions = {};
+    todo.forEach((_, i) => {
+      const h = `\`headlines[${i}]\``;
+      questions[`r${i}`] = {
+        type: "noul",
+        instructions: `Is the headline ${h} mainly about the company \`ticker\` itself, rather than mentioning it in passing or being about another company or the market?`,
+      };
+      questions[`k${i}`] = {
+        type: "choice",
+        instructions: `What kind of news is the headline ${h}?`,
+        criteria: NEWS_KINDS,
+      };
+      questions[`s${i}`] = {
+        type: "score",
+        instructions: `For someone who owns shares of \`ticker\`, how good or bad for the company's business is the event reported in ${h}? Judge the reported event, not the headline's tone.`,
+        criteria: [
+          "Clearly bad: a real setback to the business (e.g. missed earnings, guidance cut, major lawsuit or investigation, key executive leaving suddenly)",
+          "Somewhat bad: a minor or uncertain negative",
+          "Neutral or no real business information",
+          "Somewhat good: a minor or uncertain positive",
+          "Clearly good: a real improvement (e.g. earnings beat, guidance raised, major contract won)",
+        ],
+      };
+    });
+    try {
+      const res = await fetch("https://api.typesafe.ai/v1/systemone", {
+        method: "POST",
+        signal: AbortSignal.timeout(15000),
+        headers: { Authorization: `Bearer ${env.TYPESAFE_API_KEY}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: "jev-latest",
+          state: { ticker: code, headlines: todo.map((n) => n.title) },
+          questions,
+        }),
+      });
+      if (!res.ok) {
+        console.log("typesafe", res.status, (await res.text()).slice(0, 300));
+        return null;
+      }
+      const a = (await res.json()).answers || {};
+      todo.forEach((n, i) => {
+        if (!a[`r${i}`] || !a[`k${i}`] || !a[`s${i}`]) return;
+        newsJudgeCache.set(`${code}|${n.title}`, newsVerdict(
+          a[`r${i}`].noul, a[`k${i}`].choice, a[`k${i}`].confidence, a[`s${i}`].score));
+      });
+    } catch (e) {
+      console.log("typesafe error", e?.message);
+      return null;
+    }
+  }
+  return items.map((n) => newsJudgeCache.get(`${code}|${n.title}`) || null);
+}
+
+// 规矩在代码里：相关 + 基本面类 + 分类够确定，才算"要紧事"；方向按 5 档分数（0 最坏，4 最好）
+function newsVerdict(relevant, kind, kindConf, score) {
+  const core = relevant >= 0.7 && FUNDAMENTAL_KINDS.has(kind) && kindConf >= 0.5;
+  const tone = score <= 1 ? "bad" : score >= 3 ? "good" : "neutral";
+  return {
+    relevant: Math.round(relevant * 100) / 100,
+    kind,
+    score: Math.round(score * 100) / 100,
+    tone,
+    important: core && tone !== "neutral",
+    alarm: core && score <= 0.8, // 巡检邮件只为"明确利空的基本面事件"打扰你
+  };
+}
+
 /* ── 组合走势：按流水回放最近 ~90 个交易日的每日市值和成本（全部换算到 base）。
    每天：Σ 每只股[当日持有量 × 当日收盘(本币) × 当日汇率] ；
    成本线 = Σ 移动平均成本 × 持有量（记账币→base 同样按当日汇率）。
@@ -1637,6 +1724,26 @@ async function runPatrol(env) {
     })());
     return fcCache.get(code);
   };
+  // 持仓新闻警报（跨用户缓存；新闻 1 + 判断 1 个子请求；预算紧张或没配 key 就跳过）
+  const newsCache = new Map();
+  const getNewsAlarms = (code) => {
+    code = String(code).toUpperCase();
+    if (!env.TYPESAFE_API_KEY) return Promise.resolve([]);
+    if (!newsCache.has(code)) {
+      if (subreqBudget <= 10) return Promise.resolve([]);
+      spend(2);
+      newsCache.set(code, (async () => {
+        const n = await stockNews(env, code, 6);
+        // 巡检每个工作日一次：只看上次巡检之后的（周一补上周末），同一条不重复发信
+        const back = new Date().getUTCDay() === 1 ? 3 : 1;
+        const since = new Date(Date.now() - back * 86400000).toISOString().slice(0, 10);
+        const fresh = n.items.filter((it) => it.time && it.time >= since);
+        const j = await judgeNews(env, code, fresh);
+        return j ? fresh.filter((_, i) => j[i]?.alarm).slice(0, 2) : [];
+      })().catch(() => []));
+    }
+    return newsCache.get(code);
+  };
   // 统一复审结论（与前端 reviewText 同一套话术，大方向必然一致）
   const reviewMsg = (isLong, chgS, stopS, mc) => {
     if (isLong) {
@@ -1726,6 +1833,10 @@ async function runPatrol(env) {
       }
       if (pa.stageKey === "extended" && chg > 0.15)
         events.push(`🟠 ${name}（${h.code}）近一月拉出抛物线且你已浮盈 ${(chg * 100).toFixed(0)}%——考虑分批止盈锁一部分？树不会长到天上。`);
+      // 持仓的新消息：只看上次巡检以来的、只报"明确利空的基本面事件"，长短线都报（这正是要复核理由的时刻）
+      const alarms = await getNewsAlarms(h.code);
+      for (const n of alarms)
+        events.push(`🗞 ${name}（${h.code}）有一条可能动摇买入理由的消息：「${n.title}」（${n.time}）。去读原文，确认当初的理由还在不在——标题判断由 AI 做出，可能看错。`);
     }
 
     for (const w of wish) {
@@ -1797,6 +1908,13 @@ export default {
       if (p === "/api/serenity/forecast")
         return gated(async () => json(await kronosForecast(env, q("code"), S)));
       if (p === "/api/serenity/news") return json(await stockNews(env, q("code")));
+      // 头条判断调 TypeSafe 付费 API → 登录墙；头条本身仍免费开放
+      if (p === "/api/serenity/news_judge")
+        return gated(async () => {
+          const n = await stockNews(env, q("code"));
+          const judged = await judgeNews(env, n.code, n.items);
+          return json({ ...n, judged: !!judged, items: n.items.map((it, i) => ({ ...it, judge: judged?.[i] || null })) });
+        });
       if (p === "/api/serenity/debate") return gated(() => debateSSE(env, q("code"), S, lang));
       if (p === "/api/serenity/pulse") return json(await marketPulse(env, S));
       if (p === "/api/serenity/parse_trade" && request.method === "POST")

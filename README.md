@@ -28,7 +28,7 @@
    - **统计区间**：用这只股自己的历史波动算的 ±1σ/±2σ 概率带（不猜方向，只让你看清不确定性有多大）
    - **模型倾向**：微调版 Kronos 采样多条路径 → 方向倾向 + 扇形（21 个交易日）
    - **ATR 自适应止损**：按这只股自己的"脾气"给建议线，不是一刀切 15%
-4. **最近的消息** —— 按代码检索的真实新闻头条
+4. **最近的消息** —— 按代码检索的真实新闻头条；登录后由 TypeSafe Jev 给每条打标签（跟公司相关吗 / 什么类型 / 利好利空），明确利空的基本面消息会进每日巡检邮件
 5. ⚔️ **多空对辩** —— 三家不同厂商的 AI 分饰多头律师 / 空头律师 / 法官，法官指出**双方分歧点**（分歧点才是你该去核实的事）
 
 ### 纪律系统（这个项目真正的心脏）
@@ -48,6 +48,7 @@ Cloudflare Workers (JS) · D1 (SQLite) · 单文件前端（零构建步骤）
 ├── 行情：腾讯(A股实时) → Tushare(兜底) | Yahoo Finance(美/加/港/币 + 汇率 + 新闻)
 ├── 预测：自托管 Kronos 微调模型（HF Space, ZeroGPU）
 ├── AI：DeepSeek(reasoner/chat) + Kimi(含视觉) + Claude —— 多厂商分工 + 降级链
+│        TypeSafe Jev —— 新闻头条的结构化判断（概率，不生成文字）
 └── 邮件：Resend | 定时：Workers Cron
 ```
 
@@ -97,6 +98,7 @@ wrangler d1 create lbs-accounts-db
 wrangler secret put TUSHARE_TOKEN      # A股估值数据
 wrangler secret put DEEPSEEK_API_KEY   # AI 报告 / 规划 / 律师陈词
 wrangler secret put KIMI_API_KEY       # 空头律师 + 截图识别成交单
+wrangler secret put TYPESAFE_API_KEY   # 新闻判断（头条标签 + 巡检利空提醒）
 wrangler secret put ANTHROPIC_API_KEY  # 对辩法官 / 兜底
 wrangler secret put RESEND_API_KEY     # 每日巡检邮件
 wrangler secret put KRONOS_API_URL     # 自部署的 Kronos 推理服务

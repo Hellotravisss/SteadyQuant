@@ -711,6 +711,10 @@ const I18N = {
     krDir_up: "模型倾向：偏涨", krDir_down: "模型倾向：偏跌", krDir_flat: "模型倾向：横着走",
     krDirNote: "专属微调模型（美/加/A/港/币 十年数据训练）· 回测方向命中约七成，当参考不当答案",
     newsTitle: "最近的消息",
+    newsKind: { earnings: "业绩", legal: "监管/诉讼", management: "管理层", deal: "交易/合同", operations: "经营", analyst: "分析师观点", noise: "噪音" },
+    newsTone: { bad: "利空", good: "利好", neutral: "" },
+    newsImportant: "要紧",
+    newsJudgeNote: "标签由 AI（TypeSafe Jev）按标题判断，只看标题、可能看错；「要紧」= 跟这家公司直接相关的基本面事件。点开读原文再下结论。",
     navToday: "今天", navTodaySub: "有没有需要你动手的事，一眼看完",
     todayTitle: "今天有没有需要你做的事？",
     todayLoading: "正在巡检你的持仓和心愿单…",
@@ -940,6 +944,10 @@ const I18N = {
     krDir_up: "model lean: upward", krDir_down: "model lean: downward", krDir_flat: "model lean: sideways",
     krDirNote: "custom fine-tuned model (10y of US/CA/CN/HK/crypto data) · ~70% direction hit in backtest — a reference, not an answer",
     newsTitle: "recent headlines",
+    newsKind: { earnings: "earnings", legal: "legal/regulatory", management: "management", deal: "deal/contract", operations: "operations", analyst: "analyst view", noise: "noise" },
+    newsTone: { bad: "negative", good: "positive", neutral: "" },
+    newsImportant: "matters",
+    newsJudgeNote: "Tags are AI judgments (TypeSafe Jev) from headlines only and can be wrong; \"matters\" = a fundamental event about this company itself. Read the article before concluding.",
     navToday: "today", navTodaySub: "anything that needs your hands, at a glance",
     todayTitle: "anything you need to act on today?",
     todayLoading: "patrolling your holdings and wishlist…",
@@ -1731,6 +1739,29 @@ async function loadNews(code) {
                 <span class="text-[10px] text-[#8A8578]">· ${n.source}</span>
             </a>`).join('');
         card.classList.remove('hidden');
+        judgeNewsTags(code);
+    } catch {}
+}
+
+/* 头条标签：登录用户才调（付费 API）；没登录 / 没配 key / 失败都静默，头条照常可看 */
+async function judgeNewsTags(code) {
+    const list = document.getElementById('newsList');
+    try {
+        const d = await apiFetch(`/api/serenity/news_judge?code=${encodeURIComponent(code)}`);
+        if (!d.judged || !list || !list.isConnected) return;
+        const kinds = t('newsKind'), tones = t('newsTone');
+        list.innerHTML = d.items.map(n => {
+            const j = n.judge;
+            let tag = '';
+            if (j) {
+                const color = j.tone === 'bad' ? '#E5484D' : j.tone === 'good' ? '#2F9E6B' : '#8A8578';
+                const bits = [kinds[j.kind] || j.kind, tones[j.tone]].filter(Boolean).join(' · ');
+                tag = `<span class="inline-block text-[10px] font-mono mr-1 px-1.5 rounded" style="color:${color};border:1px solid ${color};${j.important ? 'font-weight:700' : 'opacity:.7'}">${j.important ? t('newsImportant') + ' · ' : ''}${bits}</span>`;
+            }
+            return `<a href="${n.url}" target="_blank" rel="noopener" class="block text-xs leading-relaxed hover:text-[#E5484D]" style="color:var(--ink)${j && !j.important && j.kind === 'noise' ? ';opacity:.55' : ''}">
+                <span class="text-[#8A8578] font-mono text-[10px] mr-1">${n.time}</span>${tag}${n.title}
+            </a>`;
+        }).join('') + `<div class="text-[10px] text-[#8A8578] pt-2">${t('newsJudgeNote')}</div>`;
     } catch {}
 }
 
