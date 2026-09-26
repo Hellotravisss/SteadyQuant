@@ -868,20 +868,23 @@ async function parseTrade(env, body, S = pack("zh")) {
 // 没配 FINNHUB_API_KEY / 非北美 / 拿不到 → 返回 null，调用方退回 Yahoo。
 // 公司简称（去掉 Inc/Corp 等后缀），用来判断新闻是否真的在讲这家公司；isolate 内缓存
 const fhNameCache = new Map();
-async function finnhubName(env, code) {
-  if (fhNameCache.has(code)) return fhNameCache.get(code);
-  let nm = "";
+async function finnhubProfile(env, sym) {
+  if (fhNameCache.has(sym)) return fhNameCache.get(sym);
+  let prof = { name: "", country: "" };
   try {
-    const r = await fetch(`https://finnhub.io/api/v1/stock/profile2?symbol=${encodeURIComponent(code)}&token=${env.FINNHUB_API_KEY}`,
+    const r = await fetch(`https://finnhub.io/api/v1/stock/profile2?symbol=${encodeURIComponent(sym)}&token=${env.FINNHUB_API_KEY}`,
       { signal: AbortSignal.timeout(5000) });
     const d = r.ok ? await r.json() : {};
-    nm = String(d.name || "")
-      .replace(/[,.]/g, " ")
-      .replace(/\b(inc|corp|corporation|co|company|ltd|limited|plc|holdings?|group|class [a-c]|sa|nv|ag)\b/gi, "")
-      .replace(/\s+/g, " ").trim();
-  } catch { /* 拿不到名字就只用代码匹配 */ }
-  fhNameCache.set(code, nm);
-  return nm;
+    prof = {
+      name: String(d.name || "")
+        .replace(/[,.]/g, " ")
+        .replace(/\b(inc|corp|corporation|co|company|ltd|limited|plc|holdings?|group|class [a-c]|sa|nv|ag)\b/gi, "")
+        .replace(/\s+/g, " ").trim(),
+      country: String(d.country || "").toUpperCase(),
+    };
+  } catch { /* 拿不到资料就只用代码匹配 */ }
+  fhNameCache.set(sym, prof);
+  return prof;
 }
 
 async function finnhubNews(env, code, count) {
@@ -889,17 +892,21 @@ async function finnhubNews(env, code, count) {
   if (!env.FINNHUB_API_KEY || (m !== "美股" && m !== "加拿大")) return null;
   const day = (ms) => new Date(ms).toISOString().slice(0, 10);
   const to = day(Date.now()), from = day(Date.now() - 10 * 86400000);
+  // 加股：Finnhub 免费档不认 .TO → 用同名美股代码查，但必须确认那是同一家加拿大公司
+  // （T.TO=Telus 而 T=AT&T，L.TO=Loblaw 而 L=Loews；错配比没新闻更糟）
+  const sym = m === "加拿大" ? code.replace(/\.TO$/, "") : code;
+  const prof = await finnhubProfile(env, sym);
+  if (m === "加拿大" && prof.country !== "CA") return null;
   try {
     const res = await fetch(
-      `https://finnhub.io/api/v1/company-news?symbol=${encodeURIComponent(code)}&from=${from}&to=${to}&token=${env.FINNHUB_API_KEY}`,
+      `https://finnhub.io/api/v1/company-news?symbol=${encodeURIComponent(sym)}&from=${from}&to=${to}&token=${env.FINNHUB_API_KEY}`,
       { signal: AbortSignal.timeout(8000) }
     );
     if (!res.ok) { console.log("finnhub", res.status); return null; }
     const arr = await res.json();
     if (!Array.isArray(arr) || !arr.length) return null;
     // Finnhub 免费档大量转载泛市场文章 → 按"标题/摘要是否真提到这家公司"分档，提到的排前面
-    const nm = await finnhubName(env, code);
-    const keys = [code.split(".")[0], nm].filter((k) => k && k.length >= 2).map((k) => k.toLowerCase());
+    const keys = [sym, prof.name].filter((k) => k && k.length >= 2).map((k) => k.toLowerCase());
     const hit = (txt) => keys.some((k) => new RegExp(`\\b${k.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i").test(txt));
     const tier = (n) => (hit(n.headline || "") ? 0 : hit(n.summary || "") ? 1 : 2);
     const seen = new Set(), items = [];
