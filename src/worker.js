@@ -864,9 +864,47 @@ async function parseTrade(env, body, S = pack("zh")) {
 
 /* ── 最近的消息：Yahoo 新闻检索（美/加/港/币直查；A股映射 .SH→.SS）。
    只做展示和喂 AI 上下文，不做情绪打分——标题真伪与含义留给人和对辩去判断。 ── */
+// Finnhub 公司新闻：只覆盖北美公司，但按公司归档、带摘要，比 Yahoo RSS 的"顺带提到"干净得多。
+// 没配 FINNHUB_API_KEY / 非北美 / 拿不到 → 返回 null，调用方退回 Yahoo。
+async function finnhubNews(env, code, count) {
+  const m = MARKET_OF(code);
+  if (!env.FINNHUB_API_KEY || (m !== "美股" && m !== "加拿大")) return null;
+  const day = (ms) => new Date(ms).toISOString().slice(0, 10);
+  const to = day(Date.now()), from = day(Date.now() - 10 * 86400000);
+  try {
+    const res = await fetch(
+      `https://finnhub.io/api/v1/company-news?symbol=${encodeURIComponent(code)}&from=${from}&to=${to}&token=${env.FINNHUB_API_KEY}`,
+      { signal: AbortSignal.timeout(8000) }
+    );
+    if (!res.ok) { console.log("finnhub", res.status); return null; }
+    const arr = await res.json();
+    if (!Array.isArray(arr) || !arr.length) return null;
+    const seen = new Set(), items = [];
+    for (const n of arr.sort((a, b) => (b.datetime || 0) - (a.datetime || 0))) {
+      const title = String(n.headline || "").trim();
+      if (!title || seen.has(title.toLowerCase())) continue;
+      seen.add(title.toLowerCase());
+      items.push({
+        title,
+        source: n.source || "",
+        time: n.datetime ? day(n.datetime * 1000) : "",
+        url: n.url || "",
+        summary: String(n.summary || "").slice(0, 400),
+      });
+      if (items.length >= count) break;
+    }
+    return items.length ? { code, items, src: "finnhub" } : null;
+  } catch (e) {
+    console.log("finnhub error", e?.message);
+    return null;
+  }
+}
+
 async function stockNews(env, code, count = 8) {
   code = String(code || "").trim().toUpperCase();
   if (!code) return { items: [] };
+  const fh = await finnhubNews(env, code, count);
+  if (fh) return fh;
   // Yahoo 按代码的 RSS 头条：天然按标的过滤，五个市场（含茅台/腾讯）质量都实测过关
   const q = isAshare(code) ? code.replace(".SH", ".SS") : code;
   const unesc = (s) => s.replace(/<!\[CDATA\[|\]\]>/g, "").replace(/&amp;/g, "&")
@@ -893,7 +931,7 @@ async function stockNews(env, code, count = 8) {
       });
       if (items.length >= count) break;
     }
-    return { code, items };
+    return { code, items, src: "yahoo" };
   } catch {
     return { code, items: [] };
   }
@@ -950,7 +988,10 @@ async function judgeNews(env, code, items) {
         headers: { Authorization: `Bearer ${env.TYPESAFE_API_KEY}`, "Content-Type": "application/json" },
         body: JSON.stringify({
           model: "jev-latest",
-          state: { ticker: code, headlines: todo.map((n) => n.title) },
+          state: {
+            ticker: code,
+            headlines: todo.map((n) => (n.summary ? { headline: n.title, summary: n.summary } : n.title)),
+          },
           questions,
         }),
       });
@@ -1550,7 +1591,7 @@ function debateSSE(env, code, S = pack("zh"), lang = "zh") {
           `系统判定：${d.verdict.label}——${d.verdict.hint}`,
           d.red_flags?.length ? `红旗：\n${d.red_flags.map((f) => `- ${f.text}`).join("\n")}` : "红旗：无",
           news.items.length
-            ? `最近新闻标题（Yahoo 检索，仅标题，内容自行核实）：\n${news.items.map((n) => `- [${n.time}] ${n.title}（${n.source}）`).join("\n")}`
+            ? `最近新闻（${news.src === "finnhub" ? "Finnhub，标题+摘要" : "Yahoo 检索，仅标题"}，内容自行核实）：\n${news.items.map((n) => `- [${n.time}] ${n.title}${n.source ? `（${n.source}）` : ""}${n.summary ? `\n  摘要：${n.summary.slice(0, 200)}` : ""}`).join("\n")}`
             : "最近新闻：未检索到",
         ].join("\n");
         const kimiOk = !!env.KIMI_API_KEY;

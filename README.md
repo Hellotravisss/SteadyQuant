@@ -45,7 +45,7 @@
 
 ```
 Cloudflare Workers (JS) · D1 (SQLite) · 单文件前端（零构建步骤）
-├── 行情：腾讯(A股实时) → Tushare(兜底) | Yahoo Finance(美/加/港/币 + 汇率 + 新闻)
+├── 行情：腾讯(A股实时) → Tushare(兜底) | Yahoo Finance(美/加/港/币 + 汇率 + 新闻兜底) | Finnhub(北美公司新闻)
 ├── 预测：自托管 Kronos 微调模型（HF Space, ZeroGPU）
 ├── AI：DeepSeek(reasoner/chat) + Kimi(含视觉) + Claude —— 多厂商分工 + 降级链
 │        TypeSafe Jev —— 新闻头条的结构化判断（概率，不生成文字）
@@ -99,6 +99,7 @@ wrangler secret put TUSHARE_TOKEN      # A股估值数据
 wrangler secret put DEEPSEEK_API_KEY   # AI 报告 / 规划 / 律师陈词
 wrangler secret put KIMI_API_KEY       # 空头律师 + 截图识别成交单
 wrangler secret put TYPESAFE_API_KEY   # 新闻判断（头条标签 + 巡检利空提醒）
+wrangler secret put FINNHUB_API_KEY    # 美/加股公司新闻（不配则全走 Yahoo RSS）
 wrangler secret put ANTHROPIC_API_KEY  # 对辩法官 / 兜底
 wrangler secret put RESEND_API_KEY     # 每日巡检邮件
 wrangler secret put KRONOS_API_URL     # 自部署的 Kronos 推理服务
