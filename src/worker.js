@@ -887,6 +887,26 @@ async function finnhubProfile(env, sym) {
   return prof;
 }
 
+// 公司名归一：去标点/后缀/冠词，取首个实词比对（"The Toronto-Dominion Bank" ≈ "Toronto-Dominion Bank"）
+const nameKey = (n) => String(n || "").toLowerCase()
+  .replace(/\(the\)|^the\s+/g, "").replace(/[^a-z0-9\s]/g, " ")
+  .replace(/\b(inc|corp|corporation|co|company|ltd|limited|plc|holdings?|group|class [a-c])\b/g, "")
+  .trim().split(/\s+/)[0] || "";
+const tsxNameCache = new Map();
+async function tsxName(code) {
+  if (!tsxNameCache.has(code)) {
+    tsxNameCache.set(code, (async () => {
+      try {
+        const res = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(code)}?range=1d&interval=1d`,
+          { headers: { "User-Agent": "Mozilla/5.0" }, signal: AbortSignal.timeout(5000) });
+        const m = (await res.json()).chart.result[0].meta || {};
+        return m.longName || m.shortName || "";
+      } catch { return ""; }
+    })());
+  }
+  return tsxNameCache.get(code);
+}
+
 async function finnhubNews(env, code, count) {
   const m = MARKET_OF(code);
   if (!env.FINNHUB_API_KEY || (m !== "美股" && m !== "加拿大")) return null;
@@ -896,7 +916,15 @@ async function finnhubNews(env, code, count) {
   // （T.TO=Telus 而 T=AT&T，L.TO=Loblaw 而 L=Loews；错配比没新闻更糟）
   const sym = m === "加拿大" ? code.replace(/\.TO$/, "") : code;
   const prof = await finnhubProfile(env, sym);
-  if (m === "加拿大" && prof.country !== "CA") return null;
+  if (m === "加拿大") {
+    // 两道关：注册国是加拿大 + 公司名跟多伦多那只对得上（拿不到名字就不冒险，退回 Yahoo）
+    if (prof.country !== "CA") return null;
+    const tsx = nameKey(await tsxName(code));
+    if (!tsx || tsx !== nameKey(prof.name)) {
+      console.log("finnhub CA name mismatch", code, JSON.stringify([await tsxName(code), prof.name]));
+      return null;
+    }
+  }
   try {
     const res = await fetch(
       `https://finnhub.io/api/v1/company-news?symbol=${encodeURIComponent(sym)}&from=${from}&to=${to}&token=${env.FINNHUB_API_KEY}`,
@@ -1803,7 +1831,7 @@ async function runPatrol(env) {
     if (!env.TYPESAFE_API_KEY) return Promise.resolve([]);
     if (!newsCache.has(code)) {
       if (subreqBudget <= 10) return Promise.resolve([]);
-      spend(3); // 新闻 + 公司名 + 判断
+      spend(4); // 新闻 + 公司资料 + (加股)多伦多名称 + 判断
       newsCache.set(code, (async () => {
         const n = await stockNews(env, code, 6);
         // 巡检每个工作日一次：只看上次巡检之后的（周一补上周末），同一条不重复发信
