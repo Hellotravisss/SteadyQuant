@@ -1750,7 +1750,9 @@ async function judgeNewsTags(code) {
         const d = await apiFetch(`/api/serenity/news_judge?code=${encodeURIComponent(code)}`);
         if (!d.judged || !list || !list.isConnected) return;
         const kinds = t('newsKind'), tones = t('newsTone');
-        list.innerHTML = d.items.map(n => {
+        const rank = n => !n.judge ? 1 : n.judge.important ? 0 : n.judge.relevant >= 0.7 && n.judge.kind !== 'noise' ? 1 : 2;
+        const items = d.items.map((n, i) => ({ ...n, i })).sort((a, b) => rank(a) - rank(b) || a.i - b.i);
+        list.innerHTML = items.map(n => {
             const j = n.judge;
             let tag = '';
             if (j) {
@@ -1758,7 +1760,7 @@ async function judgeNewsTags(code) {
                 const bits = [kinds[j.kind] || j.kind, tones[j.tone]].filter(Boolean).join(' · ');
                 tag = `<span class="inline-block text-[10px] font-mono mr-1 px-1.5 rounded" style="color:${color};border:1px solid ${color};${j.important ? 'font-weight:700' : 'opacity:.7'}">${j.important ? t('newsImportant') + ' · ' : ''}${bits}</span>`;
             }
-            return `<a href="${n.url}" target="_blank" rel="noopener" class="block text-xs leading-relaxed hover:text-[#E5484D]" style="color:var(--ink)${j && !j.important && j.kind === 'noise' ? ';opacity:.55' : ''}">
+            return `<a href="${n.url}" target="_blank" rel="noopener" class="block text-xs leading-relaxed hover:text-[#E5484D]" style="color:var(--ink)${rank(n) === 2 ? ';opacity:.55' : ''}">
                 <span class="text-[#8A8578] font-mono text-[10px] mr-1">${n.time}</span>${tag}${n.title}
             </a>`;
         }).join('') + `<div class="text-[10px] text-[#8A8578] pt-2">${t('newsJudgeNote')}</div>`;
