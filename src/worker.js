@@ -866,6 +866,24 @@ async function parseTrade(env, body, S = pack("zh")) {
    只做展示和喂 AI 上下文，不做情绪打分——标题真伪与含义留给人和对辩去判断。 ── */
 // Finnhub 公司新闻：只覆盖北美公司，但按公司归档、带摘要，比 Yahoo RSS 的"顺带提到"干净得多。
 // 没配 FINNHUB_API_KEY / 非北美 / 拿不到 → 返回 null，调用方退回 Yahoo。
+// 公司简称（去掉 Inc/Corp 等后缀），用来判断新闻是否真的在讲这家公司；isolate 内缓存
+const fhNameCache = new Map();
+async function finnhubName(env, code) {
+  if (fhNameCache.has(code)) return fhNameCache.get(code);
+  let nm = "";
+  try {
+    const r = await fetch(`https://finnhub.io/api/v1/stock/profile2?symbol=${encodeURIComponent(code)}&token=${env.FINNHUB_API_KEY}`,
+      { signal: AbortSignal.timeout(5000) });
+    const d = r.ok ? await r.json() : {};
+    nm = String(d.name || "")
+      .replace(/[,.]/g, " ")
+      .replace(/\b(inc|corp|corporation|co|company|ltd|limited|plc|holdings?|group|class [a-c]|sa|nv|ag)\b/gi, "")
+      .replace(/\s+/g, " ").trim();
+  } catch { /* 拿不到名字就只用代码匹配 */ }
+  fhNameCache.set(code, nm);
+  return nm;
+}
+
 async function finnhubNews(env, code, count) {
   const m = MARKET_OF(code);
   if (!env.FINNHUB_API_KEY || (m !== "美股" && m !== "加拿大")) return null;
@@ -879,13 +897,19 @@ async function finnhubNews(env, code, count) {
     if (!res.ok) { console.log("finnhub", res.status); return null; }
     const arr = await res.json();
     if (!Array.isArray(arr) || !arr.length) return null;
+    // Finnhub 免费档大量转载泛市场文章 → 按"标题/摘要是否真提到这家公司"分档，提到的排前面
+    const nm = await finnhubName(env, code);
+    const keys = [code.split(".")[0], nm].filter((k) => k && k.length >= 2).map((k) => k.toLowerCase());
+    const hit = (txt) => keys.some((k) => new RegExp(`\\b${k.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i").test(txt));
+    const tier = (n) => (hit(n.headline || "") ? 0 : hit(n.summary || "") ? 1 : 2);
     const seen = new Set(), items = [];
-    for (const n of arr.sort((a, b) => (b.datetime || 0) - (a.datetime || 0))) {
+    for (const n of arr.sort((a, b) => tier(a) - tier(b) || (b.datetime || 0) - (a.datetime || 0))) {
       const title = String(n.headline || "").trim();
       if (!title || seen.has(title.toLowerCase())) continue;
       seen.add(title.toLowerCase());
       items.push({
         title,
+        mentioned: tier(n) < 2,
         source: n.source || "",
         time: n.datetime ? day(n.datetime * 1000) : "",
         url: n.url || "",
@@ -1772,7 +1796,7 @@ async function runPatrol(env) {
     if (!env.TYPESAFE_API_KEY) return Promise.resolve([]);
     if (!newsCache.has(code)) {
       if (subreqBudget <= 10) return Promise.resolve([]);
-      spend(2);
+      spend(3); // 新闻 + 公司名 + 判断
       newsCache.set(code, (async () => {
         const n = await stockNews(env, code, 6);
         // 巡检每个工作日一次：只看上次巡检之后的（周一补上周末），同一条不重复发信
