@@ -33,3 +33,12 @@ CREATE TABLE IF NOT EXISTS user_data (
   wish        TEXT NOT NULL DEFAULT '[]',
   updated_at  INTEGER NOT NULL
 );
+
+-- 账户熔断：用户自填本金 / 记账基准币 / 上次已发过的警报级别（避免巡检天天发同一封）
+CREATE TABLE IF NOT EXISTS risk_prefs (
+  user_id     TEXT PRIMARY KEY,
+  capital     REAL,
+  base        TEXT,
+  alerted     TEXT NOT NULL DEFAULT 'ok',
+  updated_at  INTEGER NOT NULL
+);

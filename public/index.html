@@ -720,6 +720,15 @@ const I18N = {
     todayLoading: "正在巡检你的持仓和心愿单…",
     todayAllClear: "都好好的，没有需要你动手的事。管住手也是本事。",
     todayNote: "巡检口径：跌破止损线🔴 / 距止损3%内🟡 / 心愿到价🎯 / 接近心愿价👀。每个交易日收盘后也会邮件提醒你。",
+    rkHalt: (dd, a, b, line) => `🛑 <b>账户熔断</b>：整个账户从最高点回撤了 <b>${dd}%</b>（${a} → ${b}），超过 ${line}% 熔断线。<b>先暂停开新仓</b>，复盘最近亏的几笔：是追高、没止损，还是拿太久？`,
+    rkWarn: (dd, a, b, line) => `⚠️ <b>账户回撤预警</b>：从最高点回撤 <b>${dd}%</b>（${a} → ${b}），到 ${line}% 会熔断。减少出手，只做最有把握的。`,
+    rkOk: (dd, line) => `账户回撤 ${dd}% · 熔断线 ${line}%`,
+    rkCap: (c, auto) => `本金 ${c}${auto ? '（自动估算）' : ''}`,
+    rkCapEdit: "改",
+    rkCapTitle: "你投进这个账户的本金",
+    rkCapHint: "回撤按「本金 + 累计盈亏」从最高点算。留空 = 自动用你押进去过的最多资金。",
+    rkMath: "亏 25% 要赚 33% 才回本，亏 50% 要翻倍——回撤越深越难爬回来。",
+    rkFormWarn: (dd) => `🛑 账户正在熔断（回撤 ${dd}%）。这是一笔新开仓吗？如果是，先问自己：它和最近亏钱的那几笔有什么不一样？`,
     pulseLoading: "大盘水位加载中…", pulseLevel: (l, p) => `${l} ${p}%`, m1short: "月",
     ob1: "在「买什么」查一只你感兴趣的股——真实行情、能不能碰、AI 预测，一次看全",
     ob2: "看中但嫌贵？放进「想买什么」，跌到你要的价会提醒你",
@@ -953,6 +962,15 @@ const I18N = {
     todayLoading: "patrolling your holdings and wishlist…",
     todayAllClear: "all clear — nothing needs your hands. Sitting tight is a skill too.",
     todayNote: "patrol rules: below stop 🔴 / within 3% of stop 🟡 / wish price hit 🎯 / near wish 👀. You also get an email after each trading day.",
+    rkHalt: (dd, a, b, line) => `🛑 <b>Account circuit breaker</b>: the whole account is down <b>${dd}%</b> from its peak (${a} → ${b}), past the ${line}% line. <b>Pause new positions</b> and review your recent losers: chasing, no stop, or held too long?`,
+    rkWarn: (dd, a, b, line) => `⚠️ <b>Drawdown warning</b>: down <b>${dd}%</b> from the peak (${a} → ${b}). The breaker trips at ${line}%. Trade less, only your best ideas.`,
+    rkOk: (dd, line) => `account drawdown ${dd}% · breaker at ${line}%`,
+    rkCap: (c, auto) => `capital ${c}${auto ? ' (estimated)' : ''}`,
+    rkCapEdit: "edit",
+    rkCapTitle: "Capital you put into this account",
+    rkCapHint: "Drawdown = (capital + cumulative P&L) vs its peak. Leave blank to use the most money you ever had invested.",
+    rkMath: "Lose 25% and you need +33% to get back; lose 50% and you need +100%.",
+    rkFormWarn: (dd) => `🛑 Circuit breaker is on (down ${dd}%). Is this a new position? If so: how is it different from your recent losers?`,
     pulseLoading: "loading market pulse…", pulseLevel: (l, p) => `${l} ${p}%`, m1short: "mo",
     ob1: "check any stock under \"buy\" — real prices, verdict, AI forecast, all in one",
     ob2: "like it but too pricey? park it in the wishlist — we ping you when it drops to your price",
@@ -1432,6 +1450,11 @@ async function buildToday() {
             }
         }
         events.sort((a,b) => a.lv - b.lv);
+        // 账户熔断（整体回撤）：放在所有单股提醒之上
+        let riskBox = '';
+        if (hold.length) {
+            try { const ph = await loadPfHistory(hold); riskBox = riskHtml(ph.risk, ph.cur || ''); } catch {}
+        }
         // 触发红灯的持仓（最多3只）请模型合议——回来后原地重写为"合并后的统一结论"
         const reds = events.filter(e => e.lv === 0 && e._lh !== undefined).slice(0, 3);
         await Promise.all(reds.map(async e => {
@@ -1447,13 +1470,14 @@ async function buildToday() {
         setTimeout(() => animEnter('#todayBox > div', 10), 0);
         const badge = document.getElementById('todayBadge');
         const nRed = events.filter(e => e.lv === 0).length;
-        if (badge) badge.innerHTML = nRed
-            ? `<span class="text-xs px-2 py-0.5 rounded-full ml-1" style="background:var(--red1);color:#fff;font-family:var(--font-mono)">${nRed}</span>` : '';
-        box.innerHTML = (events.length
+        const nRedAll = nRed + (RISK && RISK.level === 'halt' ? 1 : 0);
+        if (badge) badge.innerHTML = nRedAll
+            ? `<span class="text-xs px-2 py-0.5 rounded-full ml-1" style="background:var(--red1);color:#fff;font-family:var(--font-mono)">${nRedAll}</span>` : '';
+        box.innerHTML = riskBox + (events.length
             ? events.map(e => `<div class="border border-[#E4DAC7] rounded-2xl p-4 mb-3 text-sm flex flex-wrap justify-between items-center gap-2">
                 <span>${e.html}</span>
                 <span class="code-link text-xs" onclick="goCheck('${e.code}')">${t('recheck')} →</span></div>`).join('')
-            : `<div class="text-sm text-[#2f9e53]">✅ ${t('todayAllClear')}</div>`)
+            : (RISK && RISK.level !== 'ok') ? '' : `<div class="text-sm text-[#2f9e53]">✅ ${t('todayAllClear')}</div>`)
             + (summaryHtml ? `<div class="text-xs text-[#8A8578] mt-5 pt-4" style="border-top:1px dashed var(--line)">${t('myHold')}：${summaryHtml} <span class="code-link" onclick="switchTab('hold', tabBtn('hold'))">${t('goLook')}</span></div>` : '')
             + `<div class="text-[10px] text-[#8A8578] mt-3">${t('todayNote')}</div>`;
     } catch (e) {
@@ -2277,7 +2301,8 @@ function addFormFor(code, name, cur, opts) {
     let heldQty = 0;
     if (exist) for (const tx of (exist.txns || [])) heldQty += tx.side === 'buy' ? (tx.qty||0) : -(tx.qty||0);
     const msg = document.getElementById('afMsg');
-    msg.innerHTML = heldQty > 0 ? `<span class="text-[#2f9e53]">${t('afAddMore', heldQty)}</span>` : '';
+    msg.innerHTML = heldQty > 0 ? `<span class="text-[#2f9e53]">${t('afAddMore', heldQty)}</span>`
+        : (RISK && RISK.level === 'halt') ? `<span class="text-[#E5484D]">${t('rkFormWarn', RISK.dd_pct)}</span>` : '';
     f.dataset.fromWish = opts.fromWish || '';
     (opts.price != null ? document.getElementById('afQty') : pe).focus();
     f.scrollIntoView({behavior:'smooth', block:'center'});
@@ -2594,14 +2619,43 @@ function mFx(d, m) { // 市场→base 汇率：后端总表换算时算好的（
     if (m.currency === d.base) return 1;
     return m.fx_to_base || null;
 }
+/* 组合回放（走势图 + 账户熔断共用一次请求；60 秒内同一持仓不重复拉） */
+let _pfHist = null, RISK = null;
+async function loadPfHistory(hold) {
+    const key = PF_BASE + JSON.stringify(hold.map(h => [h.code, h.txns]));
+    if (_pfHist && _pfHist.key === key && Date.now() - _pfHist.t < 60000) return _pfHist.p;
+    const p = fetch('/api/serenity/portfolio_history', {
+        method:'POST', credentials:'include', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ base: PF_BASE, items: hold.map(h => ({ code:h.code, txns:h.txns })) })
+    }).then(x => x.json()).then(d => { RISK = d.risk || null; return d; });
+    _pfHist = { key, t: Date.now(), p };
+    p.catch(() => { _pfHist = null; });
+    return p;
+}
+function riskHtml(r, cur) {
+    if (!r) return '';
+    const m = n => cur + fmtMoney(n);
+    const cap = `<span class="text-[10px] text-[#8A8578]">${t('rkCap', m(r.capital), r.capital_src === 'auto')} · <span class="code-link" onclick="editCapital()">${t('rkCapEdit')}</span></span>`;
+    if (r.level === 'ok') return `<div class="text-[11px] text-[#8A8578] mb-3">${t('rkOk', r.dd_pct, r.halt_pct)} · ${cap}</div>`;
+    const halt = r.level === 'halt';
+    return `<div class="rounded-2xl p-4 mb-3 text-sm" style="border:1.5px solid ${halt ? '#E5484D' : '#D9A21B'};background:${halt ? 'rgba(229,72,77,.06)' : 'rgba(217,162,27,.07)'}">
+        <div>${t(halt ? 'rkHalt' : 'rkWarn', r.dd_pct, m(r.peak_equity), m(r.equity), r.halt_pct)}</div>
+        <div class="text-[11px] text-[#8A8578] mt-2">${t('rkMath')}</div>
+        <div class="mt-1">${cap}</div></div>`;
+}
+function editCapital() {
+    askInline({ title: t('rkCapTitle'), hint: t('rkCapHint'), value: RISK && RISK.capital_src === 'user' ? RISK.capital : '', suffix: PF_BASE,
+        onOk: async (v) => {
+            await fetch('/api/serenity/risk_capital', { method:'POST', credentials:'include', headers:{'Content-Type':'application/json'},
+                body: JSON.stringify({ capital: v, base: PF_BASE }) }).catch(() => {});
+            _pfHist = null; buildToday();
+        } });
+}
 async function drawPortfolioCurve(hold) {
     const el = document.getElementById('chCurve');
     if (!el) return;
     try {
-        const d = await fetch('/api/serenity/portfolio_history', {
-            method:'POST', credentials:'include', headers:{'Content-Type':'application/json'},
-            body: JSON.stringify({ base: PF_BASE, items: hold.map(h => ({ code:h.code, txns:h.txns })) })
-        }).then(x=>x.json());
+        const d = await loadPfHistory(hold);
         if (!d.dates || d.dates.length < 2) { el.innerHTML = `<div class="text-[10px] text-[#8A8578]">${t('chCurveNone')}</div>`; return; }
         const W=640,H=180,P=6;
         const all=[...d.value,...d.cost], yMin=Math.min(...all), yMax=Math.max(...all), span=(yMax-yMin)||1;

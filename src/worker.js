@@ -115,7 +115,19 @@ async function tushareDaily(env, code) {
 }
 
 /** 统一日线序列：A股走 腾讯→Tushare 回退链，海外走 Yahoo。返回 {dates, closes, currency} */
+// 同一 isolate 内 10 分钟复用：巡检里 priceAnalysis 和组合回放会拉同一批日线，别重复花子请求
+const dsCache = new Map();
 async function dailySeries(env, code) {
+  const hit = dsCache.get(code);
+  if (hit && Date.now() - hit.t < 600_000) return hit.p;
+  const p = dailySeriesRaw(env, code);
+  dsCache.set(code, { t: Date.now(), p });
+  if (dsCache.size > 500) dsCache.delete(dsCache.keys().next().value);
+  const r = await p;
+  if (!r) dsCache.delete(code); // 失败不缓存
+  return r;
+}
+async function dailySeriesRaw(env, code) {
   if (isAshare(code)) {
     const s = (await tencentDaily(code)) || (await tushareDaily(env, code));
     return s ? { ...s, currency: "CNY" } : null;
@@ -1136,25 +1148,33 @@ async function portfolioHistory(env, body, S = pack("zh")) {
     return r ? amt * r : null;
   };
 
-  // 交易日历：所有股票日期并集的最后 90 天
-  const allDates = [...new Set(stocks.flatMap((s) => s.dates))].sort().slice(-90);
+  // 交易日历：图表画最近 90 天；熔断看最近 ~1 年（从峰值回撤要看得够远）
+  const allDates = [...new Set(stocks.flatMap((s) => s.dates))].sort().slice(-250);
+  const chartFrom = Math.max(0, allDates.length - 90);
 
-  const value = [], cost = [];
+  const value = [], cost = [], pnl = [];
   for (const d of allDates) {
-    let v = 0, c = 0;
+    let v = 0, c = 0, pl = 0;
     for (const st of stocks) {
-      // 回放 d 及之前的流水 → 持有量 + 移动平均成本（记账币）
-      let held = 0, avg = 0, fxBroken = false;
+      // 回放 d 及之前的流水 → 持有量 + 移动平均成本（记账币）+ 已实现盈亏（base，按卖出日汇率）
+      let held = 0, avg = 0, fxBroken = false, realized = 0;
       for (const t of st.txns) {
         const td = String(t.date).replace(/-/g, "");
         if (td > d) break;
+        const px2 = txnToAcct(t, st.natCur, st.acctCur, td);
+        if (px2 == null) { fxBroken = true; break; }
         if (t.side === "buy") {
-          const px2 = txnToAcct(t, st.natCur, st.acctCur, td);
-          if (px2 == null) { fxBroken = true; break; }
           const nq = held + t.qty; avg = nq > 0 ? (held * avg + t.qty * px2) / nq : 0; held = nq;
-        } else held = Math.max(0, held - t.qty);
+        } else {
+          const q = Math.min(t.qty, held);
+          const rB = toBase(q * (px2 - avg), st.acctCur, td);
+          if (rB == null) { fxBroken = true; break; }
+          realized += rB;
+          held = Math.max(0, held - t.qty);
+        }
       }
       if (fxBroken) continue;
+      pl += realized;
       if (held <= 0) continue;
       // 当日或之前最近收盘
       let px = st.priceMap[d];
@@ -1165,12 +1185,40 @@ async function portfolioHistory(env, body, S = pack("zh")) {
       const vB = toBase(held * px, st.natCur, d);
       const cB = toBase(held * avg, st.acctCur, d);
       if (vB == null || cB == null) continue; // 汇率缺失→两条线同口径跳过该股
-      v += vB; c += cB;
+      v += vB; c += cB; pl += vB - cB;
     }
     value.push(Math.round(v * 100) / 100);
     cost.push(Math.round(c * 100) / 100);
+    pnl.push(Math.round(pl * 100) / 100);
   }
-  return { dates: allDates, value, cost, base, cur: CUR_SYM[base] || base };
+  return {
+    dates: allDates.slice(chartFrom), value: value.slice(chartFrom), cost: cost.slice(chartFrom),
+    base, cur: CUR_SYM[base] || base,
+    risk: accountRisk(allDates, pnl, cost, body?.capital),
+  };
+}
+
+/* ── 账户熔断：看"整个账户从最高点回撤了多少"，不是单只股。
+   净值 = 本金 + 累计盈亏（已实现 + 未实现）。只看盈亏、不看市值，所以追加资金/取钱不会被当成涨跌。
+   本金：用户自己填的优先；没填就用期间投入过的最大成本（"最多押进去过多少钱"）。 ── */
+const RISK_WARN = 0.10, RISK_HALT = 0.15;
+function accountRisk(dates, pnl, cost, userCapital) {
+  if (!pnl.length) return null;
+  const autoCap = Math.max(0, ...cost);
+  const capital = userCapital > 0 ? userCapital : autoCap;
+  if (!(capital > 0)) return null;
+  let peak = -Infinity, peakDate = dates[0];
+  for (let i = 0; i < pnl.length; i++) if (pnl[i] > peak) { peak = pnl[i]; peakDate = dates[i]; }
+  const peakEq = capital + Math.max(peak, 0); // 峰值至少是本金：一直亏的账户，回撤从本金算起
+  const eq = capital + pnl[pnl.length - 1];
+  const dd = peakEq > 0 ? Math.max(0, (peakEq - eq) / peakEq) : 0;
+  return {
+    capital: Math.round(capital), capital_src: userCapital > 0 ? "user" : "auto",
+    equity: Math.round(eq), peak_equity: Math.round(peakEq), peak_date: peak > 0 ? peakDate : null,
+    dd_pct: Math.round(dd * 1000) / 10,
+    level: dd >= RISK_HALT ? "halt" : dd >= RISK_WARN ? "warn" : "ok",
+    warn_pct: RISK_WARN * 100, halt_pct: RISK_HALT * 100,
+  };
 }
 
 /* ── 大盘脉搏：三大基准指数的水位快照（驾驶舱顶栏用）。
@@ -1939,6 +1987,32 @@ async function runPatrol(env) {
         events.push(`🗞 ${name}（${h.code}）有一条可能动摇买入理由的消息：「${n.title}」（${n.time}）。去读原文，确认当初的理由还在不在——标题判断由 AI 做出，可能看错。`);
     }
 
+    // 账户熔断：整个账户从最高点回撤。只在级别升高时发一次（ok→warn→halt），回到 5% 以内才复位
+    if (hold.length && subreqBudget > 12) {
+      try {
+        const pref = await env.DB.prepare("SELECT capital, base, alerted FROM risk_prefs WHERE user_id = ?").bind(row.user_id).first();
+        const fresh = new Set(hold.map((h) => String(h?.code || "").toUpperCase()).filter((c) => c && !paCache.has(c)));
+        spend(fresh.size + 2); // 已清仓的票还得补拉日线 + 汇率
+        const r = (await portfolioHistory(env, { base: pref?.base || "CNY", capital: pref?.capital,
+          items: hold.map((h) => ({ code: h.code, txns: h.txns })) }, S)).risk;
+        const rank = { ok: 0, warn: 1, halt: 2 };
+        const was = pref?.alerted || "ok";
+        let next = was;
+        if (r && rank[r.level] > rank[was]) {
+          const cur = CUR_SYM[pref?.base || "CNY"] || "";
+          const money = (n) => `${cur}${Math.round(n).toLocaleString("en-US")}`;
+          events.unshift(r.level === "halt"
+            ? `🛑 <b>账户熔断</b>：整个账户从最高点回撤了 <b>${r.dd_pct}%</b>（${money(r.peak_equity)} → ${money(r.equity)}），超过 ${r.halt_pct}% 的熔断线。<br>建议：<b>暂停开新仓</b>，先复盘最近亏损的几笔——是追高、没止损，还是拿太久？回撤越深，回本越难（亏 25% 要赚 33% 才回本）。`
+            : `⚠️ <b>账户回撤预警</b>：整个账户从最高点回撤了 <b>${r.dd_pct}%</b>（${money(r.peak_equity)} → ${money(r.equity)}）。到 ${r.halt_pct}% 会触发熔断。现在适合减少出手、只做最有把握的。`);
+          next = r.level;
+        } else if (r && r.dd_pct < 5 && was !== "ok") next = "ok";
+        if (r && next !== was)
+          await env.DB.prepare(`INSERT INTO risk_prefs (user_id, alerted, updated_at) VALUES (?, ?, ?)
+            ON CONFLICT(user_id) DO UPDATE SET alerted = excluded.alerted, updated_at = excluded.updated_at`)
+            .bind(row.user_id, next, Date.now()).run();
+      } catch (e) { console.log("patrol risk error", e?.message); }
+    }
+
     for (const w of wish) {
       if (!w?.code || !w.target) continue;
       const pa = await getPA(w.code);
@@ -2020,7 +2094,32 @@ export default {
       if (p === "/api/serenity/parse_trade" && request.method === "POST")
         return gated(async () => json(await parseTrade(env, await request.json().catch(() => ({})), S)));
       if (p === "/api/serenity/portfolio_history" && request.method === "POST")
-        return gated(async () => json(await portfolioHistory(env, await request.json().catch(() => ({})), S)));
+        return gated(async () => {
+          const u = await needUser();
+          const body = await request.json().catch(() => ({}));
+          const pref = await env.DB.prepare("SELECT capital, base FROM risk_prefs WHERE user_id = ?").bind(u.id).first();
+          // 本金按用户填写时的币种记；看板换了基准币就先不用它（宁可退回自动估算，也不拿错币种算回撤）
+          const capital = pref?.capital > 0 && (!pref.base || pref.base === body.base) ? pref.capital : null;
+          const r = await portfolioHistory(env, { ...body, capital }, S);
+          // 记下基准币，巡检按同一币种算（填过本金就锁定本金的币种）
+          if (["CNY", "USD", "CAD", "HKD"].includes(body.base))
+            await env.DB.prepare(`INSERT INTO risk_prefs (user_id, base, updated_at) VALUES (?, ?, ?)
+              ON CONFLICT(user_id) DO UPDATE SET base = CASE WHEN risk_prefs.capital IS NULL THEN excluded.base ELSE risk_prefs.base END`)
+              .bind(u.id, body.base, Date.now()).run();
+          return json(r);
+        });
+      // 账户熔断：设置本金（null/0 = 改回自动估算）
+      if (p === "/api/serenity/risk_capital" && request.method === "POST")
+        return gated(async () => {
+          const u = await needUser();
+          const b = await request.json().catch(() => ({}));
+          const cap = Number(b.capital) > 0 ? Math.min(Number(b.capital), 1e10) : null;
+          const base = ["CNY", "USD", "CAD", "HKD"].includes(b.base) ? b.base : null;
+          await env.DB.prepare(`INSERT INTO risk_prefs (user_id, capital, base, updated_at) VALUES (?, ?, ?, ?)
+            ON CONFLICT(user_id) DO UPDATE SET capital = excluded.capital, base = COALESCE(excluded.base, risk_prefs.base),
+            updated_at = excluded.updated_at`).bind(u.id, cap, base, Date.now()).run();
+          return json({ ok: true, capital: cap });
+        });
       if (p === "/api/serenity/wish_check") return json(await wishCheck(env, q("items"), S));
       if (p === "/api/serenity/portfolio" && request.method === "POST")
         return gated(async () => json(await portfolio(env, await request.json().catch(() => ({})), S)));
