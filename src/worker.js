@@ -177,15 +177,9 @@ const fxLatest = (map) => {
 };
 
 // A股全量列表缓存（isolate 级，1小时）
-let stockCache = { data: null, ts: 0 };
+// 全市场列表只向 Tushare 拉一份（带行业），搜索和选股漏斗共用——stock_basic 有调用频率限制
 async function stockList(env) {
-  if (stockCache.data && Date.now() - stockCache.ts < 3600e3) return stockCache.data;
-  const res = await tushare(env, "stock_basic", { list_status: "L" }, "ts_code,name");
-  if (res?.items) {
-    stockCache = { data: res.items, ts: Date.now() };
-    return res.items;
-  }
-  return stockCache.data || [];
+  return (await stockMeta(env)).map(([code, name]) => [code, name]);
 }
 
 /* ───────── 水位标尺（skill 硬规则：全部真实价格） ───────── */
@@ -1411,6 +1405,102 @@ async function search(env, keyword) {
   return { items: out };
 }
 
+/* ───────── 选股漏斗（A股）：从全市场一层层排除，每层都告诉你淘汰了多少、为什么。
+   ① 看得懂：只留你选的行业 ② 生意好：赚钱、估算 ROE≥8%、市值≥50亿、上市≥3年、非 ST
+   ③ 不太贵：PE 不高于本行业（全市场同行）的中位数 ④ 不追高：走势不在下跌途中、不在抛物线、不在半年高位、今天没涨停
+   不推荐买哪只——只是把"上千只"缩成"值得你花时间研究的几只"。 ───────── */
+let metaCache = { data: null, ts: 0 };
+async function stockMeta(env) {
+  if (metaCache.data && Date.now() - metaCache.ts < 6 * 3600e3) return metaCache.data;
+  const res = await tushare(env, "stock_basic", { list_status: "L" }, "ts_code,name,industry,list_date");
+  if (res?.items?.length) metaCache = { data: res.items, ts: Date.now() };
+  return metaCache.data || [];
+}
+
+async function industries(env) {
+  const meta = await stockMeta(env);
+  const cnt = {};
+  for (const [, name, ind] of meta) if (ind && !/ST/i.test(name)) cnt[ind] = (cnt[ind] || 0) + 1;
+  return { items: Object.entries(cnt).map(([name, n]) => ({ name, n })).sort((a, b) => b.n - a.n) };
+}
+
+async function funnel(env, inds, S = pack("zh")) {
+  const want = new Set(inds.filter(Boolean).slice(0, 12));
+  if (!want.size) return { error: "pick_industry" };
+  const meta = await stockMeta(env);
+  if (!meta.length) return { error: S.scan_nodata };
+  let daily = null, tradeDate = "";
+  for (let i = 0; i < 10; i++) {
+    const d = daysAgo(i);
+    daily = await tushare(env, "daily_basic", { trade_date: d }, "ts_code,close,pe_ttm,pb,dv_ratio,total_mv");
+    if (daily?.items?.length) { tradeDate = d; break; }
+  }
+  if (!daily?.items?.length) return { error: S.scan_nodata };
+  const db = new Map(daily.items.map((r) => [r[0], r]));
+  const info = new Map(meta.map((r) => [r[0], r]));
+  const median = (a) => { const b = [...a].sort((x, y) => x - y); return b.length ? b[Math.floor(b.length / 2)] : null; };
+
+  // 行业 PE 中位数：用全市场同行业、赚钱的公司算（跟同行比，不拿银行和芯片比）
+  const indPe = {};
+  for (const [code, , ind] of meta) {
+    const r = db.get(code);
+    if (r && r[2] > 0 && r[2] < 300) (indPe[ind] ||= []).push(r[2]);
+  }
+  const indMed = Object.fromEntries(Object.entries(indPe).map(([k, v]) => [k, median(v)]));
+
+  const threeYrAgo = daysAgo(365 * 3);
+  const L1 = meta.filter(([, name, ind]) => want.has(ind) && !/ST/i.test(name));
+  const L2 = [], drop2 = { loss: 0, small: 0, young: 0, lowroe: 0 };
+  for (const [code, name, ind, listDate] of L1) {
+    const r = db.get(code);
+    if (!r) continue;
+    const [, close, pe, pb, dv, mv] = r;
+    if (!(pe > 0)) { drop2.loss++; continue; }
+    if (!(mv >= 500000)) { drop2.small++; continue; }           // total_mv 单位万元 → 50 亿
+    if (listDate && listDate > threeYrAgo) { drop2.young++; continue; }
+    const roe = pb > 0 ? (pb / pe) * 100 : 0;                   // 估算 ROE = 净利/净资产 ≈ PB/PE
+    if (roe < 8) { drop2.lowroe++; continue; }
+    L2.push({ code, name, ind, close, pe: Math.round(pe * 10) / 10, pb: Math.round(pb * 100) / 100,
+      dv: dv ? Math.round(dv * 100) / 100 : 0, mv_yi: Math.round(mv / 1e4), roe: Math.round(roe * 10) / 10,
+      ind_pe: indMed[ind] ? Math.round(indMed[ind] * 10) / 10 : null });
+  }
+  const L3 = L2.filter((c) => c.ind_pe && c.pe <= c.ind_pe);
+  // 进第 ④ 层前：每个行业内部按"赚钱能力 × 便宜程度"排序，再各行业轮流取，凑满 15 只拉日线
+  // （统一排序会让高 ROE 的科技股挤掉银行这类低 ROE 行业——你选了它，就该看到它的代表）
+  const score = (c) => c.roe * (c.ind_pe / c.pe);
+  const byInd = {};
+  for (const c of L3) (byInd[c.ind] ||= []).push(c);
+  const queues = Object.values(byInd).map((a) => a.sort((x, y) => score(y) - score(x)));
+  const checked = [];
+  for (let round = 0; checked.length < 15 && queues.some((q) => q.length > round); round++)
+    for (const q of queues) if (q[round] && checked.length < 15) checked.push(q[round]);
+  await Promise.all(checked.map(async (c) => {
+    const s = await dailySeries(env, c.code);
+    const pa = s ? computePA(s.closes.slice(-140), "CNY", S, s.highs?.slice(-140), s.lows?.slice(-140)) : null;
+    if (!pa) { c.out = "nodata"; return; }
+    c.range_pos = Math.round(pa.range_pos_6mo_pct);
+    c.stage = pa.stage;
+    c.ret_1m = pa.ret_1m_pct;
+    if (limitChase(s, c.code, c.name)) c.out = "chase";
+    else if (pa.stageKey === "falling") c.out = "falling";
+    else if (pa.stageKey === "extended") c.out = "extended";
+    else if (pa.range_pos_6mo_pct >= 85) c.out = "high";
+  }));
+  const L4 = checked.filter((c) => !c.out);
+  return {
+    trade_date: tradeDate,
+    layers: [
+      { key: "all", n: meta.length },
+      { key: "know", n: L1.length },
+      { key: "good", n: L2.length, drop: drop2 },
+      { key: "cheap", n: L3.length },
+      { key: "timing", n: L4.length, of: checked.length },
+    ],
+    picks: L4.slice(0, 8),
+    near_miss: checked.filter((c) => c.out && c.out !== "nodata").slice(0, 6),
+  };
+}
+
 /* ───────── 一键选股 + AI 风险审查（高级工具，从 index.py 移植） ───────── */
 
 function fiveFactorScore(close, pe, pb, dv, maxPrice, cfg) {
@@ -2212,6 +2302,10 @@ export default {
         return gated(() => planSSE(env, parseFloat(q("amount")), q("currency", "CNY"), parseInt(q("months")), q("extra", ""), S, lang));
       if (p === "/api/serenity/analyze") return gated(() => analyzeSSE(env, q("query"), q("market", S.mkt_a), S, lang));
       if (p === "/api/search") return json(await search(env, q("keyword")));
+      if (p === "/api/serenity/industries") return json(await industries(env));
+      // 漏斗拉全市场估值 + 15 只日线：Tushare 积分 + 子请求，上登录墙
+      if (p === "/api/serenity/funnel")
+        return gated(async () => json(await funnel(env, q("inds").split(","), S)));
       if (p === "/api/scan")
         return gated(async () => json(await scan(env, parseFloat(q("principal", "2000")), q("risk", "stable"), S)));
       if (p.startsWith("/api/"))

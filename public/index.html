@@ -340,6 +340,17 @@
             <div id="checkResult" class="mt-8"></div>
         </div>
 
+        <!-- 选股漏斗：从全市场一层层排除到几只 -->
+        <div class="glass rounded-3xl p-8 mt-6" id="funnelSection">
+            <div class="eyebrow mb-1">funnel</div>
+            <div class="mb-1 text-2xl font-bold" data-i18n="fnTitle">不知道买哪只？从全市场一层层缩小</div>
+            <div class="text-xs text-[#8A8578] mb-5" data-i18n="fnSub">先选你看得懂的行业（A股），剩下交给数据一层层排除。</div>
+            <input id="fnSearch" class="w-full px-4 py-3 rounded-2xl text-sm mb-3" data-i18n-ph="fnSearchPh" placeholder="搜行业：白酒 / 银行 / 半导体…" oninput="renderIndChips()">
+            <div id="fnChips" class="flex flex-wrap gap-2 mb-4"><span class="text-xs text-[#8A8578]">…</span></div>
+            <button id="fnBtn" onclick="runFunnel()" class="px-8 py-3 btn-red text-sm" data-i18n="fnBtn">开始筛</button>
+            <div id="fnResult" class="mt-6"></div>
+        </div>
+
         <!-- 同页第二块：AI 帮我找 -->
         <div class="glass rounded-3xl p-8 mt-6" id="aiSection">
             <div class="eyebrow mb-1">ai scout</div>
@@ -725,6 +736,24 @@ const I18N = {
     rkOk: (dd, line) => `账户回撤 ${dd}% · 熔断线 ${line}%`,
     rkCap: (c, auto) => `本金 ${c}${auto ? '（自动估算）' : ''}`,
     rkCapEdit: "改",
+    fnTitle: "不知道买哪只？从全市场一层层缩小",
+    fnSub: "先选你看得懂的行业（A股），剩下交给数据一层层排除。",
+    fnSearchPh: "搜行业：白酒 / 银行 / 半导体…",
+    fnBtn: "开始筛", fnRunning: "正在筛全市场…约 10 秒",
+    fnPick: "先选至少一个行业", fnMax: "最多选 12 个",
+    fnL: { all: "A股全市场", know: "你看得懂的行业", good: "生意好", cheap: "在同行里不贵", timing: "现在不追高" },
+    fnWhy: { all: "", know: "只留你选的行业，去掉 ST", good: "赚钱、ROE≥8%、市值≥50亿、上市≥3年", cheap: "市盈率不高于本行业中位数", timing: "不在下跌途中、不在抛物线、不在半年高位、没涨停" },
+    fnDrop: (d) => `淘汰：亏损 ${d.loss} · 太小 ${d.small} · 太新 ${d.young} · 赚钱效率低 ${d.lowroe}`,
+    fnOf: (n) => `（前 ${n} 只看了走势）`,
+    fnPicks: "值得你花时间研究的",
+    fnRow: (pe, ip, roe, pos) => `市盈率 ${pe}（行业 ${ip}）· ROE≈${roe}% · 半年水位 ${pos}%`,
+    fnMiss: "好公司，但现在时机不对",
+    fnOut: { falling: "下跌途中", extended: "抛物线", high: "半年高位", chase: "正在涨停" },
+    fnMissHint: "适合放心愿单，等它回落",
+    fnNone: "这几个行业里，眼下没有同时过四关的。换几个行业，或者过段时间再筛。",
+    fnNext: "下一步：点开一只 → 写下为什么买 → 开⚔️多空对辩找它的毛病。漏斗只帮你缩小范围，不是买入建议。",
+    fnCheck: "查一查 →",
+    fnLogin: "筛全市场要拉几千只股的数据，有成本，登录后才能用。",
     chToday2: (c, r) => `今天涨了 ${c}%（涨跌停幅度 ${r}%）`,
     chStreak: (n) => `，已经是第 ${n} 个连板`,
     chMine: (n, w, avg, worst) => `📒 <b>你自己的追板记录</b>：${n} 次里赚钱 ${w} 次，平均 <b class="${avg>=0?'pos':'neg'}">${avg>=0?'+':''}${avg}%</b>，最差一次 <b class="neg">${worst}%</b>。`,
@@ -972,6 +1001,24 @@ const I18N = {
     rkOk: (dd, line) => `account drawdown ${dd}% · breaker at ${line}%`,
     rkCap: (c, auto) => `capital ${c}${auto ? ' (estimated)' : ''}`,
     rkCapEdit: "edit",
+    fnTitle: "Don't know what to buy? Narrow the whole market down",
+    fnSub: "Pick industries you actually understand (China A-shares); data filters out the rest.",
+    fnSearchPh: "search industries…",
+    fnBtn: "filter", fnRunning: "filtering the whole market… ~10s",
+    fnPick: "pick at least one industry", fnMax: "12 at most",
+    fnL: { all: "all A-shares", know: "industries you understand", good: "good business", cheap: "not expensive vs peers", timing: "not chasing now" },
+    fnWhy: { all: "", know: "your industries, no ST", good: "profitable, ROE≥8%, cap≥¥5B, listed ≥3y", cheap: "P/E at or below industry median", timing: "not falling, not parabolic, not at 6-mo high, not limit-up" },
+    fnDrop: (d) => `dropped: losing money ${d.loss} · too small ${d.small} · too new ${d.young} · low ROE ${d.lowroe}`,
+    fnOf: (n) => ` (charts checked for top ${n})`,
+    fnPicks: "worth your research time",
+    fnRow: (pe, ip, roe, pos) => `P/E ${pe} (industry ${ip}) · ROE≈${roe}% · 6-mo level ${pos}%`,
+    fnMiss: "good companies, bad timing",
+    fnOut: { falling: "falling", extended: "parabolic", high: "6-mo high", chase: "limit-up" },
+    fnMissHint: "wishlist material — wait for a pullback",
+    fnNone: "Nothing passes all four filters in these industries right now. Try others, or check back later.",
+    fnNext: "Next: open one → write down why → run ⚔️ bull vs bear to find its flaws. The funnel narrows the field; it is not a buy signal.",
+    fnCheck: "check →",
+    fnLogin: "Filtering the whole market pulls data on thousands of stocks, which costs money — sign in to use it.",
     chToday2: (c, r) => `up ${c}% today (daily limit ${r}%)`,
     chStreak: (n) => `, limit-up ${n} days in a row`,
     chMine: (n, w, avg, worst) => `📒 <b>Your own limit-chasing record</b>: ${w} of ${n} made money, average <b class="${avg>=0?'pos':'neg'}">${avg>=0?'+':''}${avg}%</b>, worst <b class="neg">${worst}%</b>.`,
@@ -1774,6 +1821,69 @@ async function loadChaseMine() {
             : `<span class="text-xs text-[#8A8578]">${t('chMineFew', r.n)}</span>`;
     } catch {}
 }
+
+/* ── 选股漏斗 ── */
+let FN_INDS = null, FN_SEL = new Set();
+async function loadIndustries() {
+    if (FN_INDS) return;
+    try { FN_INDS = (await apiFetch('/api/serenity/industries')).items || []; } catch { FN_INDS = []; }
+    renderIndChips();
+}
+function renderIndChips() {
+    const box = document.getElementById('fnChips');
+    if (!box || !FN_INDS) return;
+    const kw = (document.getElementById('fnSearch')?.value || '').trim();
+    const list = (kw ? FN_INDS.filter(i => i.name.includes(kw)) : FN_INDS.slice(0, 24));
+    const sel = [...FN_SEL].filter(n => !list.some(i => i.name === n)).map(n => ({ name: n, n: '' }));
+    box.innerHTML = [...sel, ...list].map(i => {
+        const on = FN_SEL.has(i.name);
+        return `<span class="ex-chip" style="${on ? 'background:var(--ink);color:var(--paper);border-color:var(--ink)' : ''}" onclick="toggleInd('${i.name.replace(/'/g, "")}')">${i.name}${i.n ? ` <span style="opacity:.5">${i.n}</span>` : ''}</span>`;
+    }).join('');
+}
+function toggleInd(n) {
+    if (FN_SEL.has(n)) FN_SEL.delete(n);
+    else { if (FN_SEL.size >= 12) return toast(t('fnMax')); FN_SEL.add(n); }
+    renderIndChips();
+}
+async function runFunnel() {
+    const out = document.getElementById('fnResult');
+    if (!USER) { out.innerHTML = `<div class="text-sm">${t('fnLogin')} <span class="code-link" onclick="openLogin()">${t('signIn')} →</span></div>`; return; }
+    if (!FN_SEL.size) return toast(t('fnPick'));
+    const btn = document.getElementById('fnBtn');
+    btn.disabled = true;
+    out.innerHTML = `<div class="text-xs text-[#8A8578]">${t('fnRunning')}</div>`;
+    try {
+        const d = await apiFetch(`/api/serenity/funnel?inds=${encodeURIComponent([...FN_SEL].join(','))}&lang=${LANG}`);
+        if (d.error) { out.innerHTML = `<div class="text-xs text-[#E5484D]">${d.error}</div>`; return; }
+        const L = t('fnL'), W = t('fnWhy'), max = d.layers[0].n;
+        const bars = d.layers.map(l => {
+            const w = Math.max(3, Math.log10(l.n + 1) / Math.log10(max + 1) * 100);
+            const sub = l.key === 'good' && l.drop ? t('fnDrop', l.drop) : W[l.key] + (l.key === 'timing' && l.of ? t('fnOf', l.of) : '');
+            return `<div class="mb-2.5">
+                <div class="flex justify-between text-xs"><span class="font-bold">${L[l.key]}</span><span class="font-mono">${l.n.toLocaleString()}</span></div>
+                <div style="height:8px;border-radius:4px;background:var(--line);margin:4px 0"><div style="width:${w}%;height:8px;border-radius:4px;background:${l.key === 'timing' ? '#E5484D' : 'var(--ink)'};opacity:${l.key === 'timing' ? 1 : .55}"></div></div>
+                ${sub ? `<div class="text-[10px] text-[#8A8578]">${sub}</div>` : ''}</div>`;
+        }).join('');
+        const row = c => `<div class="flex flex-wrap justify-between items-center gap-2 py-2.5" style="border-top:1px dashed var(--line)">
+            <div><b>${c.name}</b> <span class="font-mono text-[10px] text-[#8A8578]">${c.code}</span> <span class="text-[10px] text-[#8A8578]">${c.ind}</span>
+            <div class="text-[11px] text-[#4A463C]">${t('fnRow', c.pe, c.ind_pe, c.roe, c.range_pos)}</div></div>
+            <span class="code-link text-xs" onclick="goCheck('${c.code}')">${t('fnCheck')}</span></div>`;
+        const O = t('fnOut');
+        out.innerHTML = `<div class="mb-6">${bars}</div>`
+            + (d.picks.length
+                ? `<div class="text-sm font-bold mb-1">${t('fnPicks')}</div>${d.picks.map(row).join('')}`
+                : `<div class="text-sm text-[#4A463C]">${t('fnNone')}</div>`)
+            + (d.near_miss.length ? `<div class="text-sm font-bold mt-6 mb-1">${t('fnMiss')} <span class="text-[10px] text-[#8A8578] font-normal">${t('fnMissHint')}</span></div>`
+                + d.near_miss.map(c => `<div class="flex justify-between items-center text-xs py-1.5" style="border-top:1px dashed var(--line)">
+                    <span><b>${c.name}</b> <span class="text-[#E5484D]">· ${O[c.out] || c.out}</span></span>
+                    <span class="code-link" onclick="goCheck('${c.code}')">${t('fnCheck')}</span></div>`).join('') : '')
+            + `<div class="text-[10px] text-[#8A8578] mt-5">${t('fnNext')}</div>`;
+        animEnter('#fnResult > div', 12);
+    } catch (e) {
+        out.innerHTML = `<div class="text-xs text-[#E5484D]">${t('failed', e.message)}</div>`;
+    } finally { btn.disabled = false; }
+}
+window.addEventListener('DOMContentLoaded', loadIndustries);
 
 /* ── 最近的消息：查股后自动拉最近头条（纯展示，判断留给人和对辩） ── */
 async function loadNews(code) {
