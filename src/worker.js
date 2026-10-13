@@ -378,6 +378,119 @@ function limitChase(s, code, name) {
     streak: streak + (state === "limit" ? 1 : 0), date: s.dates[n - 1] };
 }
 
+/* ── 交易复盘：把每一轮完整平仓（持仓从 >0 回到 0，与凯利教练同口径）拿出来，
+   给它贴上"亏钱方式"标签，汇总出你最常见、最贵的那一种。
+   标签（只用你的流水 + 当时的真实日线，不靠 AI 猜）：
+   chase    追高：这一轮里有一笔买在逼近涨停 / 当天大涨 / 半年高位（水位≥85%）
+   nostop   没止损：亏损超过当时止损线 3 个点以上才卖
+   avgdown  越跌越买：浮亏时又加仓（价格比之前买得更低）
+   overheld 拿过头：短线计划（≤3个月）却拿了计划的 1.5 倍以上，且亏损
+   soldearly 卖飞：赚钱卖出后 20 个交易日内又涨了 15% 以上（不算错，但值得知道） ── */
+const HZ_DAYS = { "1m": 30, "3m": 90, "1y": 365, "3y": 1095 };
+const HZ_FACTOR = { "1m": 0.8, "3m": 1.0, "1y": 1.4, "3y": 1.8, "hold": 2.2 };
+async function tradeReview(env, body, S = pack("zh")) {
+  const items = (Array.isArray(body?.items) ? body.items : []).slice(0, 30);
+  const base = ["CNY", "USD", "CAD", "HKD"].includes(body?.base) ? body.base : "CNY";
+  const sinceDays = Number(body?.days) > 0 ? Number(body.days) : null;
+  const since = sinceDays ? new Date(Date.now() - sinceDays * 86400000).toISOString().slice(0, 10) : "";
+  const rounds = [];
+  for (const it of items) {
+    const code = String(it.code || "").toUpperCase();
+    const txns = (it.txns || []).filter((t) => t && t.price > 0 && t.qty > 0 && t.date && (t.side === "buy" || t.side === "sell"))
+      .sort((a, b) => (String(a.date) < String(b.date) ? -1 : String(a.date) > String(b.date) ? 1 : a.side === "buy" ? -1 : 1));
+    if (!txns.some((t) => t.side === "sell")) continue;
+    const natCur = CUR_OF_MARKET[MARKET_OF(code)];
+    const curs = new Set(txns.map((t) => t.cur || natCur));
+    if (curs.size > 1) continue; // 混币流水极少见，复盘先跳过，避免汇率口径出错
+    const cur = [...curs][0];
+    const s = await dailySeries(env, code);
+    const D = s ? s.dates.map((d) => String(d).replace(/-/g, "")) : [];
+    const idx = (date) => { const d = String(date).replace(/-/g, ""); let i = -1; for (let k = 0; k < D.length && D[k] <= d; k++) i = k; return i; };
+    const isA = isAshare(code), lr = isA ? limitRate(code, it.name) : null;
+    let held = 0, avg = 0, r = null;
+    for (const t of txns) {
+      if (t.side === "buy") {
+        if (held <= 1e-9) r = { code, name: it.name || code, cur, start: t.date, cost: 0, pnl: 0, buys: [], tags: new Set() };
+        // 越跌越买：已有浮亏仓位时以更低价加仓
+        if (held > 0 && t.price < avg * 0.97) r.tags.add("avgdown");
+        const nq = held + t.qty; avg = (held * avg + t.qty * t.price) / nq; held = nq;
+        r.cost += t.qty * t.price; r.buys.push(t);
+        // 追高：看成交当天的真实日线
+        const i = idx(t.date);
+        if (s && i > 0) {
+          const dayChg = s.closes[i] / s.closes[i - 1] - 1;
+          const hiChg = (s.highs?.[i] ?? s.closes[i]) / s.closes[i - 1] - 1;
+          const win = s.closes.slice(Math.max(0, i - 119), i + 1);
+          const hi = Math.max(...win), lo = Math.min(...win);
+          const pos = hi > lo ? (t.price - lo) / (hi - lo) : 0.5;
+          // 水位只在有足够历史（≥60 天）时才算数，否则刚上市/数据短的票任何买点都像"高位"
+          if ((isA && (dayChg >= lr * 0.7 || hiChg >= lr - 0.003)) || (!isA && dayChg >= 0.08) || (win.length >= 60 && pos >= 0.85)) r.tags.add("chase");
+        }
+      } else if (r && held > 0) {
+        const sq = Math.min(t.qty, held);
+        r.pnl += sq * (t.price - avg); held -= sq;
+        if (held <= 1e-9) {
+          r.end = t.date; r.exit = t.price;
+          r.days = Math.round((new Date(r.end) - new Date(r.start)) / 86400000);
+          r.ret = r.cost > 0 ? r.pnl / r.cost : 0;
+          // 当时的止损线：手动线优先，否则按首笔买入那天的 ATR × 持有期系数（与全站同口径）
+          let stop = it.stopPct > 0 ? it.stopPct / 100 : null;
+          const i0 = idx(r.start);
+          if (stop == null && s && i0 >= 30) {
+            const pa0 = computePA(s.closes.slice(Math.max(0, i0 - 139), i0 + 1), cur, S,
+              s.highs?.slice(Math.max(0, i0 - 139), i0 + 1), s.lows?.slice(Math.max(0, i0 - 139), i0 + 1));
+            if (pa0?.stop_atr_pct) stop = Math.min(45, pa0.stop_atr_pct * (HZ_FACTOR[it.horizon] || 1)) / 100;
+          }
+          r.stop_pct = stop != null ? Math.round(stop * 1000) / 10 : null;
+          if (r.ret < 0 && stop != null && r.ret < -(stop + 0.03)) r.tags.add("nostop");
+          if (r.ret < 0 && ["1m", "3m"].includes(it.horizon) && r.days > HZ_DAYS[it.horizon] * 1.5) r.tags.add("overheld");
+          const ie = idx(r.end);
+          if (r.ret > 0 && s && ie >= 0 && ie + 20 < s.closes.length) {
+            const after = Math.max(...s.closes.slice(ie + 1, ie + 21));
+            if (after >= s.closes[ie] * 1.15) r.tags.add("soldearly");
+          }
+          if (!since || String(r.end) >= since) rounds.push(r);
+          r = null;
+        }
+      }
+    }
+  }
+  if (!rounds.length) return { n: 0, base, cur: CUR_SYM[base] || base };
+  // 金额折到 base（今日汇率；复盘看量级，不做逐日精算）
+  const rate = {};
+  for (const c of new Set(rounds.map((x) => x.cur))) rate[c] = c === base ? 1 : fxLatest(await fxSeries(c, base));
+  const out = rounds.map((x) => ({
+    code: x.code, name: x.name, start: x.start, end: x.end, days: x.days,
+    ret_pct: Math.round(x.ret * 1000) / 10,
+    pnl_base: rate[x.cur] != null ? Math.round(x.pnl * rate[x.cur]) : null,
+    stop_pct: x.stop_pct, tags: [...x.tags],
+  })).sort((a, b) => (a.end < b.end ? 1 : -1));
+  const wins = out.filter((x) => x.ret_pct > 0), losses = out.filter((x) => x.ret_pct <= 0);
+  const avg = (a) => (a.length ? a.reduce((p, x) => p + x.ret_pct, 0) / a.length : 0);
+  const avgW = avg(wins), avgL = Math.abs(avg(losses)), p = wins.length / out.length;
+  const r1 = (x) => Math.round(x * 10) / 10;
+  // 亏钱方式：只在亏损轮里统计，按亏掉的钱排序（最贵的那种排第一）
+  const patterns = {};
+  for (const x of losses) for (const tg of x.tags) {
+    if (tg === "soldearly") continue;
+    const ptn = (patterns[tg] ||= { tag: tg, n: 0, loss: 0 });
+    ptn.n++; ptn.loss += x.pnl_base || 0;
+  }
+  const soldEarly = wins.filter((x) => x.tags.includes("soldearly")).length;
+  const untagged = losses.filter((x) => !x.tags.some((tg) => tg !== "soldearly")).length;
+  return {
+    base, cur: CUR_SYM[base] || base, n: out.length, wins: wins.length,
+    win_rate: r1(p * 100), avg_win: r1(avgW), avg_loss: r1(avgL),
+    payoff: avgL > 0 ? Math.round((avgW / avgL) * 100) / 100 : null,
+    expectancy: r1(p * avgW - (1 - p) * avgL), // 平均每轮期望收益（%）
+    total: out.reduce((a, x) => a + (x.pnl_base || 0), 0),
+    patterns: Object.values(patterns).sort((a, b) => a.loss - b.loss),
+    untagged_losses: untagged, sold_early: soldEarly,
+    worst: losses.length ? losses.reduce((a, b) => (a.ret_pct < b.ret_pct ? a : b)) : null,
+    rounds: out.slice(0, 40),
+  };
+}
+
 /* ── 你自己的追板战绩：历史买入里，哪些是在涨停/逼近涨停那天买的，之后怎么样了。
    结果：买后 5 个交易日内卖了 → 用真实卖价；没卖 → 用第 5 个交易日收盘（前复权，近似）。 ── */
 async function chaseStats(env, body) {
@@ -2277,6 +2390,9 @@ export default {
       // 你自己的追板战绩（拉每只 A 股的日线，登录墙防放大）
       if (p === "/api/serenity/chase_stats" && request.method === "POST")
         return gated(async () => json(await chaseStats(env, await request.json().catch(() => ({})))));
+      // 交易复盘（拉每只股日线判断买点，上登录墙）
+      if (p === "/api/serenity/review" && request.method === "POST")
+        return gated(async () => json(await tradeReview(env, await request.json().catch(() => ({})), S)));
       // 账户熔断：设置本金（null/0 = 改回自动估算）
       if (p === "/api/serenity/risk_capital" && request.method === "POST")
         return gated(async () => {

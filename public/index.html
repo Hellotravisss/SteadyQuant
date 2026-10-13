@@ -489,6 +489,19 @@
 
             <div id="holdResult"><div class="text-center py-8"><img src="/hero-mascot.png" alt="" style="width:130px;margin:0 auto 14px;opacity:.9"><div class="eyebrow" style="display:inline-block">empty</div><div class="text-sm text-[#4A463C] mt-2" data-i18n="holdEmpty">还没记录持仓。点右上角「+ 添加持仓」，或去「买什么」查一只股后点「我已经买了」。</div></div></div>
         </div>
+
+        <!-- 交易复盘：把平仓的每一轮拿出来，找出你最贵的亏钱方式 -->
+        <div class="glass rounded-3xl p-8 mt-6" id="reviewSection">
+            <div class="eyebrow mb-1">review</div>
+            <div class="text-2xl font-bold mb-1" data-i18n="rvTitle">交易复盘：你是怎么亏钱的</div>
+            <div class="text-xs text-[#8A8578] mb-4" data-i18n="rvSub">用你已平仓的每一轮，对照当时的真实走势，找出最常见、最贵的那种错误。</div>
+            <div class="flex gap-2 flex-wrap">
+                <button class="px-5 py-2.5 btn-ghost text-sm" onclick="runReview(30)" data-i18n="rv30">近 30 天</button>
+                <button class="px-5 py-2.5 btn-ghost text-sm" onclick="runReview(90)" data-i18n="rv90">近 90 天</button>
+                <button class="px-5 py-2.5 btn-ghost text-sm" onclick="runReview(0)" data-i18n="rvAll">全部</button>
+            </div>
+            <div id="rvResult" class="mt-6"></div>
+        </div>
     </div>
 
     <!-- ===================== 想买什么 ===================== -->
@@ -736,6 +749,32 @@ const I18N = {
     rkOk: (dd, line) => `账户回撤 ${dd}% · 熔断线 ${line}%`,
     rkCap: (c, auto) => `本金 ${c}${auto ? '（自动估算）' : ''}`,
     rkCapEdit: "改",
+    rvTitle: "交易复盘：你是怎么亏钱的",
+    rvSub: "用你已平仓的每一轮，对照当时的真实走势，找出最常见、最贵的那种错误。",
+    rv30: "近 30 天", rv90: "近 90 天", rvAll: "全部",
+    rvRunning: "正在对照每一笔买卖当时的走势…",
+    rvNone: "这段时间还没有完整平仓的交易（买入后全部卖出才算一轮）。",
+    rvStats: (n, w, wr) => `${n} 轮交易，赚钱 ${w} 轮，胜率 ${wr}%`,
+    rvAvg: (aw, al, pf) => `平均每轮赚 +${aw}% / 亏 −${al}%${pf != null ? `，盈亏比 ${pf}` : ''}`,
+    rvExp: (e) => `平均每轮期望 <b class="${e>=0?'pos':'neg'}">${e>=0?'+':''}${e}%</b>`,
+    rvExpNeg: "期望为负：照这样做下去，做得越多亏得越多。先改掉下面最贵的那个习惯，再谈加仓。",
+    rvExpPos: "期望为正：方法本身有效。守住纪律，别因为几次亏损就换打法。",
+    rvMain: "你最贵的亏钱方式",
+    rvTag: { chase: "追高", nostop: "没止损", avgdown: "越跌越买", overheld: "短线拿成长线", soldearly: "卖飞" },
+    rvTagWhy: {
+        chase: "买在逼近涨停、当天大涨或半年高位。买贵了，后面一回落就是亏。",
+        nostop: "亏损超过止损线 3 个点以上才卖。小亏拖成了大亏。",
+        avgdown: "浮亏时以更低价加仓。想摊低成本，结果把仓位加在了下跌趋势上。",
+        overheld: "计划拿一两个月，亏了却拿成了长线。理由变了，仓位没变。"
+    },
+    rvPtn: (n, loss) => `${n} 轮 · 亏 ${loss}`,
+    rvUntag: (n) => `另有 ${n} 轮亏损没有明显错误——正常亏损，是交易的成本。`,
+    rvSoldEarly: (n) => `赚钱的轮次里有 ${n} 轮卖飞（卖后 20 天内又涨 15%+）。不算错，但可以想想卖出理由。`,
+    rvWorst: "最该记住的一笔",
+    rvList: "每一轮明细",
+    rvDays: (d) => `${d} 天`,
+    rvStop: (sp) => `止损线 ${sp}%`,
+    rvNote: "标签只用你的流水和当时的真实日线判断，不靠 AI 猜。还没卖完的仓位不算。",
     fnTitle: "不知道买哪只？从全市场一层层缩小",
     fnSub: "先选你看得懂的行业（A股），剩下交给数据一层层排除。",
     fnSearchPh: "搜行业：白酒 / 银行 / 半导体…",
@@ -1001,6 +1040,32 @@ const I18N = {
     rkOk: (dd, line) => `account drawdown ${dd}% · breaker at ${line}%`,
     rkCap: (c, auto) => `capital ${c}${auto ? ' (estimated)' : ''}`,
     rkCapEdit: "edit",
+    rvTitle: "Trade review: how you lose money",
+    rvSub: "Every closed round, checked against what the chart looked like at the time — find your most common, most expensive mistake.",
+    rv30: "last 30 days", rv90: "last 90 days", rvAll: "all",
+    rvRunning: "checking each trade against the chart at the time…",
+    rvNone: "No fully closed rounds in this period (a round = bought, then sold out completely).",
+    rvStats: (n, w, wr) => `${n} rounds, ${w} winners, win rate ${wr}%`,
+    rvAvg: (aw, al, pf) => `avg win +${aw}% / avg loss −${al}%${pf != null ? `, payoff ${pf}` : ''}`,
+    rvExp: (e) => `expectancy per round <b class="${e>=0?'pos':'neg'}">${e>=0?'+':''}${e}%</b>`,
+    rvExpNeg: "Negative expectancy: the more you trade this way, the more you lose. Fix the most expensive habit below before sizing up.",
+    rvExpPos: "Positive expectancy: the method works. Keep the discipline; don't switch styles after a few losses.",
+    rvMain: "Your most expensive way of losing",
+    rvTag: { chase: "chasing", nostop: "no stop", avgdown: "averaging down", overheld: "short trade held long", soldearly: "sold too early" },
+    rvTagWhy: {
+        chase: "Bought near limit-up, on a big up day, or at a 6-month high. Paid too much; any pullback is a loss.",
+        nostop: "Sold more than 3 points past the stop line. A small loss became a big one.",
+        avgdown: "Added at a lower price while underwater — doubling down on a downtrend.",
+        overheld: "Planned to hold a month or two, then held a loser far longer. The reason changed; the position didn't."
+    },
+    rvPtn: (n, loss) => `${n} rounds · lost ${loss}`,
+    rvUntag: (n) => `${n} more losing rounds had no obvious mistake — normal losses, the cost of trading.`,
+    rvSoldEarly: (n) => `${n} winning rounds were sold early (up 15%+ within 20 days after). Not a mistake, but worth a thought.`,
+    rvWorst: "The trade to remember",
+    rvList: "every round",
+    rvDays: (d) => `${d}d`,
+    rvStop: (sp) => `stop ${sp}%`,
+    rvNote: "Tags use only your ledger and the real daily chart at the time — no AI guessing. Open positions are not included.",
     fnTitle: "Don't know what to buy? Narrow the whole market down",
     fnSub: "Pick industries you actually understand (China A-shares); data filters out the rest.",
     fnSearchPh: "search industries…",
@@ -1820,6 +1885,48 @@ async function loadChaseMine() {
             ? `${t('chMine', r.n, r.wins, r.avg_pct, r.worst_pct)}<span class="text-[10px] text-[#8A8578]">${t('chMineNote')}</span>`
             : `<span class="text-xs text-[#8A8578]">${t('chMineFew', r.n)}</span>`;
     } catch {}
+}
+
+/* ── 交易复盘 ── */
+async function runReview(days) {
+    const out = document.getElementById('rvResult');
+    if (!USER) { out.innerHTML = gateCard(t('rvTitle')); return; }
+    const hold = getHold();
+    out.innerHTML = `<div class="text-xs text-[#8A8578]">${t('rvRunning')}</div>`;
+    try {
+        const d = await fetch('/api/serenity/review', { method:'POST', credentials:'include', headers:{'Content-Type':'application/json'},
+            body: JSON.stringify({ base: PF_BASE, days, items: hold.map(h => ({ code:h.code, name:h.name, txns:h.txns, horizon:h.horizon, stopPct:h.stopPct })) })
+        }).then(x => x.json());
+        if (d.error) { out.innerHTML = `<div class="text-xs text-[#E5484D]">${d.error}</div>`; return; }
+        if (!d.n) { out.innerHTML = `<div class="text-sm text-[#4A463C]">${t('rvNone')}</div>`; return; }
+        const m = n => (n < 0 ? '−' : '+') + d.cur + fmtMoney(Math.abs(n));
+        const T = t('rvTag'), W = t('rvTagWhy');
+        const tagChip = tg => `<span class="text-[10px] px-1.5 rounded mr-1" style="border:1px solid ${tg==='soldearly'?'#8A8578':'#E5484D'};color:${tg==='soldearly'?'#8A8578':'#E5484D'}">${T[tg]}</span>`;
+        const main = d.patterns[0];
+        const head = `<div class="text-sm leading-relaxed">${t('rvStats', d.n, d.wins, d.win_rate)} · <span class="${d.total>=0?'pos':'neg'}">${m(d.total)}</span><br>
+            <span class="text-[#4A463C]">${t('rvAvg', d.avg_win, d.avg_loss, d.payoff)}</span> · ${t('rvExp', d.expectancy)}</div>
+            <div class="text-xs text-[#8A8578] mt-1">${d.expectancy < 0 ? t('rvExpNeg') : t('rvExpPos')}</div>`;
+        const ptn = d.patterns.length ? `<div class="mt-6">
+            <div class="text-sm font-bold mb-2">${t('rvMain')}</div>
+            <div class="rounded-2xl p-4 mb-3" style="border:1.5px solid #E5484D;background:rgba(229,72,77,.05)">
+                <div class="font-bold">${T[main.tag]} <span class="text-xs font-normal text-[#8A8578]">${t('rvPtn', main.n, d.cur + fmtMoney(Math.abs(main.loss)))}</span></div>
+                <div class="text-xs text-[#4A463C] mt-1">${W[main.tag]}</div></div>
+            ${d.patterns.slice(1).map(p => `<div class="text-xs py-1.5" style="border-top:1px dashed var(--line)"><b>${T[p.tag]}</b> <span class="text-[#8A8578]">${t('rvPtn', p.n, d.cur + fmtMoney(Math.abs(p.loss)))}</span></div>`).join('')}
+            ${d.untagged_losses ? `<div class="text-[11px] text-[#8A8578] mt-2">${t('rvUntag', d.untagged_losses)}</div>` : ''}
+            ${d.sold_early ? `<div class="text-[11px] text-[#8A8578] mt-1">${t('rvSoldEarly', d.sold_early)}</div>` : ''}</div>`
+            : (d.untagged_losses ? `<div class="text-[11px] text-[#8A8578] mt-4">${t('rvUntag', d.untagged_losses)}</div>` : '');
+        const w = d.worst;
+        const worst = w ? `<div class="mt-6"><div class="text-sm font-bold mb-1">${t('rvWorst')}</div>
+            <div class="text-sm"><b>${w.name}</b> <span class="neg">${w.ret_pct}%</span> ${w.pnl_base != null ? `<span class="neg">${m(w.pnl_base)}</span>` : ''}
+            <span class="text-xs text-[#8A8578]">${w.start} → ${w.end} · ${t('rvDays', w.days)}${w.stop_pct ? ' · ' + t('rvStop', w.stop_pct) : ''}</span></div>
+            <div class="mt-1">${w.tags.map(tagChip).join('')}</div></div>` : '';
+        const list = `<details class="mt-6"><summary class="text-xs cursor-pointer text-[#8A8578]">${t('rvList')} (${d.rounds.length})</summary>
+            ${d.rounds.map(r => `<div class="flex flex-wrap justify-between gap-2 text-xs py-2" style="border-top:1px dashed var(--line)">
+                <span><b>${r.name}</b> <span class="text-[#8A8578]">${r.start} → ${r.end} · ${t('rvDays', r.days)}</span> ${r.tags.map(tagChip).join('')}</span>
+                <span class="font-mono ${r.ret_pct>0?'pos':'neg'}">${r.ret_pct>0?'+':''}${r.ret_pct}%${r.pnl_base != null ? ' · ' + m(r.pnl_base) : ''}</span></div>`).join('')}</details>`;
+        out.innerHTML = head + ptn + worst + list + `<div class="text-[10px] text-[#8A8578] mt-4">${t('rvNote')}</div>`;
+        animEnter('#rvResult > div', 12);
+    } catch (e) { out.innerHTML = `<div class="text-xs text-[#E5484D]">${t('failed', e.message)}</div>`; }
 }
 
 /* ── 选股漏斗 ── */
