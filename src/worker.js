@@ -80,9 +80,9 @@ async function yahooChart(symbol) {
 async function tencentDaily(code) {
   try {
     const sym = (code.endsWith(".SH") ? "sh" : "sz") + code.slice(0, 6);
-    const end = new Date().toISOString().slice(0, 10);
+    // 截止日期留空：传了"今天"反而会丢掉今天盘中那根 K 线（实测），A 股就一直停在昨收
     const res = await fetch(
-      `https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=${sym},day,,${end},320,qfq`,
+      `https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=${sym},day,,,320,qfq`,
       { headers: { Referer: "https://web.ifzq.gtimg.cn/", "User-Agent": "Mozilla/5.0" },
         signal: AbortSignal.timeout(8000) }
     );
@@ -358,6 +358,75 @@ function riskControl(principal, proposedPosition, S = pack("zh")) {
 
 /* ───────── 各端点 ───────── */
 
+/* ── 追涨停识别（A股）：今天是否封板 / 炸板 / 逼近涨停，以及连板数。
+   涨跌幅限制：主板 10%，创业板(300/301)与科创板(688/689) 20%，ST 5%（北交所不在 isAshare 范围内）。
+   用前复权日线的收盘涨幅判断，不依赖价格精确到分。 ── */
+function limitRate(code, name) {
+  if (/ST/i.test(String(name || ""))) return 0.05;
+  const c = code.slice(0, 3);
+  if (["300", "301", "688", "689"].includes(c)) return 0.2;
+  return 0.1;
+}
+function limitChase(s, code, name) {
+  if (!s || s.closes.length < 3) return null;
+  const r = limitRate(code, name);
+  const n = s.closes.length;
+  const atLimit = (i) => i > 0 && s.closes[i] / s.closes[i - 1] - 1 >= r - 0.003;
+  const chg = s.closes[n - 1] / s.closes[n - 2] - 1;
+  const hiChg = (s.highs?.[n - 1] ?? s.closes[n - 1]) / s.closes[n - 2] - 1;
+  const state = atLimit(n - 1) ? "limit"
+    : hiChg >= r - 0.003 ? "broken"      // 盘中摸过涨停但没封住（炸板）
+    : chg >= r * 0.7 ? "near" : null;
+  if (!state) return null;
+  let streak = 0; // 今天之前连续涨停的天数
+  for (let i = n - 2; i > 0 && atLimit(i); i--) streak++;
+  return { state, chg_pct: Math.round(chg * 1000) / 10, rate_pct: r * 100,
+    streak: streak + (state === "limit" ? 1 : 0), date: s.dates[n - 1] };
+}
+
+/* ── 你自己的追板战绩：历史买入里，哪些是在涨停/逼近涨停那天买的，之后怎么样了。
+   结果：买后 5 个交易日内卖了 → 用真实卖价；没卖 → 用第 5 个交易日收盘（前复权，近似）。 ── */
+async function chaseStats(env, body) {
+  const items = (Array.isArray(body?.items) ? body.items : []).slice(0, 25);
+  const out = [];
+  for (const it of items) {
+    const code = String(it.code || "").toUpperCase();
+    if (!isAshare(code)) continue;
+    const txns = (it.txns || []).filter((t) => t && t.price > 0 && t.qty > 0 && t.date)
+      .sort((a, b) => (String(a.date) < String(b.date) ? -1 : 1));
+    if (!txns.some((t) => t.side === "buy")) continue;
+    const s = await dailySeries(env, code);
+    if (!s) continue;
+    const r = limitRate(code, it.name);
+    const idxOf = (d) => s.dates.indexOf(String(d).replace(/-/g, ""));
+    for (const t of txns) {
+      if (t.side !== "buy") continue;
+      const i = idxOf(t.date);
+      if (i < 1) continue;
+      const dayChg = s.closes[i] / s.closes[i - 1] - 1;
+      const hiChg = (s.highs?.[i] ?? s.closes[i]) / s.closes[i - 1] - 1;
+      if (!(dayChg >= r * 0.7 || hiChg >= r - 0.003)) continue; // 不是追板那天买的
+      const sell = txns.find((x) => x.side === "sell" && String(x.date) >= String(t.date)
+        && idxOf(x.date) >= 0 && idxOf(x.date) - i <= 5);
+      let ret = null;
+      if (sell) ret = sell.price / t.price - 1;
+      else if (i + 5 < s.closes.length) ret = s.closes[i + 5] / s.closes[i] - 1;
+      if (ret == null) continue; // 买得太近，还看不出结果
+      out.push({ code, name: it.name || code, date: t.date, ret_pct: Math.round(ret * 1000) / 10 });
+    }
+  }
+  if (!out.length) return { n: 0 };
+  const rets = out.map((o) => o.ret_pct);
+  return {
+    n: out.length,
+    wins: rets.filter((x) => x > 0).length,
+    avg_pct: Math.round((rets.reduce((a, b) => a + b, 0) / rets.length) * 10) / 10,
+    worst_pct: Math.min(...rets),
+    best_pct: Math.max(...rets),
+    trades: out.slice(-20),
+  };
+}
+
 async function stockCheck(env, code, principal = 2000, S = pack("zh")) {
   code = code.trim().toUpperCase();
 
@@ -434,13 +503,20 @@ async function stockCheck(env, code, principal = 2000, S = pack("zh")) {
     verdict = { code: "yellow", label: S.v_wait_fall, hint: S.v_wait_fall_h };
   if (flags.some((f) => f.level === "hard") && verdict.code === "green")
     verdict = { code: "yellow", label: S.v_hard_flag, hint: S.v_hard_flag_h };
+  // 追涨停：封板/炸板一律压成红灯，逼近涨停压成黄灯——不管基本面多好，这一刻买就是在打板
+  const chase = limitChase(await dailySeries(env, code), code, name);
+  if (chase) {
+    const red = chase.state !== "near";
+    verdict = { code: red ? "red" : (verdict.code === "red" ? "red" : "yellow"),
+      label: S[`v_chase_${chase.state}`], hint: S.v_chase_h };
+  }
 
   const basicOut = {};
   for (const [k, v] of Object.entries(basic))
     if (v != null) basicOut[k] = typeof v === "number" ? Math.round(v * 100) / 100 : v;
 
   return {
-    code, name, industry, price: pa, basic: basicOut,
+    code, name, industry, price: pa, basic: basicOut, chase,
     red_flags: flags, criteria_auto: criteriaAuto(basic, S), criteria_manual: critManual(S),
     verdict, invalidation: invalidationRules(pa, S),
     risk_check: riskControl(principal, pa.last * 100, S),
@@ -2108,6 +2184,9 @@ export default {
               .bind(u.id, body.base, Date.now()).run();
           return json(r);
         });
+      // 你自己的追板战绩（拉每只 A 股的日线，登录墙防放大）
+      if (p === "/api/serenity/chase_stats" && request.method === "POST")
+        return gated(async () => json(await chaseStats(env, await request.json().catch(() => ({})))));
       // 账户熔断：设置本金（null/0 = 改回自动估算）
       if (p === "/api/serenity/risk_capital" && request.method === "POST")
         return gated(async () => {

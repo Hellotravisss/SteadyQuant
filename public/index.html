@@ -725,6 +725,11 @@ const I18N = {
     rkOk: (dd, line) => `账户回撤 ${dd}% · 熔断线 ${line}%`,
     rkCap: (c, auto) => `本金 ${c}${auto ? '（自动估算）' : ''}`,
     rkCapEdit: "改",
+    chToday2: (c, r) => `今天涨了 ${c}%（涨跌停幅度 ${r}%）`,
+    chStreak: (n) => `，已经是第 ${n} 个连板`,
+    chMine: (n, w, avg, worst) => `📒 <b>你自己的追板记录</b>：${n} 次里赚钱 ${w} 次，平均 <b class="${avg>=0?'pos':'neg'}">${avg>=0?'+':''}${avg}%</b>，最差一次 <b class="neg">${worst}%</b>。`,
+    chMineFew: (n) => `📒 你记录里的追板买入还只有 ${n} 次，攒够 3 次后这里会显示你自己的胜率。`,
+    chMineNote: "（买后 5 个交易日内卖了按卖价算，没卖按第 5 天收盘算）",
     rkCapTitle: "你投进这个账户的本金",
     rkCapHint: "回撤按「本金 + 累计盈亏」从最高点算。留空 = 自动用你押进去过的最多资金。",
     rkMath: "亏 25% 要赚 33% 才回本，亏 50% 要翻倍——回撤越深越难爬回来。",
@@ -967,6 +972,11 @@ const I18N = {
     rkOk: (dd, line) => `account drawdown ${dd}% · breaker at ${line}%`,
     rkCap: (c, auto) => `capital ${c}${auto ? ' (estimated)' : ''}`,
     rkCapEdit: "edit",
+    chToday2: (c, r) => `up ${c}% today (daily limit ${r}%)`,
+    chStreak: (n) => `, limit-up ${n} days in a row`,
+    chMine: (n, w, avg, worst) => `📒 <b>Your own limit-chasing record</b>: ${w} of ${n} made money, average <b class="${avg>=0?'pos':'neg'}">${avg>=0?'+':''}${avg}%</b>, worst <b class="neg">${worst}%</b>.`,
+    chMineFew: (n) => `📒 Only ${n} limit-chasing buys in your log so far; your own win rate shows up after 3.`,
+    chMineNote: " (sold within 5 trading days → sale price; otherwise day-5 close)",
     rkCapTitle: "Capital you put into this account",
     rkCapHint: "Drawdown = (capital + cumulative P&L) vs its peak. Leave blank to use the most money you ever had invested.",
     rkMath: "Lose 25% and you need +33% to get back; lose 50% and you need +100%.",
@@ -1749,6 +1759,22 @@ async function runForecast(code) {
     }
 }
 
+/* ── 追板时亮出你自己的历史追板战绩（用你的数据拦你自己）；没登录/没记录就不显示 ── */
+async function loadChaseMine() {
+    const el = document.getElementById('chaseMine');
+    if (!el || !USER) return;
+    const items = getHold().filter(h => /^\d{6}\.(SH|SZ)$/.test(h.code)).map(h => ({ code: h.code, name: h.name, txns: h.txns }));
+    if (!items.length) return;
+    try {
+        const r = await fetch('/api/serenity/chase_stats', { method:'POST', credentials:'include',
+            headers:{'Content-Type':'application/json'}, body: JSON.stringify({ items }) }).then(x => x.json());
+        if (!el.isConnected || !r || !r.n) return;
+        el.innerHTML = r.n >= 3
+            ? `${t('chMine', r.n, r.wins, r.avg_pct, r.worst_pct)}<span class="text-[10px] text-[#8A8578]">${t('chMineNote')}</span>`
+            : `<span class="text-xs text-[#8A8578]">${t('chMineFew', r.n)}</span>`;
+    } catch {}
+}
+
 /* ── 最近的消息：查股后自动拉最近头条（纯展示，判断留给人和对辩） ── */
 async function loadNews(code) {
     const card = document.getElementById('newsCard');
@@ -1887,6 +1913,7 @@ async function doCheck() {
         // Kronos 预测自动后台跑（配置了推理服务且有波动数据时），回来叠进「未来一个月」卡
         if (d.forecast_enabled && d.price?.bands) runForecast(d.code);
         loadNews(d.code); // 最近头条自动加载，没有就不露脸
+        if (d.chase) loadChaseMine();
     } catch (e) {
         box.innerHTML = `<div class="text-[#E5484D] p-6">${t('failed', e.message)}</div>`;
     }
@@ -1917,6 +1944,10 @@ function plainTalk(d) {
     if (v.code === 'green') { emoji = '🟢'; headline = t('verdictGreen'); }
     else if (v.code === 'red') { emoji = '🔴'; headline = t('verdictRed'); }
     else { emoji = '🟡'; headline = t('verdictYellow'); }
+    if (d.chase) { // 追涨停：用后端的专门结论替换通用结论（label 自带灯色 emoji）
+        emoji = ''; headline = v.label;
+        lines.unshift(t('chToday2', d.chase.chg_pct, d.chase.rate_pct) + (d.chase.streak >= 2 ? t('chStreak', d.chase.streak) : ''));
+    }
     return { emoji, headline, hint: v.hint, lines };
 }
 
@@ -1955,6 +1986,7 @@ function renderCheck(d) {
             </div>
             <div class="text-2xl font-black mt-3 ${vText}">${talk.emoji} ${talk.headline}</div>
             <div class="text-xs text-[#8A8578] mt-1">${talk.hint}</div>
+            ${d.chase ? `<div id="chaseMine" class="text-sm mt-3"></div>` : ''}
             <div class="mt-4 space-y-1.5">
                 ${talk.lines.map(l=>`<div class="text-sm text-[#4A463C] leading-relaxed">· ${l}</div>`).join('')}
             </div>
