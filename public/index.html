@@ -782,7 +782,7 @@ const I18N = {
     pwOneLot: "一手就到上限，一次买完",
     pwTooBigHint: "买不了的那几只，换成股价低一些的同类公司，或者这部分也放进指数——别为了买它把单只上限突破。",
     pwCash: (amt) => `留现金 ${amt}（第二批 + 应急），不一次打满`,
-    pwCol: ["股票", "现价", "第 1 批", "第 2 批（条件）", "止损线"],
+    pwCol: ["股票", "现价", "第 1 批", "第 2 批（条件）", "止损（按买入均价）"],
     pwBatch2: "回落 5% 或站稳 2 周后",
     pwShares: (n) => `约 ${n} 股`,
     pwLot: "A股按 100 股一手，金额不够一手的已标出",
@@ -791,6 +791,8 @@ const I18N = {
     pwSave: "保存计划并开始盯盘", pwSaved: "已保存在这台设备（登录后可同步云端）", pwSavedCloud: "✓ 已同步云端，偏离计划会提醒你",
     pwCurrent: (d) => `你当前的计划（${d} 生效）`,
     pwStopAt: (x) => `止损 ${x}`,
+    pwStopPct: (p) => `止损 买入均价 −${p}%`,
+    pwStopRef: (x) => `按现价买约 ${x}`,
     pwWatching: "「今天」页和每日巡检邮件会对照这份计划：计划外买入、单只超额、自选超额、跌到止损价都会提醒",
     pwDelete: "删除计划",
     pwNote: "规则：1 年内要用的钱不进股市；指数打底；自选单只不超过总资金 15%；分批买；先定止损。这是方法框架，不是买入建议。",
@@ -1110,7 +1112,7 @@ const I18N = {
     pwOneLot: "one lot hits the cap — buy once",
     pwTooBigHint: "For the ones you can't afford, pick a cheaper peer or put that slice into the index too — don't break the per-stock cap to own it.",
     pwCash: (amt) => `Keep ${amt} in cash (second batches + buffer); don't go all-in at once`,
-    pwCol: ["stock", "price", "batch 1", "batch 2 (if)", "stop"],
+    pwCol: ["stock", "price", "batch 1", "batch 2 (if)", "stop (from your avg cost)"],
     pwBatch2: "after a 5% dip or 2 steady weeks",
     pwShares: (n) => `~${n} sh`,
     pwLot: "A-shares trade in 100-share lots; amounts too small for a lot are marked",
@@ -1119,6 +1121,8 @@ const I18N = {
     pwSave: "save plan & start watching", pwSaved: "saved on this device (sign in to sync)", pwSavedCloud: "✓ synced — you'll be told when you drift from it",
     pwCurrent: (d) => `Your current plan (since ${d})`,
     pwStopAt: (x) => `stop ${x}`,
+    pwStopPct: (p) => `stop: your avg cost −${p}%`,
+    pwStopRef: (x) => `~${x} if bought now`,
     pwWatching: "Today page and the daily email check against it: off-plan buys, over-sized positions, too much in self-picks, and planned stops",
     pwDelete: "delete plan",
     pwNote: "Rules: no stocks with money needed within a year; index core; each pick ≤15% of total; buy in batches; set the stop first. A method, not a buy recommendation.",
@@ -2099,7 +2103,7 @@ async function pwBuild() {
     }));
     PW._last = { at: Date.now(), base: PF_BASE, amt, idx: idxPct, react: PW.react,
         picks: rows.filter(r => !r.err && r.sh).map(r => ({ code: r.code, name: r.name, cap: Math.round(each),
-            stop_price: Math.round(r.last * (1 - r.stopPct / 100) * 100) / 100, cur: r.pcur })) };
+            stop_pct: r.stopPct, stop_price: Math.round(r.last * (1 - r.stopPct / 100) * 100) / 100, cur: r.pcur })) };
     const worst = rows.reduce((a, r) => a + (r.err ? 0 : (r.b1 + r.b2) * r.stopPct / 100), 0);
     const usedPick = rows.reduce((a, r) => a + (r.err ? 0 : r.b1 + r.b2), 0);
     const firstBuy = rows.reduce((a, r) => a + (r.err ? 0 : r.b1), 0);
@@ -2112,7 +2116,7 @@ async function pwBuild() {
             ${!r.sh ? `<td colspan="2" class="pr-3 text-[#E5484D]">${t('pwTooBig', m(r.lotCost), m(each))}</td>`
               : `<td class="pr-3">${m(r.b1)}<br><span class="text-[10px] text-[#8A8578]">${t('pwShares', r.sh)}</span></td>
                  <td class="pr-3">${r.b2 ? `${m(r.b2)}<br><span class="text-[10px] text-[#8A8578]">${t('pwBatch2')}</span>` : `<span class="text-[10px] text-[#8A8578]">${t('pwOneLot')}</span>`}</td>`}
-            <td class="font-mono">-${r.stopPct}%<br><span class="text-[10px] text-[#8A8578]">${r.pcur}${(r.last * (1 - r.stopPct / 100)).toFixed(2)}</span></td></tr>`).join('')}
+            <td class="font-mono">-${r.stopPct}%<br><span class="text-[10px] text-[#8A8578]">${t('pwStopRef', r.pcur + (r.last * (1 - r.stopPct / 100)).toFixed(2))}</span></td></tr>`).join('')}
         </table>${rows.some(r => r.isA) ? `<div class="text-[10px] text-[#8A8578] mt-1">${t('pwLot')}</div>` : ''}</div>` : '';
     box.innerHTML = `<div class="text-[10px] text-[#8A8578] mb-2"><span class="code-link" onclick="PW.step=4;pwRender()">${t('pwBack')}</span> · <span class="code-link" onclick="PW={step:1,horizon:null,react:null,amount:null,picks:new Set()};pwRender()">${t('pwRestart')}</span></div>
         <div class="text-lg">${t('pwSplit', idxPct, 100 - idxPct)}</div>
@@ -2157,7 +2161,7 @@ function pwCurrentHtml() {
     return `<div class="rounded-2xl p-4 mb-5 text-sm" style="border:1.5px solid var(--ink)">
         <div class="font-bold mb-1">${t('pwCurrent', d)}</div>
         <div>${t('pwSplit', p.idx, 100 - p.idx)} · ${cur}${fmtMoney(p.amt)}</div>
-        ${p.picks.length ? `<div class="text-xs text-[#4A463C] mt-1">${p.picks.map(x => `${x.name} ≤${cur}${fmtMoney(x.cap)} · ${t('pwStopAt', x.cur + x.stop_price)}`).join('<br>')}</div>` : ''}
+        ${p.picks.length ? `<div class="text-xs text-[#4A463C] mt-1">${p.picks.map(x => `${x.name} ≤${cur}${fmtMoney(x.cap)} · ${x.stop_pct ? t('pwStopPct', x.stop_pct) : t('pwStopAt', x.cur + x.stop_price)}`).join('<br>')}</div>` : ''}
         <div class="text-[11px] text-[#8A8578] mt-2">${t('pwWatching')} · <span class="code-link" onclick="pwDelete()">${t('pwDelete')}</span></div></div>`;
 }
 window.addEventListener('DOMContentLoaded', pwRender);

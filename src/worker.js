@@ -391,6 +391,7 @@ function cleanPlan(p) {
   const picks = (Array.isArray(p.picks) ? p.picks : []).slice(0, 8).map((x) => ({
     code: String(x.code || "").toUpperCase().slice(0, 16), name: String(x.name || "").slice(0, 40),
     cap: Number(x.cap) || 0, stop_price: Number(x.stop_price) || null, cur: String(x.cur || "").slice(0, 4),
+    stop_pct: Number(x.stop_pct) > 0 ? Math.min(60, Number(x.stop_pct)) : null,
   })).filter((x) => x.code);
   return { at: Number(p.at) || Date.now(), base, amt: Number(p.amt), idx: Math.min(100, Math.max(0, Number(p.idx) || 80)),
     react: Number(p.react) || 0, picks };
@@ -425,10 +426,19 @@ async function planCheck(env, plan, hold, S = pack("zh")) {
       selfCost += cost;
       if (pk.cap > 0 && cost > pk.cap * 1.1)
         out.push({ kind: "overcap", code, name, cost: Math.round(cost), cap: Math.round(pk.cap) });
-      if (pk.stop_price) {
+      // 止损线跟着你的实际买入均价走：均价 × (1 − 计划止损%)；旧计划没有 stop_pct 才用当时定的固定价
+      if (pk.stop_pct || pk.stop_price) {
         const pa = await priceAnalysis(env, code, S).catch(() => null);
-        if (pa?.last != null && pa.last <= pk.stop_price)
-          out.push({ kind: "stop", code, name, last: pa.last, stop: pk.stop_price });
+        if (pa?.last != null) {
+          const r2 = acct === natCur ? 1 : fxLatest(await fxSeries(natCur, acct));
+          if (pk.stop_pct && r2 != null) {
+            const lastAcct = pa.last * r2, stopAcct = avg * (1 - pk.stop_pct / 100);
+            if (lastAcct <= stopAcct)
+              out.push({ kind: "stop", code, name, last: pa.last, stop: Math.round(stopAcct / r2 * 100) / 100,
+                avg: Math.round(avg * 100) / 100, pct: pk.stop_pct });
+          } else if (!pk.stop_pct && pa.last <= pk.stop_price)
+            out.push({ kind: "stop", code, name, last: pa.last, stop: pk.stop_price });
+        }
       }
     } else if (!isIndex) {
       selfCost += cost;
@@ -446,7 +456,9 @@ function planMsg(d) {
     offplan: `🧭 <b>${d.name}</b>（${d.code}）不在你的建仓计划里，计划生效后又买了（成本 ${m(d.cost)}）。是想清楚了要改计划，还是一时冲动？`,
     overcap: `🧭 <b>${d.name}</b>（${d.code}）持仓成本 ${m(d.cost)}，超过计划里给它的上限 ${m(d.cap)}。单只押太多，是打板时亏大钱的老路。`,
     overpick: `🧭 自选个股总共投了 ${m(d.cost)}，超过计划的自选额度 ${m(d.cap)}。多出来的钱，按计划应该在指数里。`,
-    stop: `🧭 <b>${d.name}</b>（${d.code}）跌到了你计划里定的止损价（现 ${d.last} / 止损 ${d.stop}）。计划写好的事，现在执行。`,
+    stop: d.pct
+      ? `🧭 <b>${d.name}</b>（${d.code}）跌到了计划止损线：你的买入均价 ${d.avg}，计划止损 −${d.pct}%，止损价 ${d.stop}，现价 ${d.last}。计划写好的事，现在执行。`
+      : `🧭 <b>${d.name}</b>（${d.code}）跌到了你计划里定的止损价（现 ${d.last} / 止损 ${d.stop}）。计划写好的事，现在执行。`,
   }[d.kind];
 }
 
