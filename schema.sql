@@ -42,3 +42,11 @@ CREATE TABLE IF NOT EXISTS risk_prefs (
   alerted     TEXT NOT NULL DEFAULT 'ok',
   updated_at  INTEGER NOT NULL
 );
+
+-- 建仓计划（向导生成的分配表）+ 已发过邮件的偏离项（避免天天重复发）
+CREATE TABLE IF NOT EXISTS plans (
+  user_id     TEXT PRIMARY KEY,
+  plan        TEXT NOT NULL,
+  alerted     TEXT NOT NULL DEFAULT '[]',
+  updated_at  INTEGER NOT NULL
+);

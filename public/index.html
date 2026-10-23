@@ -751,7 +751,7 @@ const I18N = {
     todayTitle: "今天有没有需要你做的事？",
     todayLoading: "正在巡检你的持仓和心愿单…",
     todayAllClear: "都好好的，没有需要你动手的事。管住手也是本事。",
-    todayNote: "巡检口径：跌破止损线🔴 / 距止损3%内🟡 / 心愿到价🎯 / 接近心愿价👀。每个交易日收盘后也会邮件提醒你。",
+    todayNote: "巡检口径：跌破止损线🔴 / 距止损3%内🟡 / 心愿到价🎯 / 接近心愿价👀 / 偏离建仓计划🧭。每个交易日收盘后也会邮件提醒你。",
     rkHalt: (dd, a, b, line) => `🛑 <b>账户熔断</b>：整个账户从最高点回撤了 <b>${dd}%</b>（${a} → ${b}），超过 ${line}% 熔断线。<b>先暂停开新仓</b>，复盘最近亏的几笔：是追高、没止损，还是拿太久？`,
     rkWarn: (dd, a, b, line) => `⚠️ <b>账户回撤预警</b>：从最高点回撤 <b>${dd}%</b>（${a} → ${b}），到 ${line}% 会熔断。减少出手，只做最有把握的。`,
     rkOk: (dd, line) => `账户回撤 ${dd}% · 熔断线 ${line}%`,
@@ -788,7 +788,11 @@ const I18N = {
     pwLot: "A股按 100 股一手，金额不够一手的已标出",
     pwNoLot: "不够一手",
     pwMax: (pct, amt) => `最坏情况：所有自选股都跌到止损线，总共亏约 ${amt}（总资金的 ${pct}%）`,
-    pwSave: "保存计划", pwSaved: "已保存（存在这台设备上）",
+    pwSave: "保存计划并开始盯盘", pwSaved: "已保存在这台设备（登录后可同步云端）", pwSavedCloud: "✓ 已同步云端，偏离计划会提醒你",
+    pwCurrent: (d) => `你当前的计划（${d} 生效）`,
+    pwStopAt: (x) => `止损 ${x}`,
+    pwWatching: "「今天」页和每日巡检邮件会对照这份计划：计划外买入、单只超额、自选超额、跌到止损价都会提醒",
+    pwDelete: "删除计划",
     pwNote: "规则：1 年内要用的钱不进股市；指数打底；自选单只不超过总资金 15%；分批买；先定止损。这是方法框架，不是买入建议。",
     rvTitle: "交易复盘：你是怎么亏钱的",
     rvSub: "用你已平仓的每一轮，对照当时的真实走势，找出最常见、最贵的那种错误。",
@@ -1112,7 +1116,11 @@ const I18N = {
     pwLot: "A-shares trade in 100-share lots; amounts too small for a lot are marked",
     pwNoLot: "below 1 lot",
     pwMax: (pct, amt) => `Worst case: every pick hits its stop — total loss about ${amt} (${pct}% of the money)`,
-    pwSave: "save plan", pwSaved: "saved (on this device)",
+    pwSave: "save plan & start watching", pwSaved: "saved on this device (sign in to sync)", pwSavedCloud: "✓ synced — you'll be told when you drift from it",
+    pwCurrent: (d) => `Your current plan (since ${d})`,
+    pwStopAt: (x) => `stop ${x}`,
+    pwWatching: "Today page and the daily email check against it: off-plan buys, over-sized positions, too much in self-picks, and planned stops",
+    pwDelete: "delete plan",
     pwNote: "Rules: no stocks with money needed within a year; index core; each pick ≤15% of total; buy in batches; set the stop first. A method, not a buy recommendation.",
     rvTitle: "Trade review: how you lose money",
     rvSub: "Every closed round, checked against what the chart looked like at the time — find your most common, most expensive mistake.",
@@ -1352,6 +1360,7 @@ async function checkAuth() {
     if (justLoggedIn) { await mergeOnLogin(); toast(t('loginOk')); }
     else await pullCloud();
   }
+  if (typeof pwLoad === 'function') pwLoad(); // 登录状态确定后再拉云端计划
 }
 
 function renderAccount() {
@@ -1645,6 +1654,14 @@ async function buildToday() {
                 else if (i.gap_pct !== undefined && i.gap_pct <= 3) events.push({lv:1, html:`👀 <b>${src.name}</b> ${t('evWishNear', i.gap_pct)}`, code:i.code});
             }
         }
+        // 建仓计划偏离（计划外买入 / 单只超额 / 自选超额 / 到计划止损价）
+        if (hold.length) {
+            try {
+                const pc = await fetch('/api/serenity/myplan_check', { method:'POST', credentials:'include', headers:{'Content-Type':'application/json'},
+                    body: JSON.stringify({ items: hold.map(h => ({ code:h.code, name:h.name, txns:h.txns })) }) }).then(x => x.json());
+                for (const it of (pc.items || [])) events.push({ lv: it.kind === 'stop' ? 0 : 1, code: it.code, html: it.html });
+            } catch {}
+        }
         events.sort((a,b) => a.lv - b.lv);
         // 账户熔断（整体回撤）：放在所有单股提醒之上
         let riskBox = '';
@@ -1672,7 +1689,7 @@ async function buildToday() {
         box.innerHTML = riskBox + (events.length
             ? events.map(e => `<div class="border border-[#E4DAC7] rounded-2xl p-4 mb-3 text-sm flex flex-wrap justify-between items-center gap-2">
                 <span>${e.html}</span>
-                <span class="code-link text-xs" onclick="goCheck('${e.code}')">${t('recheck')} →</span></div>`).join('')
+                ${e.code ? `<span class="code-link text-xs" onclick="goCheck('${e.code}')">${t('recheck')} →</span>` : ''}</div>`).join('')
             : (RISK && RISK.level !== 'ok') ? '' : `<div class="text-sm text-[#2f9e53]">✅ ${t('todayAllClear')}</div>`)
             + (summaryHtml ? `<div class="text-xs text-[#8A8578] mt-5 pt-4" style="border-top:1px dashed var(--line)">${t('myHold')}：${summaryHtml} <span class="code-link" onclick="switchTab('hold', tabBtn('hold'))">${t('goLook')}</span></div>` : '')
             + `<div class="text-[10px] text-[#8A8578] mt-3">${t('todayNote')}</div>`;
@@ -2016,7 +2033,7 @@ function pwRender() {
     const opt = (arr, key) => arr.map((a, i) => `<button class="px-5 py-3 btn-ghost text-sm mr-2 mb-2" style="${PW[key] === i ? 'background:var(--ink);color:var(--paper)' : ''}" onclick="PW.${key}=${i};pwPick('${key}',${i})">${a}</button>`).join('');
     const nav = `<div class="text-[10px] text-[#8A8578] mb-2">${t('pwStep', Math.min(PW.step, N), N)}${PW.step > 1 ? ` · <span class="code-link" onclick="PW.step--;pwRender()">${t('pwBack')}</span>` : ''}</div>`;
     if (PW.step === 1) {
-        box.innerHTML = nav + `<div class="font-bold mb-3">${t('pwQ1')}</div>${opt(t('pwQ1a'), 'horizon')}`
+        box.innerHTML = pwCurrentHtml() + nav + `<div class="font-bold mb-3">${t('pwQ1')}</div>${opt(t('pwQ1a'), 'horizon')}`
             + (PW.horizon === 0 ? `<div class="text-sm text-[#4A463C] mt-3 p-4 rounded-2xl" style="border:1px solid var(--line)">${t('pwStop1')}</div>` : '');
     } else if (PW.step === 2) {
         box.innerHTML = nav + `<div class="font-bold mb-1">${t('pwQ2')}</div><div class="text-[11px] text-[#8A8578] mb-3">${t('pwQ2h')}</div>${opt(t('pwQ2a'), 'react')}`;
@@ -2080,6 +2097,9 @@ async function pwBuild() {
             return { code, name: d.name || PW._names[code] || code, last: p.last, pcur: p.cur || '', stopPct, sh, b1, b2, lotCost, isA, verdict: d.verdict };
         } catch { return { code, name: PW._names[code] || code, err: true }; }
     }));
+    PW._last = { at: Date.now(), base: PF_BASE, amt, idx: idxPct, react: PW.react,
+        picks: rows.filter(r => !r.err && r.sh).map(r => ({ code: r.code, name: r.name, cap: Math.round(each),
+            stop_price: Math.round(r.last * (1 - r.stopPct / 100) * 100) / 100, cur: r.pcur })) };
     const worst = rows.reduce((a, r) => a + (r.err ? 0 : (r.b1 + r.b2) * r.stopPct / 100), 0);
     const usedPick = rows.reduce((a, r) => a + (r.err ? 0 : r.b1 + r.b2), 0);
     const firstBuy = rows.reduce((a, r) => a + (r.err ? 0 : r.b1), 0);
@@ -2102,8 +2122,43 @@ async function pwBuild() {
             <div class="text-sm mt-3">💵 ${t('pwCash', m(amt * (100 - idxPct) / 100 - firstBuy))}</div>
             ${rows.some(r => !r.err && !r.sh) ? `<div class="text-[11px] text-[#4A463C] mt-2">${t('pwTooBigHint')}</div>` : ''}
             <div class="text-sm mt-3 text-[#E5484D]">${t('pwMax', (worst / amt * 100).toFixed(1), m(worst))}</div>` : ''}
-        <button class="px-6 py-3 btn-ghost text-sm mt-5" onclick="try{localStorage.setItem('sq_plan',JSON.stringify({at:Date.now(),amt:${amt},idx:${idxPct},picks:${JSON.stringify(codes)},each:${Math.round(each)}}));this.textContent=t('pwSaved')}catch{}">${t('pwSave')}</button>
+        <button id="pwSaveBtn" class="px-6 py-3 btn-red text-sm mt-5" onclick="pwSave()">${t('pwSave')}</button>
         <div class="text-[10px] text-[#8A8578] mt-4">${t('pwNote')}</div>`;
+}
+let MY_PLAN = null;
+async function pwSave() {
+    const btn = document.getElementById('pwSaveBtn');
+    if (!PW._last) return;
+    try { localStorage.setItem('sq_plan', JSON.stringify(PW._last)); } catch {}
+    if (!USER) { if (btn) btn.textContent = t('pwSaved'); return; }
+    try {
+        const r = await fetch('/api/serenity/myplan', { method:'PUT', credentials:'include', headers:{'Content-Type':'application/json'},
+            body: JSON.stringify({ plan: PW._last }) }).then(x => x.json());
+        MY_PLAN = r.plan || null;
+        if (btn) { btn.textContent = t('pwSavedCloud'); btn.disabled = true; }
+    } catch { if (btn) btn.textContent = t('pwSaved'); }
+}
+async function pwLoad() {
+    if (!USER) { pwRender(); return; }
+    try { MY_PLAN = (await apiFetch('/api/serenity/myplan')).plan || null; } catch {}
+    pwRender();
+}
+async function pwDelete() {
+    await fetch('/api/serenity/myplan', { method:'PUT', credentials:'include', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ clear: true }) }).catch(() => {});
+    MY_PLAN = null; try { localStorage.removeItem('sq_plan'); } catch {}
+    pwRender();
+}
+function pwCurrentHtml() {
+    const p = MY_PLAN;
+    if (!p) return '';
+    const cur = { CNY: '¥', USD: '$', CAD: 'C$', HKD: 'HK$' }[p.base] || '';
+    const d = new Date(p.at).toLocaleDateString('sv');
+    return `<div class="rounded-2xl p-4 mb-5 text-sm" style="border:1.5px solid var(--ink)">
+        <div class="font-bold mb-1">${t('pwCurrent', d)}</div>
+        <div>${t('pwSplit', p.idx, 100 - p.idx)} · ${cur}${fmtMoney(p.amt)}</div>
+        ${p.picks.length ? `<div class="text-xs text-[#4A463C] mt-1">${p.picks.map(x => `${x.name} ≤${cur}${fmtMoney(x.cap)} · ${t('pwStopAt', x.cur + x.stop_price)}`).join('<br>')}</div>` : ''}
+        <div class="text-[11px] text-[#8A8578] mt-2">${t('pwWatching')} · <span class="code-link" onclick="pwDelete()">${t('pwDelete')}</span></div></div>`;
 }
 window.addEventListener('DOMContentLoaded', pwRender);
 

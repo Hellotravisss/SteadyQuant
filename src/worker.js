@@ -378,6 +378,78 @@ function limitChase(s, code, name) {
     streak: streak + (state === "limit" ? 1 : 0), date: s.dates[n - 1] };
 }
 
+/* ── 建仓计划的偏离检查：拿计划（向导生成、存在 plans 表）对照当前持仓流水。
+   offplan  计划生效后买了计划外的个股（名字里带 ETF/指数 的算指数部分，不算偏离）
+   overcap  某只计划股的持仓成本超过它的上限 10% 以上
+   overpick 自选部分（计划股 + 计划外个股）总成本超过自选额度 10% 以上
+   stop     计划股现价跌到计划里定的止损价，还拿着
+   金额统一折成计划币种（今日汇率）。 ── */
+const INDEX_LIKE = /ETF|指数|index|^(SPY|VOO|IVV|QQQ|VTI|VFV\.TO|XIU\.TO|XEQT\.TO|VEQT\.TO|ZSP\.TO|XIC\.TO|510300\.SH|510500\.SH|159919\.SZ|588000\.SH|2800\.HK)$/i;
+function cleanPlan(p) {
+  if (!p || !(p.amt > 0)) return null;
+  const base = ["CNY", "USD", "CAD", "HKD"].includes(p.base) ? p.base : "CNY";
+  const picks = (Array.isArray(p.picks) ? p.picks : []).slice(0, 8).map((x) => ({
+    code: String(x.code || "").toUpperCase().slice(0, 16), name: String(x.name || "").slice(0, 40),
+    cap: Number(x.cap) || 0, stop_price: Number(x.stop_price) || null, cur: String(x.cur || "").slice(0, 4),
+  })).filter((x) => x.code);
+  return { at: Number(p.at) || Date.now(), base, amt: Number(p.amt), idx: Math.min(100, Math.max(0, Number(p.idx) || 80)),
+    react: Number(p.react) || 0, picks };
+}
+async function planCheck(env, plan, hold, S = pack("zh")) {
+  if (!plan) return [];
+  const since = new Date(plan.at).toISOString().slice(0, 10);
+  const pickAmt = plan.amt * (100 - plan.idx) / 100;
+  const pickSet = new Map(plan.picks.map((x) => [x.code, x]));
+  const out = [];
+  let selfCost = 0, fxBroken = false;
+  for (const h of hold) {
+    const code = String(h?.code || "").toUpperCase();
+    const txns = (h?.txns || []).filter((t) => t && t.price > 0 && t.qty > 0)
+      .sort((a, b) => (String(a.date) < String(b.date) ? -1 : 1));
+    if (!code || !txns.length) continue;
+    let held = 0, avg = 0;
+    for (const t of txns) {
+      if (t.side === "buy") { const nq = held + t.qty; avg = (held * avg + t.qty * t.price) / nq; held = nq; }
+      else held = Math.max(0, held - t.qty);
+    }
+    if (held <= 0) continue;
+    const natCur = CUR_OF_MARKET[MARKET_OF(code)];
+    const acct = txns[0].cur || natCur;
+    const rate = acct === plan.base ? 1 : fxLatest(await fxSeries(acct, plan.base));
+    if (rate == null) { fxBroken = true; continue; }
+    const cost = held * avg * rate;
+    const name = h.name || code;
+    const pk = pickSet.get(code);
+    const isIndex = INDEX_LIKE.test(name) || INDEX_LIKE.test(code);
+    if (pk) {
+      selfCost += cost;
+      if (pk.cap > 0 && cost > pk.cap * 1.1)
+        out.push({ kind: "overcap", code, name, cost: Math.round(cost), cap: Math.round(pk.cap) });
+      if (pk.stop_price) {
+        const pa = await priceAnalysis(env, code, S).catch(() => null);
+        if (pa?.last != null && pa.last <= pk.stop_price)
+          out.push({ kind: "stop", code, name, last: pa.last, stop: pk.stop_price });
+      }
+    } else if (!isIndex) {
+      selfCost += cost;
+      if (txns.some((t) => t.side === "buy" && String(t.date) >= since))
+        out.push({ kind: "offplan", code, name, cost: Math.round(cost) });
+    }
+  }
+  if (!fxBroken && pickAmt > 0 && selfCost > pickAmt * 1.1)
+    out.push({ kind: "overpick", code: "", name: "", cost: Math.round(selfCost), cap: Math.round(pickAmt) });
+  return out.map((x) => ({ ...x, cur: CUR_SYM[plan.base] || plan.base, key: `${x.kind}:${x.code}` }));
+}
+function planMsg(d) {
+  const m = (n) => `${d.cur}${Math.round(n).toLocaleString("en-US")}`;
+  return {
+    offplan: `🧭 <b>${d.name}</b>（${d.code}）不在你的建仓计划里，计划生效后又买了（成本 ${m(d.cost)}）。是想清楚了要改计划，还是一时冲动？`,
+    overcap: `🧭 <b>${d.name}</b>（${d.code}）持仓成本 ${m(d.cost)}，超过计划里给它的上限 ${m(d.cap)}。单只押太多，是打板时亏大钱的老路。`,
+    overpick: `🧭 自选个股总共投了 ${m(d.cost)}，超过计划的自选额度 ${m(d.cap)}。多出来的钱，按计划应该在指数里。`,
+    stop: `🧭 <b>${d.name}</b>（${d.code}）跌到了你计划里定的止损价（现 ${d.last} / 止损 ${d.stop}）。计划写好的事，现在执行。`,
+  }[d.kind];
+}
+
 /* ── 交易复盘：把每一轮完整平仓（持仓从 >0 回到 0，与凯利教练同口径）拿出来，
    给它贴上"亏钱方式"标签，汇总出你最常见、最贵的那一种。
    标签（只用你的流水 + 当时的真实日线，不靠 AI 猜）：
@@ -2292,6 +2364,22 @@ async function runPatrol(env) {
       } catch (e) { console.log("patrol risk error", e?.message); }
     }
 
+    // 建仓计划偏离：只发新出现的偏离项（同一项不天天发；解决后再犯会重新提醒）
+    if (hold.length && subreqBudget > 8) {
+      try {
+        const pr = await env.DB.prepare("SELECT plan, alerted FROM plans WHERE user_id = ?").bind(row.user_id).first();
+        if (pr) {
+          spend(2);
+          const items = await planCheck(env, JSON.parse(pr.plan), hold, S);
+          const was = new Set(JSON.parse(pr.alerted || "[]"));
+          for (const d of items) if (!was.has(d.key)) events.push(planMsg(d));
+          const now = JSON.stringify(items.map((d) => d.key));
+          if (now !== pr.alerted)
+            await env.DB.prepare("UPDATE plans SET alerted = ? WHERE user_id = ?").bind(now, row.user_id).run();
+        }
+      } catch (e) { console.log("patrol plan error", e?.message); }
+    }
+
     for (const w of wish) {
       if (!w?.code || !w.target) continue;
       const pa = await getPA(w.code);
@@ -2393,6 +2481,35 @@ export default {
       // 交易复盘（拉每只股日线判断买点，上登录墙）
       if (p === "/api/serenity/review" && request.method === "POST")
         return gated(async () => json(await tradeReview(env, await request.json().catch(() => ({})), S)));
+      // 建仓计划：读 / 存（云端同步，换设备也在）
+      if (p === "/api/serenity/myplan")
+        return gated(async () => {
+          const u = await needUser();
+          if (request.method === "PUT" || request.method === "POST") {
+            const b = await request.json().catch(() => ({}));
+            const plan = b.clear ? null : cleanPlan(b.plan);
+            if (!plan) {
+              await env.DB.prepare("DELETE FROM plans WHERE user_id = ?").bind(u.id).run();
+              return json({ ok: true, plan: null });
+            }
+            await env.DB.prepare(`INSERT INTO plans (user_id, plan, alerted, updated_at) VALUES (?, ?, '[]', ?)
+              ON CONFLICT(user_id) DO UPDATE SET plan = excluded.plan, alerted = '[]', updated_at = excluded.updated_at`)
+              .bind(u.id, JSON.stringify(plan), Date.now()).run();
+            return json({ ok: true, plan });
+          }
+          const r = await env.DB.prepare("SELECT plan FROM plans WHERE user_id = ?").bind(u.id).first();
+          return json({ plan: r ? JSON.parse(r.plan) : null });
+        });
+      // 偏离计划检查（「今天」页用；巡检邮件走同一个函数）
+      if (p === "/api/serenity/myplan_check" && request.method === "POST")
+        return gated(async () => {
+          const u = await needUser();
+          const r = await env.DB.prepare("SELECT plan FROM plans WHERE user_id = ?").bind(u.id).first();
+          if (!r) return json({ plan: false, items: [] });
+          const b = await request.json().catch(() => ({}));
+          const items = await planCheck(env, JSON.parse(r.plan), Array.isArray(b.items) ? b.items.slice(0, 30) : [], S);
+          return json({ plan: true, items: items.map((d) => ({ ...d, html: planMsg(d) })) });
+        });
       // 账户熔断：设置本金（null/0 = 改回自动估算）
       if (p === "/api/serenity/risk_capital" && request.method === "POST")
         return gated(async () => {
