@@ -340,6 +340,14 @@
             <div id="checkResult" class="mt-8"></div>
         </div>
 
+        <!-- 建仓计划：把"买什么、买多少、怎么买"拆成几个能回答的问题 -->
+        <div class="glass rounded-3xl p-8 mt-6" id="planWizard">
+            <div class="eyebrow mb-1">position plan</div>
+            <div class="mb-1 text-2xl font-bold" data-i18n="pwTitle">建仓计划：钱怎么分、怎么买</div>
+            <div class="text-xs text-[#8A8578] mb-5" data-i18n="pwSub">回答几个问题，生成一张带金额的计划表。挑哪几只由你定，规则帮你守住分寸。</div>
+            <div id="pwBody"></div>
+        </div>
+
         <!-- 选股漏斗：从全市场一层层排除到几只 -->
         <div class="glass rounded-3xl p-8 mt-6" id="funnelSection">
             <div class="eyebrow mb-1">funnel</div>
@@ -749,6 +757,39 @@ const I18N = {
     rkOk: (dd, line) => `账户回撤 ${dd}% · 熔断线 ${line}%`,
     rkCap: (c, auto) => `本金 ${c}${auto ? '（自动估算）' : ''}`,
     rkCapEdit: "改",
+    pwTitle: "建仓计划：钱怎么分、怎么买",
+    pwSub: "回答几个问题，生成一张带金额的计划表。挑哪几只由你定，规则帮你守住分寸。",
+    pwStep: (i, n) => `第 ${i} / ${n} 步`,
+    pwBack: "← 上一步", pwRestart: "重新做",
+    pwQ1: "这笔钱多久之内不会用到？",
+    pwQ1a: ["1 年内可能要用", "1 到 3 年", "3 年以上 / 专门用来投资"],
+    pwStop1: "1 年内可能要用的钱，不建议放进股市——股市一年内跌 20% 很常见，到时候被迫在低点卖。先放存款或短期债券，这一步就是最好的计划。",
+    pwQ2: "如果整个账户跌了 25%，你实际会怎么做？",
+    pwQ2h: "按你真实经历过的反应选，不是理想中的自己。",
+    pwQ2a: ["受不了，卖掉止损", "很难受，但能拿住", "冷静，甚至想加仓"],
+    pwQ3: "这次投多少钱？",
+    pwQ3h: "只填专门用来投资、亏了不影响生活的钱。",
+    pwQ4: "自己挑的部分，买哪几只？",
+    pwQ4h: (n) => `勾 ${n} 只左右。候选来自选股漏斗的结果和你的心愿单。`,
+    pwQ4none: "还没有候选。先用下面的「选股漏斗」筛一次，或往心愿单里加几只，再回来这一步。",
+    pwQ4skip: "先不挑，只看分配",
+    pwGo: "生成计划", pwNext: "下一步 →",
+    pwSplit: (idx, pick) => `指数打底 <b>${idx}%</b> · 自己挑 <b>${pick}%</b>`,
+    pwWhy: { 0: "你说跌 25% 会卖掉——这种情况自选比例越低越好，大部分放指数，让你拿得住。", 1: "能拿住但难受：多数放指数，留一小块练手。", 2: "能扛住回撤，自选可以多一些，但单只仍有上限。" },
+    pwIdx: (amt) => `指数部分 ${amt}：宽基指数基金（如跟踪沪深300 / 标普500 的 ETF），分 3 个月、每月买三分之一，不择时。`,
+    pwPickHead: (amt, n, each) => `自选部分实际用 ${amt}：${n} 只，每只上限 ${each}，能分批的分 2 批买`,
+    pwTooBig: (lot, cap) => `一手要 ${lot}，超过单只上限 ${cap}——这个资金量买不了`,
+    pwOneLot: "一手就到上限，一次买完",
+    pwTooBigHint: "买不了的那几只，换成股价低一些的同类公司，或者这部分也放进指数——别为了买它把单只上限突破。",
+    pwCash: (amt) => `留现金 ${amt}（第二批 + 应急），不一次打满`,
+    pwCol: ["股票", "现价", "第 1 批", "第 2 批（条件）", "止损线"],
+    pwBatch2: "回落 5% 或站稳 2 周后",
+    pwShares: (n) => `约 ${n} 股`,
+    pwLot: "A股按 100 股一手，金额不够一手的已标出",
+    pwNoLot: "不够一手",
+    pwMax: (pct, amt) => `最坏情况：所有自选股都跌到止损线，总共亏约 ${amt}（总资金的 ${pct}%）`,
+    pwSave: "保存计划", pwSaved: "已保存（存在这台设备上）",
+    pwNote: "规则：1 年内要用的钱不进股市；指数打底；自选单只不超过总资金 15%；分批买；先定止损。这是方法框架，不是买入建议。",
     rvTitle: "交易复盘：你是怎么亏钱的",
     rvSub: "用你已平仓的每一轮，对照当时的真实走势，找出最常见、最贵的那种错误。",
     rv30: "近 30 天", rv90: "近 90 天", rvAll: "全部",
@@ -1040,6 +1081,39 @@ const I18N = {
     rkOk: (dd, line) => `account drawdown ${dd}% · breaker at ${line}%`,
     rkCap: (c, auto) => `capital ${c}${auto ? ' (estimated)' : ''}`,
     rkCapEdit: "edit",
+    pwTitle: "Position plan: how to split and how to buy",
+    pwSub: "Answer a few questions and get a plan with real amounts. You pick the stocks; the rules keep the sizing sane.",
+    pwStep: (i, n) => `step ${i} / ${n}`,
+    pwBack: "← back", pwRestart: "start over",
+    pwQ1: "How long until you might need this money?",
+    pwQ1a: ["within 1 year", "1 to 3 years", "3+ years / investing money only"],
+    pwStop1: "Money you may need within a year shouldn't be in stocks — a 20% drop within a year is common and you'd be forced to sell low. Savings or short-term bonds are the plan here.",
+    pwQ2: "If your whole account fell 25%, what would you actually do?",
+    pwQ2h: "Pick what you really did or would do, not your ideal self.",
+    pwQ2a: ["can't take it, sell", "painful, but I'd hold", "calm, might even add"],
+    pwQ3: "How much are you investing this time?",
+    pwQ3h: "Only money set aside for investing that won't hurt your life if lost.",
+    pwQ4: "Which stocks for the self-picked part?",
+    pwQ4h: (n) => `Tick about ${n}. Candidates come from the funnel results and your wishlist.`,
+    pwQ4none: "No candidates yet. Run the funnel below or add some to your wishlist, then come back.",
+    pwQ4skip: "skip for now, just the split",
+    pwGo: "build plan", pwNext: "next →",
+    pwSplit: (idx, pick) => `index core <b>${idx}%</b> · self-picked <b>${pick}%</b>`,
+    pwWhy: { 0: "You'd sell at −25% — so keep self-picks small and most money in index funds you can hold.", 1: "You can hold but it hurts: mostly index, a small slice to practice with.", 2: "You can stomach drawdowns, so more self-picks — still capped per stock." },
+    pwIdx: (amt) => `Index part ${amt}: broad index funds (e.g. ETFs tracking CSI 300 / S&P 500), a third each month for 3 months, no timing.`,
+    pwPickHead: (amt, n, each) => `Self-picked, actually used ${amt}: ${n} stocks, max ${each} each, 2 batches where possible`,
+    pwTooBig: (lot, cap) => `one lot costs ${lot}, above the ${cap} per-stock cap — not affordable at this size`,
+    pwOneLot: "one lot hits the cap — buy once",
+    pwTooBigHint: "For the ones you can't afford, pick a cheaper peer or put that slice into the index too — don't break the per-stock cap to own it.",
+    pwCash: (amt) => `Keep ${amt} in cash (second batches + buffer); don't go all-in at once`,
+    pwCol: ["stock", "price", "batch 1", "batch 2 (if)", "stop"],
+    pwBatch2: "after a 5% dip or 2 steady weeks",
+    pwShares: (n) => `~${n} sh`,
+    pwLot: "A-shares trade in 100-share lots; amounts too small for a lot are marked",
+    pwNoLot: "below 1 lot",
+    pwMax: (pct, amt) => `Worst case: every pick hits its stop — total loss about ${amt} (${pct}% of the money)`,
+    pwSave: "save plan", pwSaved: "saved (on this device)",
+    pwNote: "Rules: no stocks with money needed within a year; index core; each pick ≤15% of total; buy in batches; set the stop first. A method, not a buy recommendation.",
     rvTitle: "Trade review: how you lose money",
     rvSub: "Every closed round, checked against what the chart looked like at the time — find your most common, most expensive mistake.",
     rv30: "last 30 days", rv90: "last 90 days", rvAll: "all",
@@ -1929,8 +2003,112 @@ async function runReview(days) {
     } catch (e) { out.innerHTML = `<div class="text-xs text-[#E5484D]">${t('failed', e.message)}</div>`; }
 }
 
+/* ── 建仓计划向导 ──
+   规则（全部写死在这里，透明可查）：
+   1 年内要用 → 不进股市；跌 25% 会卖 → 指数 80%；能拿住 → 70%；想加仓 → 60%
+   自选买 3~5 只，单只 ≤ 总资金 15%；每只分 2 批；第二批留作现金；止损按 ATR 自适应线 */
+let PW = { step: 1, horizon: null, react: null, amount: null, picks: new Set() };
+const PW_IDX = { 0: 80, 1: 70, 2: 60 };
+function pwRender() {
+    const box = document.getElementById('pwBody');
+    if (!box) return;
+    const N = 4;
+    const opt = (arr, key) => arr.map((a, i) => `<button class="px-5 py-3 btn-ghost text-sm mr-2 mb-2" style="${PW[key] === i ? 'background:var(--ink);color:var(--paper)' : ''}" onclick="PW.${key}=${i};pwPick('${key}',${i})">${a}</button>`).join('');
+    const nav = `<div class="text-[10px] text-[#8A8578] mb-2">${t('pwStep', Math.min(PW.step, N), N)}${PW.step > 1 ? ` · <span class="code-link" onclick="PW.step--;pwRender()">${t('pwBack')}</span>` : ''}</div>`;
+    if (PW.step === 1) {
+        box.innerHTML = nav + `<div class="font-bold mb-3">${t('pwQ1')}</div>${opt(t('pwQ1a'), 'horizon')}`
+            + (PW.horizon === 0 ? `<div class="text-sm text-[#4A463C] mt-3 p-4 rounded-2xl" style="border:1px solid var(--line)">${t('pwStop1')}</div>` : '');
+    } else if (PW.step === 2) {
+        box.innerHTML = nav + `<div class="font-bold mb-1">${t('pwQ2')}</div><div class="text-[11px] text-[#8A8578] mb-3">${t('pwQ2h')}</div>${opt(t('pwQ2a'), 'react')}`;
+    } else if (PW.step === 3) {
+        const def = PW.amount || (RISK && RISK.capital) || '';
+        box.innerHTML = nav + `<div class="font-bold mb-1">${t('pwQ3')}</div><div class="text-[11px] text-[#8A8578] mb-3">${t('pwQ3h')}</div>
+            <div class="flex gap-2 items-center"><input id="pwAmt" type="number" inputmode="decimal" class="px-4 py-3 rounded-2xl w-48" value="${def}">
+            <span class="text-xs text-[#8A8578]">${PF_BASE}</span>
+            <button class="px-6 py-3 btn-red text-sm" onclick="const v=parseFloat(document.getElementById('pwAmt').value);if(v>0){PW.amount=v;PW.step=4;pwRender()}">${t('pwNext')}</button></div>`;
+    } else if (PW.step === 4) {
+        const nPick = PW.react === 2 ? 5 : PW.react === 1 ? 4 : 3;
+        const seen = new Set();
+        const cands = [...FN_LAST.map(c => ({ code: c.code, name: c.name })), ...getList('sq_wish').map(w => ({ code: w.code, name: w.name }))]
+            .filter(c => c.code && !seen.has(c.code) && seen.add(c.code));
+        box.innerHTML = nav + `<div class="font-bold mb-1">${t('pwQ4')}</div>`
+            + (cands.length
+                ? `<div class="text-[11px] text-[#8A8578] mb-3">${t('pwQ4h', nPick)}</div>` + cands.map(c => `<label class="flex items-center gap-2 text-sm py-1 cursor-pointer">
+                    <input type="checkbox" ${PW.picks.has(c.code) ? 'checked' : ''} onchange="this.checked?PW.picks.add('${c.code}'):PW.picks.delete('${c.code}')" data-name="${c.name}">
+                    <b>${c.name}</b> <span class="font-mono text-[10px] text-[#8A8578]">${c.code}</span></label>`).join('')
+                : `<div class="text-sm text-[#4A463C] mb-3">${t('pwQ4none')}</div>`)
+            + `<div class="flex gap-3 mt-4 flex-wrap"><button class="px-6 py-3 btn-red text-sm" onclick="pwBuild()">${t('pwGo')}</button>
+               ${cands.length ? `<button class="px-6 py-3 btn-ghost text-sm" onclick="PW.picks.clear();pwBuild()">${t('pwQ4skip')}</button>` : `<button class="px-6 py-3 btn-ghost text-sm" onclick="pwBuild()">${t('pwQ4skip')}</button>`}</div>`;
+        PW._names = Object.fromEntries(cands.map(c => [c.code, c.name]));
+    }
+}
+function pwPick(key, i) {
+    if (key === 'horizon' && i === 0) { pwRender(); return; } // 1 年内要用：停在这一步，给出建议
+    PW.step++; pwRender();
+}
+async function pwBuild() {
+    const box = document.getElementById('pwBody');
+    const amt = PW.amount, idxPct = PW_IDX[PW.react] ?? 80, pickAmt = amt * (100 - idxPct) / 100;
+    const cap = amt * 0.15;
+    const codes = [...PW.picks];
+    const each = codes.length ? Math.min(cap, pickAmt / codes.length) : 0;
+    const cur = { CNY: '¥', USD: '$', CAD: 'C$', HKD: 'HK$' }[PF_BASE] || '';
+    const m = n => cur + fmtMoney(Math.round(n));
+    box.innerHTML = `<div class="text-xs text-[#8A8578]">…</div>`;
+    const fxCache = {};
+    const fxTo = async (c) => { // 1 单位股票币种 = ? 计划币种
+        if (c === PF_BASE) return 1;
+        if (!(c in fxCache)) fxCache[c] = (await apiFetch(`/api/serenity/fx?from=${c}&to=${PF_BASE}`)).rate;
+        return fxCache[c];
+    };
+    const SYM2CUR = { '¥': 'CNY', '$': 'USD', 'C$': 'CAD', 'HK$': 'HKD' };
+    const rows = await Promise.all(codes.map(async code => {
+        try {
+            const d = await apiFetch(`/api/serenity/stock_check?code=${encodeURIComponent(code)}&lang=${LANG}`);
+            const p = d.price || {};
+            const stopPct = Math.min(45, p.stop_atr_pct || 15);
+            const isA = /^\d{6}\.(SH|SZ)$/.test(code);
+            const rate = await fxTo(SYM2CUR[p.cur] || (isA ? 'CNY' : 'USD'));
+            if (!p.last || !rate) return { code, name: d.name || PW._names[code] || code, err: true };
+            const pxPlan = p.last * rate;           // 现价折成计划币种
+            const lot = isA ? 100 : 1;
+            const lotCost = pxPlan * lot;
+            let b1, b2, sh;
+            if (lotCost > each) { b1 = b2 = 0; sh = 0; }                         // 一手就超过单只上限
+            else if (lotCost > each / 2) { sh = lot; b1 = lotCost; b2 = 0; }      // 半批不够一手 → 一次买一手
+            else { sh = Math.floor(each / 2 / lotCost) * lot; b1 = sh * pxPlan; b2 = b1; }
+            return { code, name: d.name || PW._names[code] || code, last: p.last, pcur: p.cur || '', stopPct, sh, b1, b2, lotCost, isA, verdict: d.verdict };
+        } catch { return { code, name: PW._names[code] || code, err: true }; }
+    }));
+    const worst = rows.reduce((a, r) => a + (r.err ? 0 : (r.b1 + r.b2) * r.stopPct / 100), 0);
+    const usedPick = rows.reduce((a, r) => a + (r.err ? 0 : r.b1 + r.b2), 0);
+    const firstBuy = rows.reduce((a, r) => a + (r.err ? 0 : r.b1), 0);
+    const C = t('pwCol');
+    const table = rows.length ? `<div class="mt-4 overflow-x-auto"><table class="w-full text-xs">
+        <tr class="text-[#8A8578] text-left">${C.map(c => `<th class="py-1.5 pr-3 font-normal">${c}</th>`).join('')}</tr>
+        ${rows.map(r => r.err ? `<tr><td class="py-2">${r.name}</td><td colspan="4" class="text-[#E5484D]">—</td></tr>` : `<tr style="border-top:1px dashed var(--line)">
+            <td class="py-2 pr-3"><b>${r.name}</b> <span class="code-link text-[10px]" onclick="goCheck('${r.code}')">${r.code}</span>${r.verdict && r.verdict.code === 'red' ? ` <span class="text-[#E5484D]">${r.verdict.label}</span>` : ''}</td>
+            <td class="pr-3 font-mono">${r.pcur}${r.last}</td>
+            ${!r.sh ? `<td colspan="2" class="pr-3 text-[#E5484D]">${t('pwTooBig', m(r.lotCost), m(each))}</td>`
+              : `<td class="pr-3">${m(r.b1)}<br><span class="text-[10px] text-[#8A8578]">${t('pwShares', r.sh)}</span></td>
+                 <td class="pr-3">${r.b2 ? `${m(r.b2)}<br><span class="text-[10px] text-[#8A8578]">${t('pwBatch2')}</span>` : `<span class="text-[10px] text-[#8A8578]">${t('pwOneLot')}</span>`}</td>`}
+            <td class="font-mono">-${r.stopPct}%<br><span class="text-[10px] text-[#8A8578]">${r.pcur}${(r.last * (1 - r.stopPct / 100)).toFixed(2)}</span></td></tr>`).join('')}
+        </table>${rows.some(r => r.isA) ? `<div class="text-[10px] text-[#8A8578] mt-1">${t('pwLot')}</div>` : ''}</div>` : '';
+    box.innerHTML = `<div class="text-[10px] text-[#8A8578] mb-2"><span class="code-link" onclick="PW.step=4;pwRender()">${t('pwBack')}</span> · <span class="code-link" onclick="PW={step:1,horizon:null,react:null,amount:null,picks:new Set()};pwRender()">${t('pwRestart')}</span></div>
+        <div class="text-lg">${t('pwSplit', idxPct, 100 - idxPct)}</div>
+        <div class="text-[11px] text-[#8A8578] mt-1">${t('pwWhy')[PW.react]}</div>
+        <div class="text-sm mt-4">📊 ${t('pwIdx', m(amt * idxPct / 100))}</div>
+        ${codes.length ? `<div class="text-sm mt-3">🎯 ${t('pwPickHead', m(usedPick), codes.length, m(each))}</div>${table}
+            <div class="text-sm mt-3">💵 ${t('pwCash', m(amt * (100 - idxPct) / 100 - firstBuy))}</div>
+            ${rows.some(r => !r.err && !r.sh) ? `<div class="text-[11px] text-[#4A463C] mt-2">${t('pwTooBigHint')}</div>` : ''}
+            <div class="text-sm mt-3 text-[#E5484D]">${t('pwMax', (worst / amt * 100).toFixed(1), m(worst))}</div>` : ''}
+        <button class="px-6 py-3 btn-ghost text-sm mt-5" onclick="try{localStorage.setItem('sq_plan',JSON.stringify({at:Date.now(),amt:${amt},idx:${idxPct},picks:${JSON.stringify(codes)},each:${Math.round(each)}}));this.textContent=t('pwSaved')}catch{}">${t('pwSave')}</button>
+        <div class="text-[10px] text-[#8A8578] mt-4">${t('pwNote')}</div>`;
+}
+window.addEventListener('DOMContentLoaded', pwRender);
+
 /* ── 选股漏斗 ── */
-let FN_INDS = null, FN_SEL = new Set();
+let FN_INDS = null, FN_SEL = new Set(), FN_LAST = [];
 async function loadIndustries() {
     if (FN_INDS) return;
     try { FN_INDS = (await apiFetch('/api/serenity/industries')).items || []; } catch { FN_INDS = []; }
@@ -1962,6 +2140,7 @@ async function runFunnel() {
     try {
         const d = await apiFetch(`/api/serenity/funnel?inds=${encodeURIComponent([...FN_SEL].join(','))}&lang=${LANG}`);
         if (d.error) { out.innerHTML = `<div class="text-xs text-[#E5484D]">${d.error}</div>`; return; }
+        FN_LAST = d.picks || [];
         const L = t('fnL'), W = t('fnWhy'), max = d.layers[0].n;
         const bars = d.layers.map(l => {
             const w = Math.max(3, Math.log10(l.n + 1) / Math.log10(max + 1) * 100);

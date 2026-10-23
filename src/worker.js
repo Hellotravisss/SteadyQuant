@@ -2419,6 +2419,13 @@ export default {
       if (p === "/api/serenity/analyze") return gated(() => analyzeSSE(env, q("query"), q("market", S.mkt_a), S, lang));
       if (p === "/api/search") return json(await search(env, q("keyword")));
       if (p === "/api/serenity/industries") return json(await industries(env));
+      // 最新汇率（建仓计划换算用；Yahoo 免费源 + 4 小时缓存）
+      if (p === "/api/serenity/fx") {
+        const ok = ["CNY", "USD", "CAD", "HKD"];
+        const a = q("from"), b = q("to");
+        if (!ok.includes(a) || !ok.includes(b)) return json({ rate: null });
+        return json({ rate: a === b ? 1 : fxLatest(await fxSeries(a, b)) });
+      }
       // 漏斗拉全市场估值 + 15 只日线：Tushare 积分 + 子请求，上登录墙
       if (p === "/api/serenity/funnel")
         return gated(async () => json(await funnel(env, q("inds").split(","), S)));
